@@ -1,0 +1,6 @@
+{
+  "name": "기계설비 공정분리 자동화 툴",
+  "description": "기계설비 계약 내역서를 기반으로 공정을 자동으로 분리하고 카테고리별 대시보드를 제공하는 엑셀 자동화 웹 소프트웨어입니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

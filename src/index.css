@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Gulim", "굴림", Dotum, "굴림", sans-serif;
+}
+
+@layer base {
+  html {
+    font-size: 11px;
+  }
+  body {
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: normal;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    @apply text-slate-900;
+  }
+}
