@@ -10,7 +10,7 @@ interface Props {
   theme: ThemeType;
   categories: string[];
   workbook: XLSX.WorkBook | null;
-  onClassify: () => void;
+  onClassify: (targetIds?: string[]) => void;
   isClassifying: boolean;
   onUpdateCategory: (id: string, category: string) => void;
   onRevertCategory: (id: string) => void;
@@ -470,20 +470,35 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
               </div>
             </div>
             {selectedIds.size > 0 && (
-              <select 
-                onChange={handleBulkCategoryChange}
-                className="px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 text-sm rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
-                value=""
-              >
-                <option value="" disabled>카테고리 일괄 변경</option>
-                {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-              </select>
+              <div className="flex items-center gap-2">
+                <select 
+                  onChange={handleBulkCategoryChange}
+                  className="px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 text-sm rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium cursor-pointer"
+                  value=""
+                >
+                  <option value="" disabled>카테고리 일괄 변경</option>
+                  {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClassify(Array.from(selectedIds));
+                    setSelectedIds(new Set());
+                  }}
+                  disabled={isClassifying}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50 h-[38px] cursor-pointer shadow-sm shadow-amber-100 whitespace-nowrap"
+                  title="선택한 항목만 AI로 다시 분류합니다"
+                >
+                  <Cpu className={`w-3.5 h-3.5 ${isClassifying ? 'animate-spin' : ''}`} />
+                  <span>선택 항목 AI 재분석</span>
+                </button>
+              </div>
             )}
             <ExcelUpload onDataLoaded={onDataLoaded} />
             <button
-              onClick={onClassify}
+              onClick={() => onClassify()}
               disabled={isClassifying}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-sm md:text-base text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-200"
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-sm md:text-base text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-200 cursor-pointer"
             >
               <Cpu className={`w-4 h-4 ${isClassifying ? 'animate-spin' : ''}`} />
               <span className="whitespace-nowrap">{isClassifying ? '분류 중...' : 'AI 자동 공정분리'}</span>
