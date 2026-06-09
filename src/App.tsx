@@ -16,10 +16,11 @@ import ExcelUpload from './components/ExcelUpload';
 import CategoryManager from './components/CategoryManager';
 import SettingsManager from './components/SettingsManager';
 import ProjectSiteManager from './components/ProjectSiteManager';
-import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download } from 'lucide-react';
+import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 import * as XLSX from 'xlsx';
+import LZString from 'lz-string';
 
 const INITIAL_CATEGORIES = [
   '백강관', '강관부속', 'STS위생관', 'STS위생부속', 'STS난방관', 'STS난방부속', 
@@ -44,6 +45,172 @@ const SAMPLE_ITEMS: SpecItem[] = [
   { id: 'ms-3', name: 'STS K-유니온 (SR)', specification: 'D 25', unit: 'EA', quantity: 18, materialUnitPrice: 10704, materialAmount: 192672, laborUnitPrice: 0, laborAmount: 0, unitPrice: 10704, amount: 192672, category: 'STS위생부속', section: '01010401 기계실배관공사', remark: '' },
 ];
 
+// Field mappings for SpecItem compaction
+const FIELD_MAP: Record<string, string> = {
+  id: 'i',
+  name: 'n',
+  specification: 's',
+  unit: 'u',
+  quantity: 'q',
+  materialUnitPrice: 'm',
+  materialAmount: 'ma',
+  laborUnitPrice: 'l',
+  laborAmount: 'la',
+  unitPrice: 'p',
+  amount: 'a',
+  category: 'c',
+  section: 't',
+  remark: 'r',
+  originalCategory: 'o',
+  excelRowIdx: 'x'
+};
+
+const REVERSE_FIELD_MAP: Record<string, string> = Object.fromEntries(
+  Object.entries(FIELD_MAP).map(([k, v]) => [v, k])
+);
+
+function minifyState(items: SpecItem[], theme: string | null, categories: string[], projectName: string) {
+  const minifiedItems = items.map(item => {
+    const minItem: Record<string, any> = {};
+    for (const [key, value] of Object.entries(item)) {
+      const shortKey = FIELD_MAP[key] || key;
+      minItem[shortKey] = value;
+    }
+    return minItem;
+  });
+
+  return {
+    its: minifiedItems,
+    th: theme,
+    cats: categories,
+    pName: projectName
+  };
+}
+
+function unminifyState(minState: any) {
+  const items = (minState.its || []).map((minItem: any) => {
+    const item: Record<string, any> = {};
+    for (const [key, value] of Object.entries(minItem)) {
+      const longKey = REVERSE_FIELD_MAP[key] || key;
+      item[longKey] = value;
+    }
+    return item as SpecItem;
+  });
+
+  return {
+    items,
+    theme: minState.th,
+    categories: minState.cats,
+    projectName: minState.pName
+  };
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binString = atob(base64);
+  return Uint8Array.from(binString, (m) => m.codePointAt(0)!);
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const binString = Array.from(bytes, (x) => String.fromCodePoint(x)).join("");
+  return btoa(binString);
+}
+
+async function compressState(stateObj: any): Promise<string> {
+  const jsonStr = JSON.stringify(stateObj);
+  try {
+    const compressed = LZString.compressToEncodedURIComponent(jsonStr);
+    if (compressed) {
+      return 'lz:' + compressed;
+    }
+  } catch (e) {
+    console.warn("lz-string compression failed, falling back to older raw encoding", e);
+  }
+
+  try {
+    if (typeof CompressionStream !== 'undefined') {
+      const stream = new Blob([jsonStr]).stream();
+      // @ts-ignore
+      const compressedStream = stream.pipeThrough(new CompressionStream("gzip"));
+      const chunks: BlobPart[] = [];
+      const reader = compressedStream.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      const blob = new Blob(chunks);
+      const buffer = await blob.arrayBuffer();
+      const b64 = bytesToBase64(new Uint8Array(buffer));
+      return 'gz:' + b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+  } catch (e) {
+    console.warn("CompressionStream failed, falling back to standard encoding", e);
+  }
+  const utf8Bytes = new TextEncoder().encode(jsonStr);
+  const b64 = bytesToBase64(utf8Bytes);
+  return 'raw:' + b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function decompressState(encoded: string): Promise<any> {
+  let decoded = encoded;
+  try {
+    decoded = decodeURIComponent(encoded);
+  } catch (e) {
+    // ignore
+  }
+
+  // 1. New lz-string decompression
+  if (decoded.startsWith('lz:')) {
+    const rawPayload = decoded.slice(3);
+    const decompressed = LZString.decompressFromEncodedURIComponent(rawPayload);
+    if (decompressed) {
+      return JSON.parse(decompressed);
+    }
+    throw new Error("Failed to decompress using lz-string");
+  }
+
+  // 2. Old backward compatible fallback
+  let isGzip = false;
+  let cleanB64 = decoded;
+  if (decoded.startsWith('gz:')) {
+    isGzip = true;
+    cleanB64 = decoded.slice(3);
+  } else if (decoded.startsWith('raw:')) {
+    isGzip = false;
+    cleanB64 = decoded.slice(4);
+  }
+
+  let base64 = cleanB64.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) {
+    base64 += '=';
+  }
+
+  const bytes = base64ToBytes(base64);
+
+  if (isGzip && typeof DecompressionStream !== 'undefined') {
+    try {
+      const stream = new Blob([bytes]).stream();
+      // @ts-ignore
+      const decompressedStream = stream.pipeThrough(new DecompressionStream("gzip"));
+      const chunks: BlobPart[] = [];
+      const reader = decompressedStream.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      const blob = new Blob(chunks);
+      const text = await blob.text();
+      return JSON.parse(text);
+    } catch (e) {
+      console.warn("DecompressionStream failed, fallback to standard decoding", e);
+    }
+  }
+
+  const text = new TextDecoder().decode(bytes);
+  return JSON.parse(text);
+}
+
 const PROJECTS_KEY = 'mechauto_projects';
 
 export default function App() {
@@ -62,6 +229,11 @@ export default function App() {
   // Project Management State
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProjectName, setCurrentProjectName] = useState<string>('');
+  
+  // Share Project State
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [copied, setCopied] = useState(false);
 
   // Session Recovery State
   const [pendingSession, setPendingSession] = useState<{ items: SpecItem[], theme: ThemeType, timestamp: number } | null>(null);
@@ -79,19 +251,96 @@ export default function App() {
       }
     }
 
-    // Load Last Session
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
+    // Check Shared link
+    const checkSharedLink = async () => {
       try {
-        const parsed = JSON.parse(saved);
-        if (parsed.items && parsed.items.length > 0) {
-          setPendingSession(parsed);
-          setIsRecoveryModalOpen(true);
+        let shareDataStr = '';
+        
+        // Check query spec first
+        const urlParams = new URLSearchParams(window.location.search);
+        const queryShare = urlParams.get('share');
+        if (queryShare) {
+          shareDataStr = queryShare;
+        } else {
+          // Check hash
+          const hash = window.location.hash;
+          if (hash) {
+            // strip leading hatch if needed
+            const cleanHash = hash.startsWith('#') ? hash.substring(1) : hash;
+            const hashParams = new URLSearchParams(cleanHash);
+            const hashShare = hashParams.get('share');
+            if (hashShare) {
+              shareDataStr = hashShare;
+            } else if (cleanHash.startsWith('share=')) {
+              shareDataStr = cleanHash.substring(6);
+            } else if (cleanHash.includes('share=')) {
+              const idx = cleanHash.indexOf('share=');
+              shareDataStr = cleanHash.substring(idx + 6);
+            }
+          }
+        }
+
+        if (shareDataStr) {
+          // 100% robust clean-up and URL-decoding
+          try {
+            shareDataStr = decodeURIComponent(shareDataStr).trim();
+          } catch (e) {
+            console.warn("Failed to decodeURIComponent shareDataStr", e);
+          }
+
+          // Clear URL share parameter
+          const cleanUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState(null, '', cleanUrl);
+
+          showNotification('공유된 프로젝트 데이터를 불러오는 중...', 'info');
+          
+          const state = await decompressState(shareDataStr);
+          if (state) {
+            const restoredState = unminifyState(state);
+            
+            if (restoredState.items && restoredState.items.length > 0) {
+              setItems(restoredState.items);
+              if (restoredState.theme) setTheme(restoredState.theme);
+              if (restoredState.categories) setCategories(restoredState.categories);
+              if (restoredState.projectName) setCurrentProjectName(restoredState.projectName);
+              
+              // Clear pending session to prevent recovery popup if successfully loaded shared config
+              setIsRecoveryModalOpen(false);
+              setPendingSession(null);
+              
+              showNotification(`공유된 프로젝트 데이터를 성공적으로 불러왔습니다.`, 'success');
+              return true;
+            }
+          }
         }
       } catch (e) {
-        console.error('Failed to parse saved session', e);
+        console.error('Failed to load shared link', e);
+        showNotification('공유 링크 데이터 해석 및 로드 중 오류가 발생했습니다.', 'error');
       }
-    }
+      return false;
+    };
+
+    const runInitCheck = async () => {
+      const loadedShare = await checkSharedLink();
+      
+      // Load Last Session if share wasn't loaded
+      if (!loadedShare) {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (parsed.items && parsed.items.length > 0) {
+              setPendingSession(parsed);
+              setIsRecoveryModalOpen(true);
+            }
+          } catch (e) {
+            console.error('Failed to parse saved session', e);
+          }
+        }
+      }
+    };
+
+    runInitCheck();
   }, []);
 
   // Auto-save logic
@@ -105,6 +354,37 @@ export default function App() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
     }
   }, [items, theme]);
+
+  const handleShareProject = async () => {
+    if (items.length === 0) {
+      showNotification('공유할 데이터가 없습니다. 먼저 내역을 가져오거나 파일을 로드해주세요.', 'error');
+      return;
+    }
+    try {
+      showNotification('공유 링크 생성 중...', 'info');
+      const minState = minifyState(items, theme, categories, currentProjectName);
+      const encoded = await compressState(minState);
+      
+      const shareLink = `${window.location.origin}${window.location.pathname}#share=${encoded}`;
+      setShareUrl(shareLink);
+      setIsShareModalOpen(true);
+      setCopied(false);
+    } catch (e) {
+      console.error('Failed to generate share URL', e);
+      showNotification('공유 링크 생성 중 오류가 발생했습니다.', 'error');
+    }
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      setCopied(true);
+      showNotification('공유 링크가 클립보드에 복사되었습니다.', 'success');
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(err => {
+      console.error('Failed to copy', err);
+      showNotification('링크 복사에 실패했습니다. 직접 복사해주세요.', 'error');
+    });
+  };
 
   const handleSaveProject = (name: string) => {
     if (!theme) {
@@ -427,13 +707,22 @@ export default function App() {
             <div className="text-[11px] opacity-60 font-mono">가동 상태: 정상</div>
             <div className="flex gap-2 items-center">
               {items.length > 0 && (
-                <button 
-                  onClick={handleDownloadResults}
-                  className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-[10px] font-bold uppercase rounded border border-blue-400 text-white transition-colors flex items-center gap-1.5"
-                >
-                  <Download size={12} />
-                  결과 다운로드
-                </button>
+                <>
+                  <button 
+                    onClick={handleShareProject}
+                    className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-[10px] font-bold uppercase rounded border border-amber-500 text-white transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Share2 size={12} />
+                    공유하기
+                  </button>
+                  <button 
+                    onClick={handleDownloadResults}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-[10px] font-bold uppercase rounded border border-blue-400 text-white transition-colors flex items-center gap-1.5"
+                  >
+                    <Download size={12} />
+                    결과 다운로드
+                  </button>
+                </>
               )}
               <button 
                 onClick={() => setItems([])}
@@ -475,13 +764,22 @@ export default function App() {
         {theme && (
           <div className="flex items-center gap-3">
              {items.length > 0 && (
-               <button 
-                 onClick={handleDownloadResults}
-                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 text-sm font-bold"
-               >
-                 <Download size={16} />
-                 <span>결과 다운로드</span>
-               </button>
+               <>
+                 <button 
+                   onClick={handleShareProject}
+                   className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition-all shadow-lg shadow-amber-200 text-sm font-bold cursor-pointer"
+                 >
+                   <Share2 size={16} />
+                   <span>공유하기</span>
+                 </button>
+                 <button 
+                   onClick={handleDownloadResults}
+                   className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 text-sm font-bold"
+                 >
+                   <Download size={16} />
+                   <span>결과 다운로드</span>
+                 </button>
+               </>
              )}
              <div className="flex -space-x-2">
                 {[1, 2, 3].map(i => (
@@ -639,6 +937,166 @@ export default function App() {
                   ))}
                 </div>
                 <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-widest">Processing Data</span>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Share Project Modal */}
+      <AnimatePresence>
+        {isShareModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center p-4 backdrop-blur-sm bg-slate-900/60"
+            onClick={() => setIsShareModalOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              transition={{ type: 'spring', duration: 0.4 }}
+              className={`w-full max-w-lg rounded-2xl shadow-2xl border overflow-hidden relative ${
+                theme === 'industrial' ? 'bg-slate-900 border-slate-800 text-slate-100' :
+                theme === 'high-density' ? 'bg-[#F4F4F2] border-[#141414] text-[#141414]' :
+                'bg-white border-slate-200 text-slate-800'
+              }`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className={`p-6 pb-4 border-b flex items-center justify-between ${
+                theme === 'industrial' ? 'border-slate-800' :
+                theme === 'high-density' ? 'border-[#141414] bg-[#EBEAE8]' :
+                'border-slate-100 bg-slate-50'
+              }`}>
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-2 rounded-lg ${
+                    theme === 'industrial' ? 'bg-amber-500/10 text-amber-500' :
+                    theme === 'high-density' ? 'bg-[#141414] text-white' :
+                    'bg-amber-100 text-amber-600'
+                  }`}>
+                    <Share2 size={20} />
+                  </div>
+                  <div>
+                    <h3 className={`font-bold text-lg leading-tight ${theme === 'high-density' ? 'font-sans uppercase text-xs tracking-wider' : 'font-sans'}`}>
+                      {theme === 'high-density' ? 'Project Share Link' : '프로젝트 공유하기'}
+                    </h3>
+                    <p className={`text-xs mt-0.5 ${theme === 'industrial' ? 'text-slate-400' : 'text-slate-500'}`}>
+                      {currentProjectName ? `'${currentProjectName}' 현장 공유` : '작업 중인 현장 공유'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsShareModalOpen(false)}
+                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                    theme === 'industrial' ? 'hover:bg-slate-800 text-slate-400' :
+                    theme === 'high-density' ? 'hover:bg-black/10 text-[#141414]' :
+                    'hover:bg-slate-100 text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 space-y-5">
+                <p className={`text-sm leading-relaxed ${theme === 'industrial' ? 'text-slate-300' : 'text-slate-600'}`}>
+                  현재 분석 중인 <strong>현장 공정 분류 정보, 자재 명세 목록({items.length}개) 및 사용자 지정 카테고리</strong>가 포함된 압축 공유 링크입니다. 상대방이 이 링크를 열면 실시간으로 동일한 전체 작업본을 즉시 이식받을 수 있습니다.
+                </p>
+
+                <div className="space-y-2">
+                  <label className={`text-xs font-bold uppercase tracking-wider block ${
+                    theme === 'industrial' ? 'text-slate-400' : 'text-slate-500'
+                  }`}>
+                    공유용 압축 URL
+                  </label>
+                  <div className={`flex gap-2 p-2 border rounded-xl items-center ${
+                    theme === 'industrial' ? 'border-slate-800 bg-slate-950' :
+                    theme === 'high-density' ? 'border-[#141414] bg-white text-xs' :
+                    'border-slate-200 bg-slate-50'
+                  }`}>
+                    <input
+                      type="text"
+                      readOnly
+                      value={shareUrl}
+                      className={`flex-grow bg-transparent border-none text-xs outline-none focus:ring-0 ${
+                        theme === 'industrial' ? 'text-slate-300' : 'text-slate-600'
+                      }`}
+                      onClick={(e) => {
+                        const target = e.target as HTMLInputElement;
+                        target.select();
+                      }}
+                    />
+                    <button
+                      onClick={handleCopyLink}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer min-w-[70px] justify-center ${
+                        copied
+                          ? 'bg-green-600 text-white'
+                          : theme === 'industrial' ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700' :
+                            theme === 'high-density' ? 'bg-[#141414] text-white hover:opacity-90' :
+                            'bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 shadow-sm'
+                      }`}
+                    >
+                      {copied ? (
+                        <>
+                          <Check size={12} />
+                          <span>복사됨</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={12} />
+                          <span>복사</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Stats */}
+                <div className={`p-4 rounded-xl flex items-center justify-between border ${
+                  theme === 'industrial' ? 'bg-slate-950/40 border-slate-800/80' :
+                  theme === 'high-density' ? 'border-[#141414]/30 bg-[#EBEAE8]' :
+                  'bg-indigo-50/40 border-indigo-100/60'
+                }`}>
+                  <div className="space-y-0.5">
+                    <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+                      theme === 'industrial' ? 'text-slate-400' : 'text-slate-400'
+                    }`}>
+                      Payload Summary
+                    </span>
+                    <span className="font-mono text-xs font-semibold">
+                      Gzip Compressed Payload State
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs font-bold text-indigo-600 font-mono">
+                      {Math.ceil(shareUrl.length / 1024)} KB
+                    </div>
+                    <div className={`text-[9px] font-mono font-medium ${theme === 'industrial' ? 'text-slate-500' : 'text-slate-400'}`}>
+                      URL Safe Base64
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className={`p-4 border-t flex justify-end gap-2 ${
+                theme === 'industrial' ? 'border-slate-800' :
+                theme === 'high-density' ? 'border-[#141414] bg-[#EBEAE8]' :
+                'border-slate-100 bg-slate-50'
+              }`}>
+                <button
+                  onClick={() => setIsShareModalOpen(false)}
+                  className={`px-4 py-2 text-sm font-bold rounded-xl transition-colors cursor-pointer ${
+                    theme === 'industrial' ? 'bg-slate-800 hover:bg-slate-700 text-slate-200' :
+                    theme === 'high-density' ? 'border border-[#141414] hover:bg-black/5 text-[#141414]' :
+                    'bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 shadow-sm'
+                  }`}
+                >
+                  닫기
+                </button>
               </div>
             </motion.div>
           </motion.div>
