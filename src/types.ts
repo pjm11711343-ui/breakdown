@@ -15,6 +15,7 @@ export interface SpecItem {
   remark: string;      // 비고
   originalCategory?: string; // Original classification before AI/manual changes
   excelRowIdx?: number; // Original Excel row index
+  memo?: string;       // 메모
 }
 
 export interface Project {

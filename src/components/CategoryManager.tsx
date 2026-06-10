@@ -63,7 +63,7 @@ export default function CategoryManager({ categories, onUpdate, isOpen, onClose 
               value={newCategory}
               onChange={(e) => setNewCategory(e.target.value)}
               placeholder="새 카테고리 이름 입력..."
-              className="flex-grow px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+              className="flex-grow px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-800"
               onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
             />
             <button 
@@ -86,7 +86,7 @@ export default function CategoryManager({ categories, onUpdate, isOpen, onClose 
                       type="text" 
                       value={editingValue}
                       onChange={(e) => setEditingValue(e.target.value)}
-                      className="flex-grow px-3 py-1 border border-indigo-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-200"
+                      className="flex-grow px-3 py-1 border border-indigo-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-200 text-slate-800"
                       autoFocus
                     />
                     <button onClick={saveEdit} className="p-1.5 text-green-600 hover:bg-green-50 rounded-md">

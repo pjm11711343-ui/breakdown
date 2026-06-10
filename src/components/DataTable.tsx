@@ -15,10 +15,11 @@ interface Props {
   onUpdateCategory: (id: string, category: string) => void;
   onRevertCategory: (id: string) => void;
   onUpdateCategories: (ids: string[], category: string) => void;
+  onUpdateMemo: (id: string, memo: string) => void;
   onDataLoaded: (items: SpecItem[], workbook: XLSX.WorkBook) => void;
 }
 
-export default function DataTable({ items, theme, categories, workbook, onClassify, isClassifying, onUpdateCategory, onRevertCategory, onUpdateCategories, onDataLoaded }: Props) {
+export default function DataTable({ items, theme, categories, workbook, onClassify, isClassifying, onUpdateCategory, onRevertCategory, onUpdateCategories, onUpdateMemo, onDataLoaded }: Props) {
   const [viewMode, setViewMode] = useState<'process' | 'category' | 'unclassified'>('process');
   const [showAggregated, setShowAggregated] = useState(false);
   const [sectionFilter, setSectionFilter] = useState<string>('all');
@@ -178,6 +179,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
 
       const headers = data[headerRowIndex] || [];
       let categoryColIdx = headers.findIndex(h => String(h || '').includes('자재분류'));
+      let memoColIdx = headers.findIndex(h => String(h || '').includes('메모'));
       
       // Utility helper to copy style from preceding col cell in the same row
       const copyStyleFromLeft = (r: number, targetColIdx: number) => {
@@ -207,7 +209,21 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
         }
       }
 
-      // Fill in category for each item
+      if (memoColIdx === -1) {
+        // Place it right next to categoryColIdx
+        memoColIdx = categoryColIdx + 1;
+
+        // Update header cell
+        const headerCellAddress = XLSX.utils.encode_cell({ r: headerRowIndex, c: memoColIdx });
+        worksheet[headerCellAddress] = { v: '메모', t: 's' };
+
+        const headerStyle = copyStyleFromLeft(headerRowIndex, memoColIdx);
+        if (headerStyle) {
+          worksheet[headerCellAddress].s = headerStyle;
+        }
+      }
+
+      // Fill in category and memo for each item
       items.forEach(item => {
         if (item.excelRowIdx !== undefined) {
           const cellAddress = XLSX.utils.encode_cell({ r: item.excelRowIdx, c: categoryColIdx });
@@ -217,19 +233,27 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
           if (rowStyle) {
             worksheet[cellAddress].s = rowStyle;
           }
+
+          const memoCellAddress = XLSX.utils.encode_cell({ r: item.excelRowIdx, c: memoColIdx });
+          worksheet[memoCellAddress] = { v: item.memo || '', t: 's' };
+          if (rowStyle) {
+            worksheet[memoCellAddress].s = rowStyle;
+          }
         }
       });
 
-      // Update worksheet column widths (!cols) to give '자재분류' a nice breathing room
+      // Update worksheet column widths (!cols) to give '자재분류' and '메모' nice breathing room
+      const maxColIdx = Math.max(categoryColIdx, memoColIdx);
       if (!worksheet['!cols']) worksheet['!cols'] = [];
-      while (worksheet['!cols'].length <= categoryColIdx) {
+      while (worksheet['!cols'].length <= maxColIdx) {
         worksheet['!cols'].push({ wch: 10 });
       }
       worksheet['!cols'][categoryColIdx] = { wch: 18 };
+      worksheet['!cols'][memoColIdx] = { wch: 25 };
 
       // Update sheet range if needed (XLSX usually handles this, but let's be safe)
       const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-      if (categoryColIdx > range.e.c) range.e.c = categoryColIdx;
+      if (maxColIdx > range.e.c) range.e.c = maxColIdx;
       worksheet['!ref'] = XLSX.utils.encode_range(range);
 
       XLSX.writeFile(wb, `공정분리_완료_${new Date().toISOString().slice(0, 10)}.xlsx`, {
@@ -622,6 +646,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                     <th colSpan={2} className={`${getCellPadding(true)} border-r border-b border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>노 무 비</th>
                     <th colSpan={2} className={`${getCellPadding(true)} border-r border-b border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>합 계</th>
                     <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-left bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>비 고</th>
+                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-left bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>메 모</th>
                     <th rowSpan={2} className={`${getCellPadding(true)} text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>자재 분류</th>
                   </tr>
                   <tr>
@@ -653,6 +678,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                     <th colSpan={2} className="px-6 py-2 font-semibold text-center border-r border-b border-slate-200 whitespace-nowrap">노무비</th>
                     <th colSpan={2} className="px-6 py-2 font-semibold text-center border-r border-b border-slate-200 whitespace-nowrap">합계</th>
                     <th rowSpan={2} className="px-6 py-4 font-semibold text-left border-r border-slate-200 whitespace-nowrap">비고</th>
+                    <th rowSpan={2} className="px-6 py-4 font-semibold text-left border-r border-slate-200 whitespace-nowrap">메모</th>
                     <th rowSpan={2} className="px-6 py-4 font-semibold text-center whitespace-nowrap">자재 분류</th>
                   </tr>
                   <tr>
@@ -669,7 +695,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
             <tbody className={`divide-y divide-inherit ${theme === 'high-density' ? 'font-sans' : ''}`}>
               {pageItems.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-6 py-24 text-center">
+                  <td colSpan={15} className="px-6 py-24 text-center">
                     <div className="max-w-md mx-auto">
                       {items.length === 0 ? (
                          <ExcelUpload onDataLoaded={onDataLoaded} variant="dropzone" />
@@ -770,7 +796,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                                 <td className={`${getCellPadding()} text-right font-mono text-[10px] font-bold bg-black/5 whitespace-nowrap`}>
                                   ₩{secTotal.toLocaleString()}
                                 </td>
-                                <td colSpan={2} className={`${getCellPadding()} text-center font-mono text-[9px] opacity-60`}>
+                                <td colSpan={3} className={`${getCellPadding()} text-center font-mono text-[9px] opacity-60`}>
                                   {showAggregated ? displayItems.length : secItems.length}
                                 </td>
                               </tr>
@@ -808,6 +834,23 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                                 <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/10 whitespace-nowrap text-black font-black bg-indigo-50 border-x border-indigo-200 text-[11px]`}>₩{item.unitPrice.toLocaleString()}</td>
                                 <td className={`${getCellPadding()} text-right font-mono font-bold border-r border-[#141414]/10 whitespace-nowrap text-black font-black bg-yellow-50 text-[11px]`}>₩{item.amount.toLocaleString()}</td>
                                 <td className={`${getCellPadding()} border-r border-[#141414]/5 text-slate-500 italic whitespace-nowrap text-[11px]`}>{item.remark}</td>
+                                <td className={`${getCellPadding()} border-r border-[#141414]/5 min-w-[150px]`}>
+                                  {!showAggregated ? (
+                                    <input 
+                                      type="text" 
+                                      value={item.memo || ''} 
+                                      onChange={(e) => onUpdateMemo(item.id, e.target.value)}
+                                      placeholder="메모 입력..."
+                                      className={`w-full px-2 py-1 text-xs border bg-transparent transition-all outline-none focus:ring-1 ${
+                                        theme === 'industrial' ? 'border-slate-700 focus:border-blue-500 text-slate-100 placeholder-slate-600' :
+                                        theme === 'high-density' ? 'border-gray-300 focus:border-black text-[#141414] placeholder-gray-400 font-mono text-[10px]' :
+                                        'border-slate-200 focus:border-indigo-500 rounded-lg text-slate-800 placeholder-slate-400 focus:bg-white'
+                                      }`}
+                                    />
+                                  ) : (
+                                    <span className="text-slate-400 font-mono text-xs">-</span>
+                                  )}
+                                </td>
                                   <td className="px-4 py-1 text-center whitespace-nowrap">
                                     {!showAggregated ? (
                                       <div className="flex items-center gap-1.5">
@@ -878,68 +921,81 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                           <td className={`${getCellPadding()} text-right font-mono font-black bg-black/10 whitespace-nowrap`}>
                             ₩{sectionTotal.toLocaleString()}
                           </td>
-                          <td colSpan={2} className={`${getCellPadding()} text-center font-mono font-black bg-black/10 whitespace-nowrap`}>
+                          <td colSpan={3} className={`${getCellPadding()} text-center font-mono font-black bg-black/10 whitespace-nowrap`}>
                             {sectionItems.length} ITEMS
                           </td>
                         </tr>
 
                         {/* Items under Section */}
                         {sectionItems.map((item, itemIdx) => (
-                          <motion.tr 
-                            layout
-                            key={item.id} 
-                            className={`${
-                              theme === 'high-density' 
-                               ? (selectedIds.has(item.id) ? 'bg-[#C5E0B4]' : 'bg-[#E2F0D9]') 
-                               : (selectedIds.has(item.id) ? 'bg-indigo-50/50' : 'bg-white')
-                            } transition-colors border-b border-[#141414]/10 group hover:opacity-90`}
-                          >
-                            <td className={`${getCellPadding()} text-center border-r border-[#141414]/10 whitespace-nowrap`}>
-                              <input 
-                                type="checkbox" 
-                                checked={selectedIds.has(item.id)}
-                                onChange={() => toggleOne(item.id)}
-                                className={theme === 'high-density' ? 'accent-[#141414]' : 'accent-indigo-600'}
-                              />
-                            </td>
-                          <td className={`${getCellPadding()} font-mono text-slate-900 border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[9px]' : ''}`}>
-                            {(itemIdx + 1).toString().padStart(3, '0')}
-                          </td>
-                          <td className={`${getCellPadding()} font-bold border-r border-[#141414]/10 text-slate-900 whitespace-nowrap ${theme === 'high-density' ? 'text-[10.5px]' : ''}`}>{item.name}</td>
-                          <td className={`${getCellPadding()} font-mono opacity-80 italic border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[9px]' : ''}`}>{item.specification}</td>
-                          <td className={`${getCellPadding()} text-center border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[10px]' : ''}`}>{item.unit}</td>
-                          <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[10px]' : ''}`}>{item.quantity.toLocaleString()}</td>
-                          <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-bold bg-[#F9F9F9] text-[10px]' : 'text-slate-600'}`}>₩{(item.materialUnitPrice || 0).toLocaleString()}</td>
-                          <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black text-[10px]' : 'text-slate-500'}`}>₩{(item.materialAmount || 0).toLocaleString()}</td>
-                          <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-bold bg-[#F9F9F9] text-[10px]' : 'text-slate-600'}`}>₩{(item.laborUnitPrice || 0).toLocaleString()}</td>
-                          <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black text-[10px]' : 'text-slate-500'}`}>₩{(item.laborAmount || 0).toLocaleString()}</td>
-                          <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-black bg-indigo-50 border-x border-indigo-200 text-[10.5px]' : 'text-slate-900 font-semibold'}`}>₩{item.unitPrice.toLocaleString()}</td>
-                          <td className={`${getCellPadding()} text-right font-mono font-bold border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-black bg-yellow-50 text-[11px]' : 'text-indigo-600'}`}>₩{item.amount.toLocaleString()}</td>
-                          <td className={`${getCellPadding()} border-r border-[#141414]/10 text-slate-500 italic whitespace-nowrap ${theme === 'high-density' ? 'text-[9px]' : ''}`}>{item.remark}</td>
-                            <td className="px-4 py-1 text-center whitespace-nowrap">
-                              <div className="flex items-center gap-1.5">
-                                <select 
-                                  value={item.category || ""}
-                                  onChange={(e) => onUpdateCategory(item.id, e.target.value)}
-                                  className="flex-grow p-1 bg-white/80 border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 outline-none transition-all cursor-pointer hover:border-slate-500 font-bold text-xs"
-                                >
-                                  <option value="" disabled>분류 선택</option>
-                                  {categories.map(cat => (
-                                    <option key={cat} value={cat}>{cat}</option>
-                                  ))}
-                                </select>
-                                {item.originalCategory && item.category !== item.originalCategory && (
-                                  <button
-                                    onClick={() => onRevertCategory(item.id)}
-                                    className="p-1 rounded-md bg-white border border-slate-300 text-slate-400 hover:text-indigo-600 hover:border-indigo-300 transition-all shadow-sm shrink-0"
-                                    title={`원래 분류(${item.originalCategory})로 복구`}
-                                  >
-                                    <RotateCcw className="w-3 h-3" />
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </motion.tr>
+                           <motion.tr 
+                             layout
+                             key={item.id} 
+                             className={`${
+                               theme === 'high-density' 
+                                ? (selectedIds.has(item.id) ? 'bg-[#C5E0B4]' : 'bg-[#E2F0D9]') 
+                                : (selectedIds.has(item.id) ? 'bg-indigo-50/50' : 'bg-white')
+                             } transition-colors border-b border-[#141414]/10 group hover:opacity-90`}
+                           >
+                             <td className={`${getCellPadding()} text-center border-r border-[#141414]/10 whitespace-nowrap`}>
+                               <input 
+                                 type="checkbox" 
+                                 checked={selectedIds.has(item.id)}
+                                 onChange={() => toggleOne(item.id)}
+                                 className={theme === 'high-density' ? 'accent-[#141414]' : 'accent-indigo-600'}
+                               />
+                             </td>
+                           <td className={`${getCellPadding()} font-mono text-slate-900 border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[9px]' : ''}`}>
+                             {(itemIdx + 1).toString().padStart(3, '0')}
+                           </td>
+                           <td className={`${getCellPadding()} font-bold border-r border-[#141414]/10 text-slate-900 whitespace-nowrap ${theme === 'high-density' ? 'text-[10.5px]' : ''}`}>{item.name}</td>
+                           <td className={`${getCellPadding()} font-mono opacity-80 italic border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[9px]' : ''}`}>{item.specification}</td>
+                           <td className={`${getCellPadding()} text-center border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[10px]' : ''}`}>{item.unit}</td>
+                           <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[10px]' : ''}`}>{item.quantity.toLocaleString()}</td>
+                           <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-bold bg-[#F9F9F9] text-[10px]' : 'text-slate-600'}`}>₩{(item.materialUnitPrice || 0).toLocaleString()}</td>
+                           <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black text-[10px]' : 'text-slate-500'}`}>₩{(item.materialAmount || 0).toLocaleString()}</td>
+                           <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-bold bg-[#F9F9F9] text-[10px]' : 'text-slate-600'}`}>₩{(item.laborUnitPrice || 0).toLocaleString()}</td>
+                           <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black text-[10px]' : 'text-slate-500'}`}>₩{(item.laborAmount || 0).toLocaleString()}</td>
+                           <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-black bg-indigo-50 border-x border-indigo-200 text-[10.5px]' : 'text-slate-900 font-semibold'}`}>₩{item.unitPrice.toLocaleString()}</td>
+                           <td className={`${getCellPadding()} text-right font-mono font-bold border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-black bg-yellow-50 text-[11px]' : 'text-indigo-600'}`}>₩{item.amount.toLocaleString()}</td>
+                           <td className={`${getCellPadding()} border-r border-[#141414]/10 text-slate-500 italic whitespace-nowrap ${theme === 'high-density' ? 'text-[9px]' : ''}`}>{item.remark}</td>
+                           <td className={`${getCellPadding()} border-r border-[#141414]/10 min-w-[150px]`}>
+                             <input 
+                               type="text" 
+                               value={item.memo || ''} 
+                               onChange={(e) => onUpdateMemo(item.id, e.target.value)}
+                               placeholder="메모 입력..."
+                               className={`w-full px-2 py-1 text-xs border bg-transparent transition-all outline-none focus:ring-1 ${
+                                 theme === 'industrial' ? 'border-slate-700 focus:border-blue-500 text-slate-100 placeholder-slate-600' :
+                                 theme === 'high-density' ? 'border-gray-300 focus:border-black text-[#141414] placeholder-gray-400 font-mono text-[10px]' :
+                                 'border-slate-200 focus:border-indigo-500 rounded-lg text-slate-800 placeholder-slate-400 focus:bg-white'
+                               }`}
+                             />
+                           </td>
+                             <td className="px-4 py-1 text-center whitespace-nowrap">
+                               <div className="flex items-center gap-1.5">
+                                 <select 
+                                   value={item.category || ""}
+                                   onChange={(e) => onUpdateCategory(item.id, e.target.value)}
+                                   className="flex-grow p-1 bg-white/80 border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 outline-none transition-all cursor-pointer hover:border-slate-500 font-bold text-xs"
+                                 >
+                                   <option value="" disabled>분류 선택</option>
+                                   {categories.map(cat => (
+                                     <option key={cat} value={cat}>{cat}</option>
+                                   ))}
+                                 </select>
+                                 {item.originalCategory && item.category !== item.originalCategory && (
+                                   <button
+                                     onClick={() => onRevertCategory(item.id)}
+                                     className="p-1 rounded-md bg-white border border-slate-300 text-slate-400 hover:text-indigo-600 hover:border-indigo-300 transition-all shadow-sm shrink-0"
+                                     title={`원래 분류(${item.originalCategory})로 복구`}
+                                   >
+                                     <RotateCcw className="w-3 h-3" />
+                                   </button>
+                                 )}
+                               </div>
+                             </td>
+                           </motion.tr>
                         ))}
                       </React.Fragment>
                     );
@@ -956,7 +1012,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                   <td className="px-6 py-4 text-right font-mono text-base font-black border-r border-white/10">
                     ₩{pageItems.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}
                   </td>
-                  <td colSpan={2} className="px-6 py-4 bg-white/5"></td>
+                  <td colSpan={3} className="px-6 py-4 bg-white/5"></td>
                 </tr>
               </tfoot>
             )}

@@ -203,7 +203,7 @@ export default function ProjectSiteManager({ projects, currentProjectName, theme
                   onChange={(e) => setNewName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSave()}
                   placeholder="예: 과천 지식정보타운 아파트 공사"
-                  className={`w-full px-4 py-3 text-sm font-bold border focus:ring-0 outline-none transition-all ${
+                  className={`w-full px-4 py-3 text-sm font-bold border focus:ring-0 outline-none transition-all text-slate-900 ${
                     isHighDensity ? 'border-[#141414] rounded-none focus:bg-yellow-50' : 'border-slate-200 rounded-xl focus:border-indigo-500'
                   }`}
                 />

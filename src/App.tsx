@@ -62,7 +62,8 @@ const FIELD_MAP: Record<string, string> = {
   section: 't',
   remark: 'r',
   originalCategory: 'o',
-  excelRowIdx: 'x'
+  excelRowIdx: 'x',
+  memo: 'mo'
 };
 
 const REVERSE_FIELD_MAP: Record<string, string> = Object.fromEntries(
@@ -563,6 +564,12 @@ export default function App() {
     showNotification(`${ids.length}개 항목의 카테고리가 '${newCategory}'(으)로 변경되었습니다.`, 'success');
   };
 
+  const handleUpdateMemo = (id: string, newMemo: string) => {
+    setItems(prev => prev.map(item => 
+      item.id === id ? { ...item, memo: newMemo } : item
+    ));
+  };
+
   const handleDataLoaded = (newItems: SpecItem[], wb: XLSX.WorkBook) => {
     // Apply automatic classification based on rules immediately upon upload
     const classifiedItems = newItems.map(item => {
@@ -592,9 +599,10 @@ export default function App() {
       const exportData = items.map(item => ({
         '현장/공종': item.section,
         '품명': item.name,
-        '규격': item.spec,
+        '규격': item.specification || item.spec,
         '단위': item.unit,
         '수량': item.quantity,
+        '메모': item.memo || '',
         '비고': item.remark,
         '분류': item.category
       }));
@@ -611,6 +619,7 @@ export default function App() {
         { wch: 30 }, // 규격
         { wch: 10 }, // 단위
         { wch: 10 }, // 수량
+        { wch: 25 }, // 메모
         { wch: 25 }, // 비고
         { wch: 15 }, // 분류
       ];
@@ -1273,6 +1282,7 @@ export default function App() {
                     onUpdateCategory={handleUpdateCategory}
                     onRevertCategory={handleRevertCategory}
                     onUpdateCategories={handleUpdateCategories}
+                    onUpdateMemo={handleUpdateMemo}
                     onDataLoaded={handleDataLoaded}
                   />
                 </>
