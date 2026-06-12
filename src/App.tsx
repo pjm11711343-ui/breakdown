@@ -37,7 +37,7 @@ const SAMPLE_ITEMS: SpecItem[] = [
   // 옥외배관공사
   { id: 'bw-1', name: 'STS 유니온 (나사)', specification: 'D 40', unit: 'EA', quantity: 1, materialUnitPrice: 14010, materialAmount: 14010, laborUnitPrice: 0, laborAmount: 0, unitPrice: 14010, amount: 14010, category: 'STS위생부속', section: '010102 옥외배관공사', remark: '' },
   { id: 'bw-2', name: 'STS 니플 (나사)', specification: 'D 40', unit: 'EA', quantity: 3, materialUnitPrice: 0, materialAmount: 0, laborUnitPrice: 0, laborAmount: 0, unitPrice: 0, amount: 0, category: '지금자재', section: '010102 옥외배관공사', remark: '지급자재' },
-  { id: 'bw-3', name: 'STS 후렌지접합', specification: 'D 40', unit: '개소', quantity: 1, materialUnitPrice: 0, materialAmount: 0, laborUnitPrice: 22620, laborAmount: 22620, unitPrice: 22620, amount: 22620, category: 'STS위생부속', section: '010102 옥외배관공사', remark: '' },
+  { id: 'bw-3', name: 'STS 후렌지접합', specification: 'D 40', unit: '개소', quantity: 1, materialUnitPrice: 0, materialAmount: 0, laborUnitPrice: 22620, laborAmount: 22620, unitPrice: 0, amount: 0, category: '미분류', section: '010102 옥외배관공사', remark: '' },
   
   // 기계실배관공사
   { id: 'ms-1', name: 'STS 엘보 (SR)', specification: 'D 25', unit: 'EA', quantity: 32, materialUnitPrice: 2769, materialAmount: 88608, laborUnitPrice: 0, laborAmount: 0, unitPrice: 2769, amount: 88608, category: 'STS위생부속', section: '01010401 기계실배관공사', remark: '에폭시코팅' },

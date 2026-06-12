@@ -27,6 +27,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [density, setDensity] = useState<number>(2); // 1 to 5 scale
   const [showUnclassifiedOnly, setShowUnclassifiedOnly] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   const uniqueSections = useMemo(() => {
     const sections = new Set<string>();
@@ -43,20 +44,32 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
         (categoryFilter === '미분류' && (!item.category || item.category === '미분류')) ||
         item.category === categoryFilter;
       const matchesUnclassifiedOnly = !showUnclassifiedOnly || (!item.category || item.category === '미분류');
-      return matchesSection && matchesCategory && matchesUnclassifiedOnly;
+      
+      const query = searchQuery.trim().toLowerCase();
+      const matchesSearch = !query || 
+        (item.name && item.name.toLowerCase().includes(query)) ||
+        (item.specification && item.specification.toLowerCase().includes(query));
+
+      return matchesSection && matchesCategory && matchesUnclassifiedOnly && matchesSearch;
     });
-  }, [items, sectionFilter, categoryFilter, showUnclassifiedOnly]);
+  }, [items, sectionFilter, categoryFilter, showUnclassifiedOnly, searchQuery]);
 
   const pageItems = useMemo(() => {
     if (viewMode === 'unclassified') {
       return items.filter(item => {
         const isUnclassified = !item.category || item.category === '미분류';
         const matchesSection = sectionFilter === 'all' || item.section === sectionFilter;
-        return isUnclassified && matchesSection;
+        
+        const query = searchQuery.trim().toLowerCase();
+        const matchesSearch = !query || 
+          (item.name && item.name.toLowerCase().includes(query)) ||
+          (item.specification && item.specification.toLowerCase().includes(query));
+
+        return isUnclassified && matchesSection && matchesSearch;
       });
     }
     return filteredItems;
-  }, [items, viewMode, filteredItems, sectionFilter]);
+  }, [items, viewMode, filteredItems, sectionFilter, searchQuery]);
 
   const unclassifiedCount = useMemo(() => {
     return items.filter(item => !item.category || item.category === '미분류').length;
@@ -279,6 +292,39 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
 
     return (
       <div className={`flex flex-col sm:flex-row gap-4 items-end ${theme === 'high-density' ? 'mb-2' : 'mb-4'}`}>
+        <div className="w-full sm:flex-1 sm:max-w-[240px]">
+          <label className={labelClass}>품명 / 규격 검색</label>
+          <div className="relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="품명 및 규격 실시간 검색..."
+              className={`w-full ${theme === 'high-density'
+                ? "text-[11px] font-bold uppercase p-1 bg-white border border-[#141414] focus:outline-none placeholder-gray-400"
+                : "text-xs p-2 pl-8 pr-8 bg-white border border-slate-200 rounded-md focus:ring-1 focus:ring-indigo-500 outline-none placeholder-slate-400"
+              }`}
+            />
+            {theme !== 'high-density' && (
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </span>
+            )}
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors font-bold text-xs"
+                title="검색어 지우기"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="w-full sm:flex-1 sm:max-w-[200px]">
           <label className={labelClass}>공종 필터</label>
           <select 
@@ -330,11 +376,11 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
           </button>
         </div>
 
-        {(sectionFilter !== 'all' || categoryFilter !== 'all' || showUnclassifiedOnly) && (
+        {(sectionFilter !== 'all' || categoryFilter !== 'all' || showUnclassifiedOnly || searchQuery !== '') && (
           <button 
             type="button"
-            onClick={() => { setSectionFilter('all'); setCategoryFilter('all'); setShowUnclassifiedOnly(false); }}
-            className={`flex items-center gap-1 shrink-0 ${theme === 'high-density' ? 'text-[10px] font-bold border-b border-black cursor-pointer' : 'text-xs text-indigo-600 font-medium cursor-pointer'}`}
+            onClick={() => { setSectionFilter('all'); setCategoryFilter('all'); setShowUnclassifiedOnly(false); setSearchQuery(''); }}
+            className={`flex items-center gap-1 shrink-0 ${theme === 'high-density' ? 'text-[10px] font-bold border-b border-black cursor-pointer pb-1' : 'text-xs text-indigo-600 hover:text-indigo-800 font-medium cursor-pointer pb-1'}`}
           >
             필터 초기화
           </button>

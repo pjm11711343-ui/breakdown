@@ -320,18 +320,22 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
             lPriceValue = lAmountValue / qtyValue;
           }
 
-          let priceValue = cleanNum(priceStr);
-          const amountValue = cleanNum(amountStr);
-
-          // If sub-total price is missing but we have material/labor, sum them
-          if (priceValue === 0 && (mPriceValue !== 0 || lPriceValue !== 0)) {
-            priceValue = mPriceValue + lPriceValue;
+          // Per user request: if both material and labor have unit prices, exclude labor cost
+          let finalLaborPrice = lPriceValue;
+          let finalLaborAmount = lAmountValue || (qtyValue * lPriceValue);
+          if (mPriceValue > 0 && lPriceValue > 0) {
+            finalLaborPrice = 0;
+            finalLaborAmount = 0;
           }
+
+          // Per user request, the total price (unitPrice) and total amount (amount) in the process separation breakdown should only calculate and sum material costs (재료비).
+          const priceValue = mPriceValue;
+          const amountValue = mAmountValue || (qtyValue * mPriceValue);
           // Conversely, if total price exists but material/labor unit prices are 0, and we have material/labor amounts
           // we could potentially derive unit prices if needed, but usually the Excel has them.
 
           const hasQty = qtyValue !== 0;
-          const hasPrice = priceValue !== 0 || mPriceValue !== 0 || lPriceValue !== 0;
+          const hasPrice = priceValue !== 0 || mPriceValue !== 0 || finalLaborPrice !== 0;
           const hasAmount = amountValue !== 0;
           const hasNumericData = hasQty || hasPrice || hasAmount;
 
@@ -481,8 +485,8 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
               quantity: qtyValue,
               materialUnitPrice: mPriceValue,
               materialAmount: mAmountValue || (qtyValue * mPriceValue),
-              laborUnitPrice: lPriceValue,
-              laborAmount: lAmountValue || (qtyValue * lPriceValue),
+              laborUnitPrice: finalLaborPrice,
+              laborAmount: finalLaborAmount,
               unitPrice: priceValue,
               amount: amountValue || (qtyValue * priceValue),
               category: autoCategory,
