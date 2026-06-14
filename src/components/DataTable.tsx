@@ -759,8 +759,8 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                       />
                     </th>
                     <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>No.</th>
-                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>품 명</th>
-                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>규 격</th>
+                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] bg-[#F2F2F2] text-[11px] min-w-[100px]`}>품 명</th>
+                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] bg-[#F2F2F2] text-[11px] min-w-[100px]`}>규 격</th>
                     <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>단위</th>
                     <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>수량</th>
                     <th colSpan={2} className={`${getCellPadding(true)} border-r border-b border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>재 료 비</th>
@@ -791,8 +791,8 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                       />
                     </th>
                     <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 whitespace-nowrap">번호</th>
-                    <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 whitespace-nowrap">품명</th>
-                    <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 whitespace-nowrap">규격</th>
+                    <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 min-w-[120px]">품명</th>
+                    <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 min-w-[120px]">규격</th>
                     <th rowSpan={2} className="px-4 py-4 font-semibold text-center border-r border-slate-200 whitespace-nowrap">단위</th>
                     <th rowSpan={2} className="px-4 py-4 font-semibold text-right border-r border-slate-200 whitespace-nowrap">수량</th>
                     <th colSpan={2} className="px-6 py-2 font-semibold text-center border-r border-b border-slate-200 whitespace-nowrap">재료비</th>
@@ -967,8 +967,8 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                                 <td className={`${getCellPadding()} font-mono text-slate-500 border-r border-[#141414]/5 whitespace-nowrap text-[11px]`}>
                                   {showAggregated ? `Σ${itemIdx + 1}` : (itemIdx + 1).toString().padStart(3, '0')}
                                 </td>
-                                <td className={`${getCellPadding()} font-bold border-r border-[#141414]/5 text-slate-900 whitespace-nowrap text-[11px]`}>{item.name}</td>
-                                <td className={`${getCellPadding()} font-mono opacity-80 italic border-r border-[#141414]/5 whitespace-nowrap text-[11px]`}>{item.specification}</td>
+                                <td className={`${getCellPadding()} font-bold border-r border-[#141414]/5 text-slate-900 break-words min-w-[100px] max-w-[200px] text-[11px]`}>{item.name}</td>
+                                <td className={`${getCellPadding()} font-mono opacity-80 italic border-r border-[#141414]/5 break-words min-w-[100px] max-w-[200px] text-[11px]`}>{item.specification}</td>
                                 <td className={`${getCellPadding()} text-center border-r border-[#141414]/5 whitespace-nowrap text-[11px]`}>{item.unit}</td>
                                 <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/5 whitespace-nowrap text-[11px]`}>{item.quantity.toLocaleString()}</td>
                                 <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/10 whitespace-nowrap text-black font-bold bg-[#F9F9F9] text-[11px]`}>₩{(item.materialUnitPrice || 0).toLocaleString()}</td>
@@ -1128,8 +1128,8 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                            <td className={`${getCellPadding()} font-mono text-slate-900 border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[9px]' : ''}`}>
                              {(itemIdx + 1).toString().padStart(3, '0')}
                            </td>
-                           <td className={`${getCellPadding()} font-bold border-r border-[#141414]/10 text-slate-900 whitespace-nowrap ${theme === 'high-density' ? 'text-[10.5px]' : ''}`}>{item.name}</td>
-                           <td className={`${getCellPadding()} font-mono opacity-80 italic border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[9px]' : ''}`}>{item.specification}</td>
+                           <td className={`${getCellPadding()} font-bold border-r border-[#141414]/10 text-slate-900 break-words min-w-[100px] max-w-[200px] ${theme === 'high-density' ? 'text-[10.5px]' : ''}`}>{item.name}</td>
+                           <td className={`${getCellPadding()} font-mono opacity-80 italic border-r border-[#141414]/10 break-words min-w-[100px] max-w-[200px] ${theme === 'high-density' ? 'text-[9px]' : ''}`}>{item.specification}</td>
                            <td className={`${getCellPadding()} text-center border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[10px]' : ''}`}>{item.unit}</td>
                            <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[10px]' : ''}`}>{item.quantity.toLocaleString()}</td>
                            <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-bold bg-[#F9F9F9] text-[10px]' : 'text-slate-600'}`}>₩{(item.materialUnitPrice || 0).toLocaleString()}</td>
