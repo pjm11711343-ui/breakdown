@@ -5,11 +5,15 @@
 }
 
 @layer base {
+  :root {
+    --app-font-family: "Gulim", "굴림", Dotum, "돋움", sans-serif;
+    --app-font-size: 11px;
+  }
   html {
-    font-size: 11px;
+    font-size: var(--app-font-size);
   }
   body {
-    font-family: var(--font-sans);
+    font-family: var(--app-font-family);
     font-size: 1rem;
     line-height: normal;
     -webkit-font-smoothing: antialiased;

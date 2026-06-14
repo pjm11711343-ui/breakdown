@@ -7,9 +7,10 @@ interface Props {
   items: SpecItem[];
   theme: ThemeType;
   categories: string[];
+  onCategoryClick?: (category: string) => void;
 }
 
-export default function CategorySummaryCards({ items, theme, categories }: Props) {
+export default function CategorySummaryCards({ items, theme, categories, onCategoryClick }: Props) {
   if (items.length === 0) return null;
 
   // Filter out '미분류', '외주', '열선', and '지금자재' for summary calculation
@@ -78,7 +79,10 @@ export default function CategorySummaryCards({ items, theme, categories }: Props
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-0 divide-x divide-y divide-[#141414]">
           {/* Total Summary Card */}
-          <div className="p-3 flex flex-col justify-between bg-indigo-50 hover:bg-indigo-100 transition-colors border-[#141414]">
+          <div 
+            onClick={() => onCategoryClick?.('all')}
+            className="p-3 flex flex-col justify-between bg-indigo-50 hover:bg-indigo-100 transition-colors border-[#141414] cursor-pointer"
+          >
             <div className="flex justify-between items-start mb-1">
               <span className="text-[11px] font-black text-indigo-700 uppercase">전체 합계 (TOTAL)</span>
               <span className="text-[11px] font-mono font-bold bg-indigo-600 text-white px-1">100%</span>
@@ -90,7 +94,10 @@ export default function CategorySummaryCards({ items, theme, categories }: Props
           </div>
 
           {unclassifiedCount > 0 && (
-            <div className="p-3 flex flex-col justify-between bg-[#FFF2CC] hover:bg-[#FCE4D6] transition-colors border-l-4 border-l-amber-600 border-y border-r border-[#141414]">
+            <div 
+              onClick={() => onCategoryClick?.('미분류')}
+              className="p-3 flex flex-col justify-between bg-[#FFF2CC] hover:bg-[#FCE4D6] transition-colors border-l-4 border-l-amber-600 border-y border-r border-[#141414] cursor-pointer"
+            >
               <div className="flex justify-between items-start mb-1">
                 <span className="text-[11px] font-black text-amber-800 uppercase">⚠️ 미분류 합계 (UNASSIGNED)</span>
                 <span className="text-[9px] font-mono font-bold bg-amber-600 text-white px-1">분류 대기</span>
@@ -103,7 +110,11 @@ export default function CategorySummaryCards({ items, theme, categories }: Props
           )}
 
           {finalCategories.map((cat) => (
-            <div key={cat.name} className="p-3 flex flex-col justify-between hover:bg-[#F9F9F9] transition-colors border-[#141414]">
+            <div 
+              key={cat.name} 
+              onClick={() => onCategoryClick?.(cat.name)}
+              className="p-3 flex flex-col justify-between hover:bg-[#F9F9F9] transition-colors border-[#141414] cursor-pointer"
+            >
               <div className="flex justify-between items-start mb-1">
                 <span className="text-[11px] font-black text-slate-500 uppercase truncate" title={cat.name}>{cat.name}</span>
                 <span className="text-[11px] font-mono font-bold bg-blue-100 text-blue-700 px-1 border border-blue-200">
@@ -147,7 +158,8 @@ export default function CategorySummaryCards({ items, theme, categories }: Props
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-indigo-600 p-5 rounded-2xl shadow-lg shadow-indigo-200 border border-indigo-500 relative overflow-hidden group"
+          onClick={() => onCategoryClick?.('all')}
+          className="bg-indigo-600 p-5 rounded-2xl shadow-lg shadow-indigo-200 border border-indigo-500 relative overflow-hidden group cursor-pointer"
         >
           <div className="absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 bg-white/10 rounded-full blur-2xl" />
           <div className="relative z-10 text-white">
@@ -176,7 +188,8 @@ export default function CategorySummaryCards({ items, theme, categories }: Props
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-amber-50 p-5 rounded-2xl border border-amber-200 hover:border-amber-305 hover:shadow-lg hover:-translate-y-0.5 transition-all group relative overflow-hidden border-l-4 border-l-amber-500"
+            onClick={() => onCategoryClick?.('미분류')}
+            className="bg-amber-50 p-5 rounded-2xl border border-amber-200 hover:border-amber-305 hover:shadow-lg hover:-translate-y-0.5 transition-all group relative overflow-hidden border-l-4 border-l-amber-500 cursor-pointer"
           >
             <div className="absolute top-0 right-0 w-16 h-16 -mr-4 -mt-4 bg-amber-100 rounded-full blur-2xl group-hover:bg-amber-150 transition-colors" />
             <div className="relative z-10">
@@ -216,7 +229,8 @@ export default function CategorySummaryCards({ items, theme, categories }: Props
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.03 }}
-            className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-indigo-200 hover:-translate-y-0.5 transition-all group relative overflow-hidden"
+            onClick={() => onCategoryClick?.(cat.name)}
+            className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-indigo-200 hover:-translate-y-0.5 transition-all group relative overflow-hidden cursor-pointer"
           >
             <div className="absolute top-0 right-0 w-16 h-16 -mr-4 -mt-4 bg-indigo-50 rounded-full blur-2xl group-hover:bg-indigo-100 transition-colors" />
             

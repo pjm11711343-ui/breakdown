@@ -17,14 +17,39 @@ interface Props {
   onUpdateCategories: (ids: string[], category: string) => void;
   onUpdateMemo: (id: string, memo: string) => void;
   onDataLoaded: (items: SpecItem[], workbook: XLSX.WorkBook) => void;
+  categoryFilter?: string;
+  onCategoryFilterChange?: (category: string) => void;
 }
 
-export default function DataTable({ items, theme, categories, workbook, onClassify, isClassifying, onUpdateCategory, onRevertCategory, onUpdateCategories, onUpdateMemo, onDataLoaded }: Props) {
+export default function DataTable({ items, theme, categories, workbook, onClassify, isClassifying, onUpdateCategory, onRevertCategory, onUpdateCategories, onUpdateMemo, onDataLoaded, categoryFilter = 'all', onCategoryFilterChange }: Props) {
   const [viewMode, setViewMode] = useState<'process' | 'category' | 'unclassified'>('process');
   const [showAggregated, setShowAggregated] = useState(false);
   const [sectionFilter, setSectionFilter] = useState<string>('all');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState<string>('');
+  const [isDragging, setIsDragging] = useState(false);
+
+  const startEditing = (id: string, currentCategory: string) => {
+    setEditingId(id);
+    setEditValue(currentCategory);
+  };
+
+  const saveEdit = (id: string) => {
+    if (editingId === id) {
+      onUpdateCategory(id, editValue);
+      setEditingId(null);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, id: string) => {
+    if (e.key === 'Enter') {
+      saveEdit(id);
+    } else if (e.key === 'Escape') {
+      setEditingId(null);
+    }
+  };
+  const [dragStartIdx, setDragStartIdx] = useState<number | null>(null);
   const [density, setDensity] = useState<number>(2); // 1 to 5 scale
   const [showUnclassifiedOnly, setShowUnclassifiedOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -342,7 +367,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
           <label className={labelClass}>카테고리 필터</label>
           <select 
             value={categoryFilter} 
-            onChange={(e) => setCategoryFilter(e.target.value)}
+            onChange={(e) => onCategoryFilterChange?.(e.target.value)}
             className={`w-full ${selectClass}`}
           >
             <option value="all">전체 카테고리</option>
@@ -379,7 +404,12 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
         {(sectionFilter !== 'all' || categoryFilter !== 'all' || showUnclassifiedOnly || searchQuery !== '') && (
           <button 
             type="button"
-            onClick={() => { setSectionFilter('all'); setCategoryFilter('all'); setShowUnclassifiedOnly(false); setSearchQuery(''); }}
+            onClick={() => { 
+                setSectionFilter('all'); 
+                onCategoryFilterChange?.('all'); 
+                setShowUnclassifiedOnly(false); 
+                setSearchQuery(''); 
+            }}
             className={`flex items-center gap-1 shrink-0 ${theme === 'high-density' ? 'text-[10px] font-bold border-b border-black cursor-pointer pb-1' : 'text-xs text-indigo-600 hover:text-indigo-800 font-medium cursor-pointer pb-1'}`}
           >
             필터 초기화
@@ -625,7 +655,19 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
     setSelectedIds(newSelected);
   };
 
-  const toggleOne = (id: string) => {
+  const toggleOne = (id: string, index: number, isShiftKey = false) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id) && !isDragging) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const handleMouseDown = (id: string, index: number) => {
+    setIsDragging(true);
+    setDragStartIdx(index);
     const newSelected = new Set(selectedIds);
     if (newSelected.has(id)) {
       newSelected.delete(id);
@@ -635,8 +677,41 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
     setSelectedIds(newSelected);
   };
 
+  const handleMouseEnter = (index: number) => {
+    if (isDragging && dragStartIdx !== null) {
+      const start = Math.min(dragStartIdx, index);
+      const end = Math.max(dragStartIdx, index);
+      const newSelected = new Set(selectedIds);
+      
+      // Get the items in the current view to know which ones are in range
+      const visibleItems = pageItems;
+      for (let i = start; i <= end; i++) {
+        if (visibleItems[i]) {
+          newSelected.add(visibleItems[i].id);
+        }
+      }
+      setSelectedIds(newSelected);
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+    setDragStartIdx(null);
+  };
+
+  const selectionSummary = useMemo(() => {
+    if (selectedIds.size === 0) return null;
+    const selectedItems = items.filter(i => selectedIds.has(i.id));
+    return {
+      material: selectedItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0),
+      labor: selectedItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0),
+      total: selectedItems.reduce((sum, i) => sum + (i.amount || 0), 0),
+      count: selectedItems.length
+    };
+  }, [selectedIds, items]);
+
   return (
-    <div className={`flex flex-col ${theme === 'high-density' ? 'flex-grow overflow-hidden' : 'gap-0'}`}>
+    <div className={`flex flex-col ${theme === 'high-density' ? 'flex-grow overflow-hidden' : 'gap-0'}`} onMouseUp={handleMouseUp}>
       {renderToolBar()}
 
       {viewMode === 'unclassified' && (
@@ -750,7 +825,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                           <Filter className="w-12 h-12 opacity-20" />
                           <p>선택한 필터 조건에 맞는 항목이 없습니다.</p>
                           <button 
-                            onClick={() => { setSectionFilter('all'); setCategoryFilter('all'); }}
+                            onClick={() => { setSectionFilter('all'); onCategoryFilterChange?.('all'); }}
                             className="text-indigo-600 font-medium hover:underline mt-2"
                           >
                             모든 필터 초기화
@@ -773,8 +848,10 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                   });
 
                   return Object.entries(itemsByCategory).sort().map(([catName, sections], catIdx) => {
-                    const catTotal = Object.values(sections).flat().reduce((sum, i) => sum + i.amount, 0);
                     const catItems = Object.values(sections).flat();
+                    const catMaterialTotal = catItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0);
+                    const catLaborTotal = catItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0);
+                    const catTotal = catItems.reduce((sum, i) => sum + i.amount, 0);
                     
                     return (
                       <React.Fragment key={catName}>
@@ -791,19 +868,29 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                           <td className={`${getCellPadding()} font-mono font-black border-r border-white/20 whitespace-nowrap`}>
                             CAT {catIdx + 1}
                           </td>
-                          <td colSpan={9} className={`${getCellPadding()} font-black uppercase tracking-widest border-r border-white/20 whitespace-nowrap text-xs`}>
+                          <td colSpan={5} className={`${getCellPadding()} font-black uppercase tracking-widest border-r border-white/20 whitespace-nowrap text-xs`}>
                             [분류] {catName}
                           </td>
-                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/10 whitespace-nowrap`}>
+                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/10 whitespace-nowrap text-xs border-r border-white/20`}>
+                            ₩{catMaterialTotal.toLocaleString()}
+                          </td>
+                          <td className={`${getCellPadding()} border-r border-white/10 bg-black/5`}></td>
+                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/10 whitespace-nowrap text-xs border-r border-white/20`}>
+                            ₩{catLaborTotal.toLocaleString()}
+                          </td>
+                          <td className={`${getCellPadding()} border-r border-white/10 bg-black/5`}></td>
+                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/20 whitespace-nowrap text-xs`}>
                             ₩{catTotal.toLocaleString()}
                           </td>
-                          <td colSpan={2} className={`${getCellPadding()} text-center font-mono font-black bg-black/10 whitespace-nowrap`}>
+                          <td colSpan={3} className={`${getCellPadding()} text-center font-mono font-black bg-black/10 whitespace-nowrap text-[10px]`}>
                             {catItems.length} ITEMS
                           </td>
                         </tr>
 
                         {/* Sub-grouping by Section within Category */}
                         {Object.entries(sections).sort().map(([secName, secItems], secIdx) => {
+                          const secMaterialTotal = secItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0);
+                          const secLaborTotal = secItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0);
                           const secTotal = secItems.reduce((sum, i) => sum + i.amount, 0);
                           
                           let displayItems = secItems;
@@ -836,9 +923,17 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                                 <td className={`${getCellPadding()} font-mono text-[9px] font-bold border-r border-[#141414]/10 whitespace-nowrap`}>
                                   {catIdx + 1}-{secIdx + 1}
                                 </td>
-                                <td colSpan={9} className={`${getCellPadding()} font-bold text-[10px] italic border-r border-[#141414]/10 whitespace-nowrap`}>
+                                <td colSpan={5} className={`${getCellPadding()} font-bold text-[10px] italic border-r border-[#141414]/10 whitespace-nowrap`}>
                                    └ {secName} {showAggregated ? '(품목 집계됨)' : ''}
                                 </td>
+                                <td className={`${getCellPadding()} text-right font-mono text-[9px] font-bold bg-black/5 whitespace-nowrap border-r border-[#141414]/10`}>
+                                  ₩{secMaterialTotal.toLocaleString()}
+                                </td>
+                                <td className={`${getCellPadding()} border-r border-[#141414]/5`}></td>
+                                <td className={`${getCellPadding()} text-right font-mono text-[9px] font-bold bg-black/5 whitespace-nowrap border-r border-[#141414]/10`}>
+                                  ₩{secLaborTotal.toLocaleString()}
+                                </td>
+                                <td className={`${getCellPadding()} border-r border-[#141414]/5`}></td>
                                 <td className={`${getCellPadding()} text-right font-mono text-[10px] font-bold bg-black/5 whitespace-nowrap`}>
                                   ₩{secTotal.toLocaleString()}
                                 </td>
@@ -850,19 +945,22 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                                 <motion.tr 
                                   layout
                                   key={item.id} 
+                                  onMouseDown={() => handleMouseDown(item.id, itemIdx)}
+                                  onMouseEnter={() => handleMouseEnter(itemIdx)}
                                   className={`${
                                     theme === 'high-density' 
                                      ? (selectedIds.has(item.id) ? 'bg-[#C5E0B4]' : 'bg-white') 
                                      : (selectedIds.has(item.id) ? 'bg-indigo-50/50' : 'bg-white')
-                                  } transition-colors border-b border-[#141414]/5 group hover:bg-slate-50 ${showAggregated ? 'bg-orange-50/20' : ''}`}
+                                  } transition-colors border-b border-[#141414]/5 group hover:bg-slate-50 ${showAggregated ? 'bg-orange-50/20' : ''} select-none ${selectedIds.has(item.id) ? 'shadow-[inset_4px_0_0_0_#4f46e5]' : ''}`}
                                 >
                                   <td className={`${getCellPadding()} text-center border-r border-[#141414]/5 whitespace-nowrap`}>
                                     {!showAggregated && (
                                       <input 
                                         type="checkbox" 
                                         checked={selectedIds.has(item.id)}
-                                        onChange={() => toggleOne(item.id)}
+                                        onChange={() => toggleOne(item.id, itemIdx)}
                                         className={theme === 'high-density' ? 'accent-[#141414]' : 'accent-indigo-600'}
+                                        onClick={(e) => e.stopPropagation()}
                                       />
                                     )}
                                   </td>
@@ -899,25 +997,48 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                                 </td>
                                   <td className="px-4 py-1 text-center whitespace-nowrap">
                                     {!showAggregated ? (
-                                      <div className="flex items-center gap-1.5">
-                                        <select 
-                                          value={item.category || ""}
-                                          onChange={(e) => onUpdateCategory(item.id, e.target.value)}
-                                          className="flex-grow p-1 bg-white/80 border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 outline-none transition-all cursor-pointer hover:border-slate-500 font-bold text-xs"
-                                        >
-                                          <option value="" disabled>분류 선택</option>
-                                          {categories.map(cat => (
-                                            <option key={cat} value={cat}>{cat}</option>
-                                          ))}
-                                        </select>
-                                        {item.originalCategory && item.category !== item.originalCategory && (
-                                          <button
-                                            onClick={() => onRevertCategory(item.id)}
-                                            className="p-1 rounded-md bg-white border border-slate-300 text-slate-400 hover:text-indigo-600 hover:border-indigo-300 transition-all shadow-sm shrink-0"
-                                            title={`원래 분류(${item.originalCategory})로 복구`}
-                                          >
-                                            <RotateCcw className="w-3 h-3" />
-                                          </button>
+                                      <div 
+                                        className="flex items-center justify-center gap-1 cursor-pointer group"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          startEditing(item.id, item.category || '');
+                                        }}
+                                      >
+                                        {editingId === item.id ? (
+                                          <input
+                                            autoFocus
+                                            type="text"
+                                            list="category-suggestions"
+                                            value={editValue}
+                                            onChange={(e) => setEditValue(e.target.value)}
+                                            onBlur={() => saveEdit(item.id)}
+                                            onKeyDown={(e) => handleKeyDown(e, item.id)}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="w-[100px] p-1 bg-white border border-indigo-500 rounded text-[10px] text-center font-bold outline-none ring-2 ring-indigo-100"
+                                          />
+                                        ) : (
+                                          <>
+                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                              !item.category || item.category === '미분류' 
+                                                ? 'bg-amber-100 text-amber-700' 
+                                                : 'bg-indigo-100 text-indigo-700'
+                                            }`}>
+                                              {item.category || '미분류'}
+                                            </span>
+                                            <span className="opacity-0 group-hover:opacity-100 text-indigo-400 text-[10px]">✎</span>
+                                            {item.originalCategory && item.category !== item.originalCategory && (
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  onRevertCategory(item.id);
+                                                }}
+                                                className="p-1 rounded-md bg-white border border-slate-300 text-slate-400 hover:text-indigo-600 hover:border-indigo-300 transition-all shadow-sm shrink-0 opacity-0 group-hover:opacity-100"
+                                                title={`원래 분류(${item.originalCategory})로 복구`}
+                                              >
+                                                <RotateCcw className="w-3 h-3" />
+                                              </button>
+                                            )}
+                                          </>
                                         )}
                                       </div>
                                     ) : (
@@ -944,6 +1065,8 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                   });
 
                   return Object.entries(sections).map(([sectionName, sectionItems], sectionIdx) => {
+                    const partMaterialTotal = sectionItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0);
+                    const partLaborTotal = sectionItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0);
                     const sectionTotal = sectionItems.reduce((sum, i) => sum + i.amount, 0);
                     
                     return (
@@ -961,10 +1084,18 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                           <td className={`${getCellPadding()} font-mono font-black border-r border-white/20 whitespace-nowrap`}>
                             PART {sectionIdx + 1}
                           </td>
-                          <td colSpan={9} className={`${getCellPadding()} font-black uppercase tracking-widest border-r border-white/20 whitespace-nowrap`}>
+                          <td colSpan={5} className={`${getCellPadding()} font-black uppercase tracking-widest border-r border-white/20 whitespace-nowrap text-xs`}>
                             {sectionName}
                           </td>
-                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/10 whitespace-nowrap`}>
+                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/10 whitespace-nowrap text-[11px] border-r border-white/20`}>
+                            ₩{partMaterialTotal.toLocaleString()}
+                          </td>
+                          <td className={`${getCellPadding()} border-r border-white/10 bg-black/5`}></td>
+                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/10 whitespace-nowrap text-[11px] border-r border-white/20`}>
+                            ₩{partLaborTotal.toLocaleString()}
+                          </td>
+                          <td className={`${getCellPadding()} border-r border-white/10 bg-black/5`}></td>
+                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/20 whitespace-nowrap`}>
                             ₩{sectionTotal.toLocaleString()}
                           </td>
                           <td colSpan={3} className={`${getCellPadding()} text-center font-mono font-black bg-black/10 whitespace-nowrap`}>
@@ -977,18 +1108,21 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                            <motion.tr 
                              layout
                              key={item.id} 
+                             onMouseDown={() => handleMouseDown(item.id, itemIdx)}
+                             onMouseEnter={() => handleMouseEnter(itemIdx)}
                              className={`${
                                theme === 'high-density' 
                                 ? (selectedIds.has(item.id) ? 'bg-[#C5E0B4]' : 'bg-[#E2F0D9]') 
                                 : (selectedIds.has(item.id) ? 'bg-indigo-50/50' : 'bg-white')
-                             } transition-colors border-b border-[#141414]/10 group hover:opacity-90`}
+                             } transition-colors border-b border-[#141414]/10 group hover:opacity-90 select-none ${selectedIds.has(item.id) ? 'shadow-[inset_4px_0_0_0_#4f46e5]' : ''}`}
                            >
                              <td className={`${getCellPadding()} text-center border-r border-[#141414]/10 whitespace-nowrap`}>
                                <input 
                                  type="checkbox" 
                                  checked={selectedIds.has(item.id)}
-                                 onChange={() => toggleOne(item.id)}
+                                 onChange={() => toggleOne(item.id, itemIdx)}
                                  className={theme === 'high-density' ? 'accent-[#141414]' : 'accent-indigo-600'}
+                                 onClick={(e) => e.stopPropagation()}
                                />
                              </td>
                            <td className={`${getCellPadding()} font-mono text-slate-900 border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[9px]' : ''}`}>
@@ -1065,7 +1199,63 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
           </table>
         </div>
       </div>
+      {selectionSummary && (
+        <motion.div 
+          initial={{ y: 100, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 100, opacity: 0 }}
+          className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] w-full max-w-2xl px-4 pointer-events-none"
+        >
+          <div className="bg-[#141414] text-white rounded-2xl shadow-2xl border border-white/10 p-4 flex items-center justify-between gap-6 backdrop-blur-md bg-opacity-95 pointer-events-auto">
+            <div className="flex items-center gap-4">
+              <div className="bg-indigo-600 p-2 rounded-xl">
+                <Table className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-black uppercase opacity-60">드래그 선택 합계 ({selectionSummary.count}개 항목)</span>
+                <div className="flex gap-4">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-bold text-indigo-300">재료비 소계</span>
+                    <span className="text-sm font-black font-mono">₩{selectionSummary.material.toLocaleString()}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-bold text-amber-300">노무비 소계</span>
+                    <span className="text-sm font-black font-mono">₩{selectionSummary.labor.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="h-10 w-px bg-white/10" />
+
+            <div className="flex items-center gap-6">
+              <div className="flex flex-col items-end">
+                <span className="text-[10px] font-black uppercase opacity-60">선택 총 합계</span>
+                <span className="text-xl font-black font-mono text-green-400">₩{selectionSummary.total.toLocaleString()}</span>
+              </div>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedIds(new Set());
+                }}
+                className="p-2 hover:bg-white/10 rounded-full transition-colors text-white/60 hover:text-white cursor-pointer"
+                title="선택 해제"
+              >
+                <RotateCcw className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {renderFooter()}
+
+      {/* Category Suggestions Datalist */}
+      <datalist id="category-suggestions">
+        {categories.map(cat => (
+          <option key={cat} value={cat} />
+        ))}
+      </datalist>
     </div>
   );
 }

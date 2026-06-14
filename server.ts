@@ -39,8 +39,8 @@ async function startServer() {
         '고강도 PVC관': '고강도PVC', '고강도PVC이음관': '고강도PVC', 'DH관': '고강도PVC',
         '폴리부틸렌관': 'PB', '합성수지제가요전선관': 'PB', '소음방지링': 'PB', '실링캡': 'PB', '관말캡': 'PB', 'MP박스': 'PB',
         '일반용경질염화비닐관': 'PVC', '배수용경질염화비닐이음관': 'PVC', 'DRF-X': 'PVC', 'VENT 캡': 'PVC', 'PVC스리브': 'PVC',
-        '배관용스테인리스강관': 'STS위생관', '일반배관용스테인리스강관': 'STS위생관',
-        '일반배관용STS강관이음쇠': 'STS위생부속', '무용접스텐엘보': 'STS위생부속', '무용접스텐티이': 'STS위생부속', '무용접스텐리듀서': 'STS위생부속', '무용접스텐캡': 'STS위생부속', '무용접스텐플랜지아답타': 'STS위생부속',
+        '배관용스테인리스강관': 'STS위생관', '일반배관용스테인리스강관': 'STS위생관', 'STS 위생관': 'STS위생관',
+        '일반배관용STS강관이음쇠': 'STS위생부속', 'STS 위생부속': 'STS위생부속', '무용접스텐엘보': 'STS위생부속', '무용접스텐티이': 'STS위생부속', '무용접스텐리듀서': 'STS위생부속', '무용접스텐캡': 'STS위생부속', '무용접스텐플랜지아답타': 'STS위생부속',
         '일반행거': 'SUPPORT류', '절연행가': 'SUPPORT류', 'U자형볼트': 'SUPPORT류', '인서트플레이트': 'SUPPORT류', '달대볼트': 'SUPPORT류',
         '감압밸브': '감압변', '세대별물감압밸브': '감압변',
         '용접식관이음쇠': '강관부속', '무용접엘보': '강관부속', '무용접티이': '강관부속', '무용접플랜지아답타니플': '강관부속', '무용접고정식커플링': '강관부속', '강관용접': '강관부속', '용접합후렌지': '강관부속',
@@ -85,7 +85,7 @@ async function startServer() {
           // 2. Section Rule (Heating)
           if (item.section?.includes('난방') || item.name.includes('난방')) {
             if (category.startsWith('STS위생') || name.includes('스텐') || name.includes('STS')) {
-               category = (item.name.includes('관') || item.name.includes('파이프')) ? 'STS 난방관' : 'STS 난방부속';
+               category = (item.name.includes('관') || item.name.includes('파이프')) ? 'STS난방관' : 'STS난방부속';
             } else if (item.name.includes('분배기') || item.name.includes('온도조절') || item.name.includes('구동기') || item.name.includes('D15EA')) {
                category = '난방분배기';
             } else if (((item.name.includes('폴리부틸렌') || item.name.includes('PB')) && (item.name.includes('난방') || item.name.includes('코일'))) || (item.name.includes('난방') && item.name.includes('용'))) {
@@ -122,7 +122,7 @@ async function startServer() {
         
         분류 지침:
         - 항목 이름과 규격을 보고 가장 적절한 카테고리를 선택하세요.
-        - 난방 공사(section에 '난방' 포함)인 경우 STS 관/부속은 'STS 난방관' 또는 'STS 난방부속'으로 분류하세요.
+        - 난방 공사(section에 '난방' 포함)인 경우 STS 관/부속은 'STS난방관' 또는 'STS난방부속'으로 분류하세요.
         - 목록에 없는 카테고리는 사용하지 마세요.
         
         데이터: ${JSON.stringify(aiItems)}

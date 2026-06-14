@@ -24,9 +24,11 @@ const MAPPING_RULES: Record<string, string> = {
   '소재구': 'PVC',
   '배관용스테인리스강관': 'STS위생관',
   '일반배관용스테인리스강관': 'STS위생관',
+  'STS 위생관': 'STS위생관',
   '급수용스테인리스': 'STS위생관',
   '급탕용스테인리스': 'STS위생관',
   '일반배관용STS강관이음쇠': 'STS위생부속',
+  'STS 위생부속': 'STS위생부속',
   '스텐용접합후렌지': 'STS위생부속',
   '무용접스텐엘보': 'STS위생부속',
   '무용접스텐티이': 'STS위생부속',
@@ -308,7 +310,7 @@ export function autoClassify(item: SpecItem): { category: string; remark: string
   if (name.includes('온도조절밸브비례제어형') || name.includes('구동기비례제어형')) {
     category = '난방분배기';
   }
-  if (name.includes('강관스리브') || name.includes('PVC스리브') || name.includes('볼텍스') || name.includes('이중배관소켓')) {
+  if (name.includes('강관스리브') || name.includes('PVC스리브') || name.toLowerCase().includes('pvc스리브(벽체)') || name.includes('볼텍스') || name.includes('이중배관소켓')) {
     category = '스리브';
   }
   if (spec.includes('스리브') && !spec.includes('PB서포트스리브')) {

@@ -1,17 +1,40 @@
 import React from 'react';
 import { X, Settings, Database, Zap, Palette, Trash2, AlertTriangle } from 'lucide-react';
-import { ThemeType } from '../types';
+import { ThemeType, AppConfig } from '../types';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   theme: ThemeType;
   onThemeChange: (theme: ThemeType) => void;
+  fontFamily: string;
+  onFontFamilyChange: (font: string) => void;
+  fontSize: number;
+  onFontSizeChange: (size: number) => void;
   onResetData: () => void;
 }
 
-export default function SettingsManager({ isOpen, onClose, theme, onThemeChange, onResetData }: Props) {
+export default function SettingsManager({ 
+  isOpen, 
+  onClose, 
+  theme, 
+  onThemeChange, 
+  fontFamily,
+  onFontFamilyChange,
+  fontSize,
+  onFontSizeChange,
+  onResetData 
+}: Props) {
   if (!isOpen) return null;
+
+  const fontOptions = [
+    { name: '굴림 (Default)', value: '"Gulim", "굴림", Dotum, "돋움", sans-serif' },
+    { name: '돋움', value: 'Dotum, "돋움", sans-serif' },
+    { name: '맑은 고딕', value: '"Malgun Gothic", "맑은 고딕", sans-serif' },
+    { name: '바탕', value: 'Batang, "바탕", serif' },
+    { name: 'Inter (System)', value: '"Inter", sans-serif' },
+    { name: 'Mono (Standard)', value: '"JetBrains Mono", monospace' }
+  ];
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
@@ -60,6 +83,52 @@ export default function SettingsManager({ isOpen, onClose, theme, onThemeChange,
                   <span className="text-[11px] text-slate-400 mt-1">{t.desc}</span>
                 </button>
               ))}
+            </div>
+          </section>
+
+          {/* Typography Settings */}
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 text-slate-900">
+              <Zap className="w-5 h-5 text-indigo-600" />
+              <h3 className="font-bold underline decoration-indigo-200 decoration-4 underline-offset-4">타이포그래피 설정</h3>
+            </div>
+            
+            <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
+              {/* Font Family */}
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">글꼴 (Font Family)</label>
+                <select 
+                  value={fontFamily}
+                  onChange={(e) => onFontFamilyChange(e.target.value)}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  {fontOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Font Size */}
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">글자 크기 (Font Size)</label>
+                  <span className="text-sm font-bold text-indigo-600">{fontSize}px</span>
+                </div>
+                <input 
+                  type="range"
+                  min="8"
+                  max="16"
+                  step="0.5"
+                  value={fontSize}
+                  onChange={(e) => onFontSizeChange(parseFloat(e.target.value))}
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 font-bold mt-1">
+                  <span>작게 (8px)</span>
+                  <span>기본 (11px)</span>
+                  <span>크게 (16px)</span>
+                </div>
+              </div>
             </div>
           </section>
 

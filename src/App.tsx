@@ -70,7 +70,7 @@ const REVERSE_FIELD_MAP: Record<string, string> = Object.fromEntries(
   Object.entries(FIELD_MAP).map(([k, v]) => [v, k])
 );
 
-function minifyState(items: SpecItem[], theme: string | null, categories: string[], projectName: string) {
+function minifyState(items: SpecItem[], theme: string | null, categories: string[], projectName: string, fontFamily: string, fontSize: number) {
   const minifiedItems = items.map(item => {
     const minItem: Record<string, any> = {};
     for (const [key, value] of Object.entries(item)) {
@@ -83,6 +83,8 @@ function minifyState(items: SpecItem[], theme: string | null, categories: string
   return {
     its: minifiedItems,
     th: theme,
+    ff: fontFamily,
+    fs: fontSize,
     cats: categories,
     pName: projectName
   };
@@ -101,6 +103,8 @@ function unminifyState(minState: any) {
   return {
     items,
     theme: minState.th,
+    fontFamily: minState.ff || '"Gulim", "굴림", Dotum, "돋움", sans-serif',
+    fontSize: minState.fs || 11,
     categories: minState.cats,
     projectName: minState.pName
   };
@@ -216,6 +220,8 @@ const PROJECTS_KEY = 'mechauto_projects';
 
 export default function App() {
   const [theme, setTheme] = useState<ThemeType | null>(null);
+  const [fontFamily, setFontFamily] = useState<string>('"Gulim", "굴림", Dotum, "돋움", sans-serif');
+  const [fontSize, setFontSize] = useState<number>(11);
   const [items, setItems] = useState<SpecItem[]>([]);
   const [activeTab, setActiveTab] = useState<'list' | 'analysis'>('list');
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
@@ -226,6 +232,7 @@ export default function App() {
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   
   // Project Management State
   const [projects, setProjects] = useState<Project[]>([]);
@@ -344,17 +351,25 @@ export default function App() {
     runInitCheck();
   }, []);
 
+  // Update root styles for font
+  useEffect(() => {
+    document.documentElement.style.setProperty('--app-font-family', fontFamily);
+    document.documentElement.style.setProperty('--app-font-size', `${fontSize}px`);
+  }, [fontFamily, fontSize]);
+
   // Auto-save logic
   useEffect(() => {
     if (items.length > 0 && theme) {
       const sessionData = {
         items,
         theme,
+        fontFamily,
+        fontSize,
         timestamp: Date.now()
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
     }
-  }, [items, theme]);
+  }, [items, theme, fontFamily, fontSize]);
 
   const handleShareProject = async () => {
     if (items.length === 0) {
@@ -363,7 +378,7 @@ export default function App() {
     }
     try {
       showNotification('공유 링크 생성 중...', 'info');
-      const minState = minifyState(items, theme, categories, currentProjectName);
+      const minState = minifyState(items, theme, categories, currentProjectName, fontFamily, fontSize);
       const encoded = await compressState(minState);
       
       const shareLink = `${window.location.origin}${window.location.pathname}#share=${encoded}`;
@@ -400,6 +415,11 @@ export default function App() {
         name,
         items,
         theme: theme,
+        config: {
+          theme: theme,
+          fontFamily,
+          fontSize
+        },
         categories,
         updatedAt: Date.now()
       };
@@ -424,6 +444,10 @@ export default function App() {
     try {
       setItems(project.items || []);
       setTheme(project.theme);
+      if (project.config) {
+        setFontFamily(project.config.fontFamily || '"Gulim", "굴림", Dotum, "돋움", sans-serif');
+        setFontSize(project.config.fontSize || 11);
+      }
       setCategories(project.categories || INITIAL_CATEGORIES);
       setCurrentProjectName(project.name);
       showNotification(`현장 '${project.name}' 데이터를 불러왔습니다.`, 'info');
@@ -469,8 +493,10 @@ export default function App() {
 
   const restoreSession = () => {
     if (pendingSession) {
-      setItems(pendingSession.items);
-      setTheme(pendingSession.theme);
+      setItems((pendingSession as any).items);
+      setTheme((pendingSession as any).theme);
+      if ((pendingSession as any).fontFamily) setFontFamily((pendingSession as any).fontFamily);
+      if ((pendingSession as any).fontSize) setFontSize((pendingSession as any).fontSize);
       setIsRecoveryModalOpen(false);
       setPendingSession(null);
       showNotification('이전 작업 세션이 복구되었습니다.', 'success');
@@ -1264,6 +1290,7 @@ export default function App() {
                     items={items} 
                     theme={theme} 
                     categories={INITIAL_CATEGORIES}
+                    onCategoryClick={(cat) => setCategoryFilter(cat)}
                   />
                   {isSectionSummaryOpen && (
                     <SectionSummaryCards 
@@ -1284,6 +1311,8 @@ export default function App() {
                     onUpdateCategories={handleUpdateCategories}
                     onUpdateMemo={handleUpdateMemo}
                     onDataLoaded={handleDataLoaded}
+                    categoryFilter={categoryFilter}
+                    onCategoryFilterChange={setCategoryFilter}
                   />
                 </>
               ) : (
@@ -1302,6 +1331,10 @@ export default function App() {
                 onClose={() => setIsSettingsOpen(false)}
                 theme={theme}
                 onThemeChange={setTheme}
+                fontFamily={fontFamily}
+                onFontFamilyChange={setFontFamily}
+                fontSize={fontSize}
+                onFontSizeChange={setFontSize}
                 onResetData={() => {
                   setItems(SAMPLE_ITEMS);
                   showNotification('데이터가 초기 샘플로 복구되었습니다.', 'info');

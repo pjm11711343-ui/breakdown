@@ -23,6 +23,7 @@ export interface Project {
   name: string;
   items: SpecItem[];
   theme: ThemeType;
+  config?: AppConfig;
   categories: string[];
   updatedAt: number;
 }
@@ -31,4 +32,6 @@ export type ThemeType = 'industrial' | 'modern' | 'minimal' | 'high-density';
 
 export interface AppConfig {
   theme: ThemeType;
+  fontFamily: string;
+  fontSize: number;
 }
