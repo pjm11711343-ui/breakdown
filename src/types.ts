@@ -26,6 +26,7 @@ export interface Project {
   config?: AppConfig;
   categories: string[];
   updatedAt: number;
+  status?: 'working' | 'completed';
 }
 
 export type ThemeType = 'industrial' | 'modern' | 'minimal' | 'high-density';

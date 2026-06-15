@@ -16,7 +16,7 @@ import ExcelUpload from './components/ExcelUpload';
 import CategoryManager from './components/CategoryManager';
 import SettingsManager from './components/SettingsManager';
 import ProjectSiteManager from './components/ProjectSiteManager';
-import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X, Save } from 'lucide-react';
+import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X, Save, Lock, KeySquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 import * as XLSX from 'xlsx';
@@ -245,6 +245,12 @@ export default function App() {
   const [isManualSaveNamingOpen, setIsManualSaveNamingOpen] = useState(false);
   const [manualSaveName, setManualSaveName] = useState('');
   
+  // Completion & Locking States
+  const [isProjectLocked, setIsProjectLocked] = useState<boolean>(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState<boolean>(false);
+  const [passwordInput, setPasswordInput] = useState<string>('');
+  const [onUnlockSuccessCallback, setOnUnlockSuccessCallback] = useState<(() => void) | null>(null);
+  
   // Share Project State
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
@@ -383,7 +389,8 @@ export default function App() {
     if (isAutoSaveActive && currentProjectName && items.length > 0 && theme) {
       setIsAutoSavingIndicator(true);
       
-      const existingId = projects.find(p => p.name === currentProjectName)?.id;
+      const existingProj = projects.find(p => p.name === currentProjectName);
+      const existingId = existingProj?.id;
       const updatedProject: Project = {
         id: existingId || (Date.now().toString(36) + Math.random().toString(36).substring(2)),
         name: currentProjectName,
@@ -395,7 +402,8 @@ export default function App() {
           fontSize
         },
         categories,
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        status: existingProj?.status || (isProjectLocked ? 'completed' : 'working')
       };
 
       setProjects(prev => {
@@ -414,7 +422,7 @@ export default function App() {
       }, 700);
       return () => clearTimeout(timer);
     }
-  }, [items, theme, fontFamily, fontSize, categories, currentProjectName, isAutoSaveActive]);
+  }, [items, theme, fontFamily, fontSize, categories, currentProjectName, isAutoSaveActive, isProjectLocked]);
 
   const handleManualSave = () => {
     if (!theme) {
@@ -498,7 +506,8 @@ export default function App() {
           fontSize
         },
         categories,
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        status: projects.find(p => p.name === name)?.status || 'working'
       };
 
       setProjects(prev => {
@@ -510,7 +519,7 @@ export default function App() {
       });
 
       setCurrentProjectName(name);
-      showNotification(`현장 '${name}' 정보가 성공적으로 저장되었습니다.`, 'success');
+      showNotification(`현장 '${name}' 정보가 성공적으로 수동 저장되었습니다.`, 'success');
     } catch (e) {
       console.error('Failed to save project', e);
       showNotification('저장 중 오류가 발생했습니다. 저장공간이 부족할 수 있습니다.', 'error');
@@ -527,9 +536,111 @@ export default function App() {
       }
       setCategories(project.categories || INITIAL_CATEGORIES);
       setCurrentProjectName(project.name);
-      showNotification(`현장 '${project.name}' 데이터를 불러왔습니다.`, 'info');
+      
+      // 세로(새로) 현장 선택 시 기본적으로 완료된 내역(completed) 상태 및 수정 락 활성화
+      setIsProjectLocked(true);
+      
+      const updatedProject: Project = { 
+        ...project, 
+        status: 'completed' as const 
+      };
+
+      setProjects(prev => {
+        const updated = prev.map(p => p.id === project.id ? updatedProject : p);
+        localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        return updated;
+      });
+
+      showNotification(`현장 '${project.name}' 내역이 '내역분리 완료(수정 보호)' 상태로 로드되었습니다.`, 'success');
     } catch (e) {
       showNotification('데이터를 불러오는 중 오류가 발생했습니다.', 'error');
+    }
+  };
+
+  const handleCompleteProject = () => {
+    if (!currentProjectName) {
+      showNotification('내역분리 완료를 수행할 활성화된 현장이 없습니다.', 'error');
+      return;
+    }
+
+    setIsProjectLocked(true);
+
+    const existingProj = projects.find(p => p.name === currentProjectName);
+    if (existingProj) {
+      const updatedProj: Project = {
+        ...existingProj,
+        status: 'completed',
+        items,
+        updatedAt: Date.now()
+      };
+
+      setProjects(prev => {
+        const updated = prev.map(p => p.name === currentProjectName ? updatedProj : p)
+          .some(p => p.name === currentProjectName) ? prev.map(p => p.name === currentProjectName ? updatedProj : p) : [...prev, updatedProj];
+        localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        return updated;
+      });
+    } else {
+      const newProjId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+      const newProj: Project = {
+        id: newProjId,
+        name: currentProjectName,
+        items,
+        theme,
+        config: { theme, fontFamily, fontSize },
+        categories,
+        updatedAt: Date.now(),
+        status: 'completed'
+      };
+      setProjects(prev => {
+        const updated = [...prev, newProj];
+        localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        return updated;
+      });
+    }
+
+    showNotification('현장의 내역분리가 완료 처리되었습니다. (수정 시 비밀번호 필요)', 'success');
+  };
+
+  const checkLockAndProceed = (action: () => void) => {
+    if (isProjectLocked && currentProjectName) {
+      setOnUnlockSuccessCallback(() => action);
+      setIsPasswordModalOpen(true);
+      setPasswordInput('');
+      return false;
+    }
+    action();
+    return true;
+  };
+
+  const handleVerifyPassword = () => {
+    if (passwordInput === '4714') {
+      setIsProjectLocked(false);
+      setIsPasswordModalOpen(false);
+      showNotification('비밀번호 인증 성공! 안심 수정 모드가 활성화되었습니다.', 'success');
+      
+      if (currentProjectName) {
+        const existingProj = projects.find(p => p.name === currentProjectName);
+        if (existingProj) {
+          const updatedProj: Project = {
+            ...existingProj,
+            status: 'working',
+            updatedAt: Date.now()
+          };
+          setProjects(prev => {
+            const updated = prev.map(p => p.name === currentProjectName ? updatedProj : p);
+            localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+            return updated;
+          });
+        }
+      }
+
+      if (onUnlockSuccessCallback) {
+        onUnlockSuccessCallback();
+        setOnUnlockSuccessCallback(null);
+      }
+    } else {
+      showNotification('비밀번호가 일치하지 않습니다. 다시 입력해주세요.', 'error');
     }
   };
 
@@ -565,6 +676,7 @@ export default function App() {
     setTheme(null);
     setWorkbook(null);
     setCurrentProjectName('');
+    setIsProjectLocked(false);
     showNotification('새로운 현장 작업 공간이 준비되었습니다.', 'info');
   };
 
@@ -574,6 +686,7 @@ export default function App() {
       setTheme((pendingSession as any).theme);
       if ((pendingSession as any).fontFamily) setFontFamily((pendingSession as any).fontFamily);
       if ((pendingSession as any).fontSize) setFontSize((pendingSession as any).fontSize);
+      setIsProjectLocked(false);
       setIsRecoveryModalOpen(false);
       setPendingSession(null);
       showNotification('이전 작업 세션이 복구되었습니다.', 'success');
@@ -592,127 +705,139 @@ export default function App() {
   };
 
   const handleClassify = async () => {
-    setIsClassifying(true);
-    setClassifyProgress(0);
-    try {
-      const BATCH_SIZE = 500; // Increased batch size further to minimize requests
-      const allClassifications: any[] = [];
-      const totalItems = items.length;
-      
-      for (let i = 0; i < totalItems; i += BATCH_SIZE) {
-        const batch = items.slice(i, i + BATCH_SIZE);
-        const response = await fetch('/api/classify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            items: batch.map(bi => ({ 
-              id: bi.id, 
-              name: bi.name, 
-              specification: bi.specification,
-              materialUnitPrice: bi.materialUnitPrice,
-              laborUnitPrice: bi.laborUnitPrice,
-              section: bi.section,
-              remark: bi.remark
-            })),
-            categories
-          })
-        });
+    checkLockAndProceed(async () => {
+      setIsClassifying(true);
+      setClassifyProgress(0);
+      try {
+        const BATCH_SIZE = 500; // Increased batch size further to minimize requests
+        const allClassifications: any[] = [];
+        const totalItems = items.length;
         
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ error: 'Unknown server error' }));
-          throw new Error(errorData.message || errorData.error || `Server responded with ${response.status}`);
+        for (let i = 0; i < totalItems; i += BATCH_SIZE) {
+          const batch = items.slice(i, i + BATCH_SIZE);
+          const response = await fetch('/api/classify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              items: batch.map(bi => ({ 
+                id: bi.id, 
+                name: bi.name, 
+                specification: bi.specification,
+                materialUnitPrice: bi.materialUnitPrice,
+                laborUnitPrice: bi.laborUnitPrice,
+                section: bi.section,
+                remark: bi.remark
+              })),
+              categories
+            })
+          });
+          
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown server error' }));
+            throw new Error(errorData.message || errorData.error || `Server responded with ${response.status}`);
+          }
+          
+          const classifications = await response.json();
+          allClassifications.push(...classifications);
+          setClassifyProgress(Math.min(Math.round(((i + batch.length) / totalItems) * 100), 100));
         }
         
-        const classifications = await response.json();
-        allClassifications.push(...classifications);
-        setClassifyProgress(Math.min(Math.round(((i + batch.length) / totalItems) * 100), 100));
+        const newItems = items.map(item => {
+          const found = allClassifications.find((c: any) => c.id === item.id);
+          // Also update remark field with category name as requested by user
+          return found ? { ...item, category: found.category, remark: found.category } : item;
+        });
+        
+        setItems(newItems);
+        showNotification(`총 ${newItems.length}개의 항목이 분류되었습니다.`, 'success');
+      } catch (error: any) {
+        console.error('Classification failed:', error);
+        showNotification(error.message || '분류 중 오류가 발생했습니다.', 'error');
+      } finally {
+        setIsClassifying(false);
+        setTimeout(() => setClassifyProgress(0), 500);
       }
-      
-      const newItems = items.map(item => {
-        const found = allClassifications.find((c: any) => c.id === item.id);
-        // Also update remark field with category name as requested by user
-        return found ? { ...item, category: found.category, remark: found.category } : item;
-      });
-      
-      setItems(newItems);
-      showNotification(`총 ${newItems.length}개의 항목이 분류되었습니다.`, 'success');
-    } catch (error: any) {
-      console.error('Classification failed:', error);
-      showNotification(error.message || '분류 중 오류가 발생했습니다.', 'error');
-    } finally {
-      setIsClassifying(false);
-      setTimeout(() => setClassifyProgress(0), 500);
-    }
+    });
   };
 
   const handleUpdateCategory = (id: string, newCategory: string) => {
-    setItems(prev => prev.map(item => 
-      item.id === id ? { ...item, category: newCategory, remark: newCategory } : item
-    ));
+    checkLockAndProceed(() => {
+      setItems(prev => prev.map(item => 
+        item.id === id ? { ...item, category: newCategory, remark: newCategory } : item
+      ));
+    });
   };
 
   const handleRevertCategory = (id: string) => {
-    setItems(prev => prev.map(item => 
-      item.id === id && item.originalCategory 
-        ? { ...item, category: item.originalCategory, remark: item.originalCategory } 
-        : item
-    ));
-    showNotification('품목 분류가 원래 상태로 복구되었습니다.', 'info');
+    checkLockAndProceed(() => {
+      setItems(prev => prev.map(item => 
+        item.id === id && item.originalCategory 
+          ? { ...item, category: item.originalCategory, remark: item.originalCategory } 
+          : item
+      ));
+      showNotification('품목 분류가 원래 상태로 복구되었습니다.', 'info');
+    });
   };
 
   const handleUpdateCategories = (ids: string[], newCategory: string) => {
-    setItems(prev => prev.map(item => 
-      ids.includes(item.id) ? { ...item, category: newCategory, remark: newCategory } : item
-    ));
-    showNotification(`${ids.length}개 항목의 카테고리가 '${newCategory}'(으)로 변경되었습니다.`, 'success');
+    checkLockAndProceed(() => {
+      setItems(prev => prev.map(item => 
+        ids.includes(item.id) ? { ...item, category: newCategory, remark: newCategory } : item
+      ));
+      showNotification(`${ids.length}개 항목의 카테고리가 '${newCategory}'(으)로 변경되었습니다.`, 'success');
+    });
   };
 
   const handleUpdateMemo = (id: string, newMemo: string) => {
-    setItems(prev => prev.map(item => 
-      item.id === id ? { ...item, memo: newMemo } : item
-    ));
+    checkLockAndProceed(() => {
+      setItems(prev => prev.map(item => 
+        item.id === id ? { ...item, memo: newMemo } : item
+      ));
+    });
   };
 
   const handleUpdateSafetyAmount = (amount: number) => {
-    setItems(prev => {
-      const idx = prev.findIndex(item => item.id === 'manual-safety-item');
-      if (idx !== -1) {
-        if (amount <= 0) {
-          return prev.filter(item => item.id !== 'manual-safety-item');
+    checkLockAndProceed(() => {
+      setItems(prev => {
+        const idx = prev.findIndex(item => item.id === 'manual-safety-item');
+        if (idx !== -1) {
+          if (amount <= 0) {
+            return prev.filter(item => item.id !== 'manual-safety-item');
+          }
+          return prev.map(item => 
+            item.id === 'manual-safety-item' 
+              ? { 
+                  ...item, 
+                  materialUnitPrice: amount,
+                  materialAmount: amount, 
+                  unitPrice: amount, 
+                  amount: amount 
+                } 
+              : item
+          );
+        } else if (amount > 0) {
+          const newItem: SpecItem = {
+            id: 'manual-safety-item',
+            name: '안전장비류 (수동 입력)',
+            specification: '현장안전용품',
+            unit: '식',
+            quantity: 1,
+            materialUnitPrice: amount,
+            materialAmount: amount,
+            laborUnitPrice: 0,
+            laborAmount: 0,
+            unitPrice: amount,
+            amount: amount,
+            category: '안전장비류',
+            section: '가설 및 안전공사',
+            remark: '수동 입력'
+          };
+          return [...prev, newItem];
         }
-        return prev.map(item => 
-          item.id === 'manual-safety-item' 
-            ? { 
-                ...item, 
-                materialUnitPrice: amount,
-                materialAmount: amount, 
-                unitPrice: amount, 
-                amount: amount 
-              } 
-            : item
-        );
-      } else if (amount > 0) {
-        const newItem: SpecItem = {
-          id: 'manual-safety-item',
-          name: '안전장비류 (수동 입력)',
-          specification: '현장안전용품',
-          unit: '식',
-          quantity: 1,
-          materialUnitPrice: amount,
-          materialAmount: amount,
-          laborUnitPrice: 0,
-          laborAmount: 0,
-          unitPrice: amount,
-          amount: amount,
-          category: '안전장비류',
-          section: '가설 및 안전공사',
-          remark: '수동 입력'
-        };
-        return [...prev, newItem];
-      }
-      return prev;
+        return prev;
+      });
+      showNotification('안전장비류 수동 입력 금액이 반영되었습니다.', 'success');
     });
-    showNotification('안전장비류 수동 입력 금액이 반영되었습니다.', 'success');
   };
 
   const handleDataLoaded = (newItems: SpecItem[], wb: XLSX.WorkBook) => {
@@ -740,97 +865,230 @@ export default function App() {
     }
 
     try {
-      // Prepare data for Excel
-      const exportData = items.map(item => ({
-        '현장/공종': item.section,
-        '품명': item.name,
-        '규격': item.specification || item.spec,
-        '단위': item.unit,
-        '수량': item.quantity,
-        '메모': item.memo || '',
-        '비고': item.remark,
-        '분류': item.category
-      }));
-
-      // Create workbook and worksheet
-      const ws = XLSX.utils.json_to_sheet(exportData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "분류결과");
-
-      // Set column widths
-      ws['!cols'] = [
-        { wch: 30 }, // 현장/공종
-        { wch: 40 }, // 품명
-        { wch: 30 }, // 규격
-        { wch: 10 }, // 단위
-        { wch: 10 }, // 수량
-        { wch: 25 }, // 메모
-        { wch: 25 }, // 비고
-        { wch: 15 }, // 분류
-      ];
-
-      // Add custom styles to the newly created worksheet if we are doing direct JSON export
-      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-      for (let r = range.s.r; r <= range.e.r; r++) {
-        for (let c = range.s.c; c <= range.e.c; c++) {
-          const cellAddress = XLSX.utils.encode_cell({ r, c });
-          const cell = ws[cellAddress];
-          if (!cell) continue;
-
-          // Initialize cell style object
-          cell.s = {
-            font: { name: '맑은 고딕', sz: 10 },
-            border: {
-              top: { style: 'thin', color: { rgb: 'DDE3EA' } },
-              bottom: { style: 'thin', color: { rgb: 'DDE3EA' } },
-              left: { style: 'thin', color: { rgb: 'DDE3EA' } },
-              right: { style: 'thin', color: { rgb: 'DDE3EA' } }
-            },
-            alignment: { vertical: 'center' }
-          };
-
-          if (r === 0) {
-            // Header row formatting - Premium styling!
-            cell.s.font = { name: '맑은 고딕', sz: 11, bold: true, color: { rgb: 'FFFFFF' } };
-            cell.s.fill = { fgColor: { rgb: '2B3E50' } }; // Dark slate/denim blue
-            cell.s.alignment = { horizontal: 'center', vertical: 'center' };
-            cell.s.border = {
-              top: { style: 'medium', color: { rgb: '1A252F' } },
-              bottom: { style: 'medium', color: { rgb: '1A252F' } },
-              left: { style: 'thin', color: { rgb: '4E6174' } },
-              right: { style: 'thin', color: { rgb: '4E6174' } }
-            };
-          } else {
-            // Data row alternating backgrounds (zebra striping)
-            if (r % 2 === 0) {
-              cell.s.fill = { fgColor: { rgb: 'F9FBFD' } }; // Soft baby blue/slate tint
+      if (workbook) {
+        // High-fidelity clone of the loaded workbook preserving all original styles, formatting, merges!
+        const wb = XLSX.utils.book_new();
+        wb.Props = workbook.Props ? { ...workbook.Props } : {};
+        wb.Custprops = workbook.Custprops ? { ...workbook.Custprops } : {};
+        
+        workbook.SheetNames.forEach(name => {
+          const srcSheet = workbook.Sheets[name];
+          const tgtSheet: XLSX.WorkSheet = {};
+          
+          for (const key in srcSheet) {
+            if (Object.prototype.hasOwnProperty.call(srcSheet, key)) {
+              if (key.startsWith('!')) {
+                const val = srcSheet[key];
+                if (Array.isArray(val)) {
+                  tgtSheet[key] = val.map(item => (typeof item === 'object' && item !== null) ? { ...item } : item);
+                } else if (typeof val === 'object' && val !== null) {
+                  tgtSheet[key] = { ...val };
+                } else {
+                  tgtSheet[key] = val;
+                }
+              } else {
+                const cell = srcSheet[key];
+                if (cell && typeof cell === 'object') {
+                  const cellCopy: any = { ...cell };
+                  if (cell.s && typeof cell.s === 'object') {
+                    cellCopy.s = JSON.parse(JSON.stringify(cell.s));
+                  }
+                  tgtSheet[key] = cellCopy;
+                } else {
+                  tgtSheet[key] = cell;
+                }
+              }
             }
+          }
+          XLSX.utils.book_append_sheet(wb, tgtSheet, name);
+        });
+
+        const firstSheetName = wb.SheetNames[0];
+        const worksheet = wb.Sheets[firstSheetName];
+        
+        const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+        
+        let headerRowIndex = -1;
+        const constructionKeywords = ['품명', '규격', '수량', '단위', '단가', '금액', '명칭', '비고', '재료비', '노무비'];
+        
+        for (let i = 0; i < Math.min(data.length, 40); i++) {
+          const rowData = data[i];
+          if (!rowData || !Array.isArray(rowData)) continue;
+          const rowStr = rowData.map(c => String(c || '').replace(/\s+/g, '').toLowerCase());
+          const matches = rowStr.filter(c => constructionKeywords.some(k => c.includes(k))).length;
+          if (matches >= 2) {
+            headerRowIndex = i;
+            break;
+          }
+        }
+
+        if (headerRowIndex === -1) headerRowIndex = 0;
+
+        const headers = data[headerRowIndex] || [];
+        let categoryColIdx = headers.findIndex(h => String(h || '').includes('자재분류'));
+        let memoColIdx = headers.findIndex(h => String(h || '').includes('메모'));
+        
+        const copyStyleFromLeft = (r: number, targetColIdx: number) => {
+          for (let c = targetColIdx - 1; c >= 0; c--) {
+            const fromCellAddress = XLSX.utils.encode_cell({ r, c });
+            const fromCell = worksheet[fromCellAddress];
+            if (fromCell && fromCell.s && Object.keys(fromCell.s).length > 0) {
+              return JSON.parse(JSON.stringify(fromCell.s));
+            }
+          }
+          return null;
+        };
+
+        if (categoryColIdx === -1) {
+          const remarkIdx = headers.findIndex(h => String(h || '').includes('비고'));
+          categoryColIdx = remarkIdx !== -1 ? remarkIdx + 1 : headers.length;
+          
+          const headerCellAddress = XLSX.utils.encode_cell({ r: headerRowIndex, c: categoryColIdx });
+          worksheet[headerCellAddress] = { v: '자재분류', t: 's' };
+          
+          const headerStyle = copyStyleFromLeft(headerRowIndex, categoryColIdx);
+          if (headerStyle) {
+            worksheet[headerCellAddress].s = headerStyle;
+          }
+        }
+
+        if (memoColIdx === -1) {
+          memoColIdx = categoryColIdx + 1;
+
+          const headerCellAddress = XLSX.utils.encode_cell({ r: headerRowIndex, c: memoColIdx });
+          worksheet[headerCellAddress] = { v: '메모', t: 's' };
+
+          const headerStyle = copyStyleFromLeft(headerRowIndex, memoColIdx);
+          if (headerStyle) {
+            worksheet[headerCellAddress].s = headerStyle;
+          }
+        }
+
+        items.forEach(item => {
+          if (item.excelRowIdx !== undefined) {
+            const cellAddress = XLSX.utils.encode_cell({ r: item.excelRowIdx, c: categoryColIdx });
+            worksheet[cellAddress] = { v: item.category || '', t: 's' };
             
-            // Text alignment styles based on the column purpose
-            if (c === 0 || c === 3 || c === 6) { // '현장/공종', '단위', '분류' 
+            const rowStyle = copyStyleFromLeft(item.excelRowIdx, categoryColIdx);
+            if (rowStyle) {
+              worksheet[cellAddress].s = rowStyle;
+            }
+
+            const memoCellAddress = XLSX.utils.encode_cell({ r: item.excelRowIdx, c: memoColIdx });
+            worksheet[memoCellAddress] = { v: item.memo || '', t: 's' };
+            if (rowStyle) {
+              worksheet[memoCellAddress].s = rowStyle;
+            }
+          }
+        });
+
+        const maxColIdx = Math.max(categoryColIdx, memoColIdx);
+        if (!worksheet['!cols']) worksheet['!cols'] = [];
+        while (worksheet['!cols'].length <= maxColIdx) {
+          worksheet['!cols'].push({ wch: 10 });
+        }
+        worksheet['!cols'][categoryColIdx] = { wch: 18 };
+        worksheet['!cols'][memoColIdx] = { wch: 25 };
+
+        const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+        if (maxColIdx > range.e.c) range.e.c = maxColIdx;
+        worksheet['!ref'] = XLSX.utils.encode_range(range);
+
+        const fileName = currentProjectName 
+          ? `공정분리_완료_${currentProjectName}_${new Date().toISOString().slice(0, 10)}.xlsx`
+          : `공정분리_완료_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+        XLSX.writeFile(wb, fileName, {
+          cellStyles: true,
+          cellNF: true,
+          bookSST: false,
+          sheetStubs: true
+        } as any);
+        showNotification('내역 양식이 보존된 결과 파일이 다운로드되었습니다.', 'success');
+      } else {
+        // Fallback: Generate custom premium sheet
+        const exportData = items.map(item => ({
+          '현장/공종': item.section,
+          '품명': item.name,
+          '규격': item.specification || item.spec,
+          '단위': item.unit,
+          '수량': item.quantity,
+          '메모': item.memo || '',
+          '비고': item.remark,
+          '분류': item.category
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "분류결과");
+
+        ws['!cols'] = [
+          { wch: 30 }, // 현장/공종
+          { wch: 40 }, // 품명
+          { wch: 30 }, // 규격
+          { wch: 10 }, // 단위
+          { wch: 10 }, // 수량
+          { wch: 25 }, // 메모
+          { wch: 25 }, // 비고
+          { wch: 15 }, // 분류
+        ];
+
+        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+        for (let r = range.s.r; r <= range.e.r; r++) {
+          for (let c = range.s.c; c <= range.e.c; c++) {
+            const cellAddress = XLSX.utils.encode_cell({ r, c });
+            const cell = ws[cellAddress];
+            if (!cell) continue;
+
+            cell.s = {
+              font: { name: '맑은 고딕', sz: 10 },
+              border: {
+                top: { style: 'thin', color: { rgb: 'DDE3EA' } },
+                bottom: { style: 'thin', color: { rgb: 'DDE3EA' } },
+                left: { style: 'thin', color: { rgb: 'DDE3EA' } },
+                right: { style: 'thin', color: { rgb: 'DDE3EA' } }
+              },
+              alignment: { vertical: 'center' }
+            };
+
+            if (r === 0) {
+              cell.s.font = { name: '맑은 고딕', sz: 11, bold: true, color: { rgb: 'FFFFFF' } };
+              cell.s.fill = { fgColor: { rgb: '2B3E50' } };
               cell.s.alignment = { horizontal: 'center', vertical: 'center' };
-            } else if (c === 4) { // '수량'
-              cell.s.alignment = { horizontal: 'right', vertical: 'center' };
-              cell.z = '#,##0'; // format string
-            } else { // '품명', '규격', '비고'
-              cell.s.alignment = { horizontal: 'left', vertical: 'center' };
+              cell.s.border = {
+                top: { style: 'medium', color: { rgb: '1A252F' } },
+                bottom: { style: 'medium', color: { rgb: '1A252F' } },
+                left: { style: 'thin', color: { rgb: '4E6174' } },
+                right: { style: 'thin', color: { rgb: '4E6174' } }
+              };
+            } else {
+              if (r % 2 === 0) {
+                cell.s.fill = { fgColor: { rgb: 'F9FBFD' } };
+              }
+              if (c === 0 || c === 3 || c === 6) {
+                cell.s.alignment = { horizontal: 'center', vertical: 'center' };
+              } else if (c === 4) {
+                cell.s.alignment = { horizontal: 'right', vertical: 'center' };
+                cell.z = '#,##0';
+              } else {
+                cell.s.alignment = { horizontal: 'left', vertical: 'center' };
+              }
             }
           }
         }
-      }
 
-      // Download file
-      const fileName = currentProjectName 
-        ? `분류결과_${currentProjectName}_${new Date().toISOString().slice(0, 10)}.xlsx`
-        : `분류결과_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      
-      XLSX.writeFile(wb, fileName, {
-        cellStyles: true,
-        cellNF: true,
-        bookSST: false,
-        sheetStubs: true
-      } as any);
-      showNotification('결과 파일이 다운로드되었습니다.', 'success');
+        const fileName = currentProjectName 
+          ? `분류결과_${currentProjectName}_${new Date().toISOString().slice(0, 10)}.xlsx`
+          : `분류결과_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        
+        XLSX.writeFile(wb, fileName, {
+          cellStyles: true,
+          cellNF: true,
+          bookSST: false,
+          sheetStubs: true
+        } as any);
+        showNotification('결과 파일이 다운로드되었습니다.', 'success');
+      }
     } catch (e) {
       console.error('Export failed', e);
       showNotification('파일 생성 중 오류가 발생했습니다.', 'error');
@@ -857,10 +1115,73 @@ export default function App() {
               onNew={handleNewProject}
             />
 
+            {/* 실시간 자동 저장 스위치 및 상태 지시등 (High Density) */}
+            <div className="flex items-center gap-3 bg-white/5 px-2.5 py-1 rounded border border-white/10" id="hd-autosave-panel">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextVal = !isAutoSaveActive;
+                    setIsAutoSaveActive(nextVal);
+                    showNotification(nextVal ? '실시간 자동 저장이 활성화되었습니다.' : '실시간 자동 저장이 비활성화되었습니다.', 'info');
+                  }}
+                  className={`relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border border-white/20 transition-colors duration-200 ease-in-out focus:outline-none ${
+                    isAutoSaveActive ? 'bg-emerald-600' : 'bg-zinc-700'
+                  }`}
+                  title="실시간 자동 저장 켜기/끄기"
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow transition duration-200 ease-in-out mt-[1px] ${
+                      isAutoSaveActive ? 'translate-x-3.5' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+                <span className="text-[10px] text-zinc-300 font-mono select-none">자동 저장</span>
+              </div>
+              {currentProjectName && (
+                <div className="hidden sm:flex items-center gap-1 text-[9px] text-emerald-400 font-mono pl-1.5 border-l border-white/10">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isAutoSaveActive && isAutoSavingIndicator ? 'bg-amber-400 animate-pulse' : (isAutoSaveActive ? 'bg-emerald-400' : 'bg-zinc-500')}`} />
+                  <span>{isAutoSaveActive ? (lastAutoSavedTime ? `완료 (${lastAutoSavedTime})` : '활성화됨') : '꺼짐'}</span>
+                </div>
+              )}
+            </div>
+
+            {/* 내역분리 완료 제어부 (High Density) */}
             {currentProjectName && (
-              <div className="hidden xl:flex items-center gap-1.5 text-[9px] bg-emerald-950/60 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 font-mono">
-                <span className={`w-1.5 h-1.5 rounded-full ${isAutoSavingIndicator ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
-                <span>실시간 저장 {lastAutoSavedTime ? `완료 (${lastAutoSavedTime})` : '활성화'}</span>
+              <div className="flex items-center gap-2 bg-white/5 px-2.5 py-1 rounded border border-white/10" id="hd-completion-panel">
+                {isProjectLocked ? (
+                  <>
+                    <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1 font-mono">
+                      🔒 내역분리 완료
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOnUnlockSuccessCallback(null);
+                        setIsPasswordModalOpen(true);
+                        setPasswordInput('');
+                      }}
+                      className="px-1.5 py-0.5 bg-amber-600 hover:bg-amber-500 text-[9px] font-bold rounded text-white transition-colors cursor-pointer"
+                      title="비밀번호(4714)를 입력하여 수정을 허용합니다"
+                    >
+                      잠금해제
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1 font-mono">
+                      🔓 수정중
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCompleteProject}
+                      className="px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-[9px] font-bold rounded text-white transition-colors cursor-pointer"
+                      title="내역분리를 완료하고 데이터를 보호합니다"
+                    >
+                      완료처리
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -925,10 +1246,73 @@ export default function App() {
                 onDelete={handleDeleteProject}
                 onNew={handleNewProject}
               />
+              {/* 실시간 자동 저장 스위치 및 상태 지시등 (Standard) */}
+              <div className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200/85 px-3 py-1 rounded-full shadow-sm select-none border border-slate-200/50 transition-all font-sans" id="standard-autosave-panel">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextVal = !isAutoSaveActive;
+                    setIsAutoSaveActive(nextVal);
+                    showNotification(nextVal ? '실시간 자동 저장이 활성화되었습니다.' : '실시간 자동 저장이 비활성화되었습니다.', 'info');
+                  }}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    isAutoSaveActive ? 'bg-indigo-600 animate-none' : 'bg-slate-300'
+                  }`}
+                  title="실시간 자동 저장 켜기/끄기"
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition duration-200 ease-in-out mt-[2px] ${
+                      isAutoSaveActive ? 'translate-x-4' : 'translate-x-0.5'
+                    }`}
+                  />
+                </button>
+                <span className="text-xs font-bold text-slate-600">실시간 자동 저장</span>
+                {currentProjectName && (
+                  <span className={`w-1.5 h-1.5 rounded-full ${isAutoSaveActive && isAutoSavingIndicator ? 'bg-amber-500 animate-ping' : (isAutoSaveActive ? 'bg-emerald-500' : 'bg-slate-400')}`} />
+                )}
+                {currentProjectName && (
+                  <span className="text-[11px] font-medium font-mono text-slate-500">
+                    {isAutoSaveActive ? (lastAutoSavedTime ? `완료 (${lastAutoSavedTime})` : '활성화됨') : '비활성'}
+                  </span>
+                )}
+              </div>
+
+              {/* 내역분리 완료 제어부 (Standard) */}
               {currentProjectName && (
-                <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-full shadow-sm">
-                  <span className={`w-2 h-2 rounded-full ${isAutoSavingIndicator ? 'bg-amber-500 animate-ping' : 'bg-emerald-500'}`} />
-                  <span>실시간 자동 저장 {lastAutoSavedTime ? `완료 (${lastAutoSavedTime})` : '활성화됨'}</span>
+                <div className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200/85 px-3 py-1 rounded-full shadow-sm select-none border border-slate-200/50 transition-all font-sans" id="standard-completion-panel">
+                  {isProjectLocked ? (
+                    <>
+                      <span className="text-xs font-bold text-amber-600 flex items-center gap-1 font-sans">
+                        🔒 내역분리 완료
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOnUnlockSuccessCallback(null);
+                          setIsPasswordModalOpen(true);
+                          setPasswordInput('');
+                        }}
+                        className="px-2.5 py-0.5 bg-amber-500 hover:bg-amber-600 text-[10px] font-bold rounded-full text-white transition-all shadow-sm cursor-pointer"
+                        title="비밀번호(4714)를 입력하여 수정을 허용합니다"
+                      >
+                        수정하기 (암호)
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-xs font-bold text-emerald-600 flex items-center gap-1 font-sans">
+                        🔓 작업중
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCompleteProject}
+                        className="px-2.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-[10px] font-bold rounded-full text-white transition-all shadow-sm cursor-pointer"
+                        title="기계설비 공정 분류 및 내역 조율을 마감하고 완료 처리합니다"
+                      >
+                        내역분리 완료
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -1009,6 +1393,88 @@ export default function App() {
 
   return (
     <div className={`min-h-screen ${themeClasses} transition-colors duration-500 relative`}>
+      {/* Password Verification Dialog Modal */}
+      <AnimatePresence>
+        {isPasswordModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[150] flex items-center justify-center p-4 backdrop-blur-md bg-slate-900/60"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className={`w-full max-w-sm overflow-hidden shadow-2xl border-2 ${
+                theme === 'high-density' ? 'bg-[#E7E6E1] border-[#141414] rounded-none' : 'bg-white border-slate-100 rounded-2xl'
+              }`}
+            >
+              <div className={`px-6 py-4 border-b flex justify-between items-center ${
+                theme === 'high-density' ? 'bg-[#141414] text-white border-b-2 border-black' : 'bg-indigo-50 border-b border-indigo-100 text-indigo-900'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <Lock size={16} className={theme === 'high-density' ? 'text-yellow-400' : 'text-indigo-600'} />
+                  <h3 className="text-xs font-black uppercase tracking-widest">수정 권한 확인</h3>
+                </div>
+                <button onClick={() => setIsPasswordModalOpen(false)} className="hover:rotate-90 transition-transform">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-6">
+                <div className="text-center mb-6">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 ${
+                    theme === 'high-density' ? 'bg-black text-yellow-400' : 'bg-indigo-50 text-indigo-600'
+                  }`}>
+                    <KeySquare size={24} />
+                  </div>
+                  <p className="text-xs font-bold text-slate-700">여기는 '내역분리 완료' 보호구역입니다.</p>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                    공정이 완료 마감처리된 현장입니다. 수동 수정을 허용하고 편집하시려면 관리자 비밀번호를 입력하십시오.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-black uppercase text-slate-400 mb-2">관리자 비밀번호 (Admin Password)</label>
+                  <input
+                    autoFocus
+                    type="password"
+                    maxLength={4}
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleVerifyPassword()}
+                    placeholder="숫자 4자리를 입력하세요"
+                    className={`w-full text-center tracking-widest text-lg font-black py-2.5 border focus:ring-0 outline-none transition-all text-slate-900 ${
+                      theme === 'high-density' ? 'border-[#141414] rounded-none focus:bg-[#dfddd6]' : 'border-slate-200 rounded-xl focus:border-indigo-500'
+                    }`}
+                  />
+                  <p className="mt-2 text-[9px] text-zinc-400 text-center font-mono">가이드: 비밀번호는 '4714' 입니다.</p>
+                </div>
+              </div>
+              <div className="px-6 py-4 flex gap-2 bg-slate-50 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsPasswordModalOpen(false)}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg border ${
+                    theme === 'high-density' ? 'border-[#141414] hover:bg-slate-200 text-[#141414] bg-[#E7E6E1]' : 'border-slate-200 text-slate-500 hover:bg-slate-50 bg-white'
+                  }`}
+                >
+                  취소(닫기)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleVerifyPassword}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg text-white ${
+                    theme === 'high-density' ? 'bg-[#141414] hover:bg-black' : 'bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-100'
+                  }`}
+                >
+                  잠금 해제
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Session Recovery Modal */}
       <AnimatePresence>
         {isRecoveryModalOpen && pendingSession && (

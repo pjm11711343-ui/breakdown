@@ -137,10 +137,19 @@ export default function ProjectSiteManager({ projects, currentProjectName, theme
                       }}
                     >
                       <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-bold text-slate-900 group-hover:text-indigo-700">{p.name}</span>
+                          {p.status === 'completed' ? (
+                            <span className="px-1.5 py-0.5 text-[8px] bg-emerald-600 text-white rounded font-black uppercase flex items-center gap-0.5">
+                              ✓ 완료
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 text-[8px] bg-blue-600 text-white rounded font-black uppercase">
+                              작업중
+                            </span>
+                          )}
                           {currentProjectName === p.name && (
-                            <span className="px-1 text-[8px] bg-indigo-600 text-white rounded font-black uppercase">현재 작업 중</span>
+                            <span className="px-1 text-[8px] bg-slate-800 text-white rounded font-black uppercase scale-90">선택됨</span>
                           )}
                         </div>
                         <span className="text-[9px] text-slate-400 mt-0.5">
