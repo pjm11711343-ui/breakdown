@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Project, ThemeType } from '../types';
-import { Save, FolderOpen, Plus, Trash2, Check, X, Building2 } from 'lucide-react';
+import { Save, FolderOpen, Plus, Trash2, Check, X, Building2, Download, Upload } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Props {
@@ -12,9 +12,22 @@ interface Props {
   onDelete: (id: string) => void;
   onNew: () => void;
   onAddNewProject: (name: string) => void;
+  onExportBackup: () => void;
+  onImportBackup: (data: any) => void;
 }
 
-export default function ProjectSiteManager({ projects, currentProjectName, theme, onSave, onLoad, onDelete, onNew, onAddNewProject }: Props) {
+export default function ProjectSiteManager({ 
+  projects, 
+  currentProjectName, 
+  theme, 
+  onSave, 
+  onLoad, 
+  onDelete, 
+  onNew, 
+  onAddNewProject,
+  onExportBackup,
+  onImportBackup
+}: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [isNaming, setIsNaming] = useState(false);
   const [newName, setNewName] = useState(currentProjectName);
@@ -35,6 +48,27 @@ export default function ProjectSiteManager({ projects, currentProjectName, theme
       setIsAddingNewProject(false);
       setNewProjectNameInput('');
     }
+  };
+
+  const handleImportBackupFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target?.result;
+        if (typeof text === 'string') {
+          const parsed = JSON.parse(text);
+          onImportBackup(parsed);
+          setIsOpen(false);
+        }
+      } catch (err) {
+        console.error('Failed to parse import backup JSON file', err);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   const isHighDensity = theme === 'high-density';
@@ -209,6 +243,49 @@ export default function ProjectSiteManager({ projects, currentProjectName, theme
                     </div>
                   ))
                 )}
+              </div>
+
+              {/* 백업 및 복구 제어부 */}
+              <div className={`p-4 border-t flex flex-col gap-2 ${
+                isHighDensity ? 'border-black bg-[#E7E6E1]/90' : 'border-slate-100 bg-slate-50/60'
+              }`}>
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">
+                  현장 데이터 백업 및 복원
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onExportBackup();
+                    }}
+                    className={`py-2 px-3 border flex items-center justify-center gap-1.5 transition-all text-[11px] font-black cursor-pointer uppercase ${
+                      isHighDensity 
+                        ? 'bg-white text-black border-black hover:bg-[#dfddd6]' 
+                        : 'bg-white text-indigo-700 border-indigo-100 rounded-lg hover:bg-indigo-50 shadow-sm'
+                    }`}
+                    title="전체 저장된 현장 리스트 전체 백업 (.json)"
+                  >
+                    <Download size={13} />
+                    백업 다운로드
+                  </button>
+                  <label
+                    className={`py-2 px-3 border flex items-center justify-center gap-1.5 transition-all text-[11px] font-black cursor-pointer uppercase text-center ${
+                      isHighDensity 
+                        ? 'bg-[#141414] text-white border-black hover:bg-black/90' 
+                        : 'bg-indigo-600 text-white border-transparent rounded-lg hover:bg-indigo-700 shadow-sm'
+                    }`}
+                    title="내보낸 백업 파일 (.json) 가져와 복원하기"
+                  >
+                    <Upload size={13} />
+                    백업 가져오기
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleImportBackupFile}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
               </div>
             </motion.div>
           </>

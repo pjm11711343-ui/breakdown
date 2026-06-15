@@ -742,6 +742,94 @@ export default function App() {
     showNotification(`새 현장 '${name.trim()}' 추가 및 활성화 되었습니다. 기계설비 엑셀 파일을 업로드해 주세요!`, 'success');
   };
 
+  const handleExportBackup = () => {
+    try {
+      const backupData = {
+        appName: 'mechauto_spec_analyzer',
+        version: '1.0',
+        backupDate: new Date().toISOString(),
+        projects
+      };
+      
+      const fileData = JSON.stringify(backupData, null, 2);
+      const blob = new Blob([fileData], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const dateStr = new Date().toISOString().split('T')[0];
+      link.download = `기계설비_공정분석_백업_${dateStr}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      showNotification('모든 현장 데이터 백업 파일(.json)이 다운로드되었습니다.', 'success');
+    } catch (e) {
+      console.error('Failed to export backup', e);
+      showNotification('백업 파일 생성 중 오류가 발생했습니다.', 'error');
+    }
+  };
+
+  const handleImportBackup = (importedData: any) => {
+    try {
+      let importedProjects: Project[] = [];
+      
+      if (importedData && Array.isArray(importedData)) {
+        importedProjects = importedData;
+      } else if (importedData && Array.isArray(importedData.projects)) {
+        importedProjects = importedData.projects;
+      } else {
+        showNotification('유효한 백업 데이터 형식이 아닙니다.', 'error');
+        return;
+      }
+
+      if (importedProjects.length === 0) {
+        showNotification('백업될 현장 데이터가 비어 있습니다.', 'info');
+        return;
+      }
+
+      setProjects(prev => {
+        const updated = [...prev];
+        let overwriteCount = 0;
+        let newCount = 0;
+
+        importedProjects.forEach(ip => {
+          if (!ip.name || !Array.isArray(ip.items)) return;
+
+          const matchIdx = updated.findIndex(p => p.name.trim() === ip.name.trim());
+          if (matchIdx !== -1) {
+            updated[matchIdx] = {
+              ...updated[matchIdx],
+              ...ip,
+              id: updated[matchIdx].id || ip.id || (Date.now().toString(36) + Math.random().toString(36).substring(2)),
+              updatedAt: ip.updatedAt || Date.now()
+            };
+            overwriteCount++;
+          } else {
+            updated.push({
+              ...ip,
+              id: ip.id || (Date.now().toString(36) + Math.random().toString(36).substring(2)),
+              updatedAt: ip.updatedAt || Date.now()
+            });
+            newCount++;
+          }
+        });
+
+        localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        
+        let msg = `성공적으로 데이터를 복원하였습니다.`;
+        if (newCount > 0) msg += ` (신규 ${newCount}개 추가)`;
+        if (overwriteCount > 0) msg += ` (기존 ${overwriteCount}개 갱신)`;
+        
+        showNotification(msg, 'success');
+        return updated;
+      });
+    } catch (e) {
+      console.error('Import backup failed', e);
+      showNotification('백업 데이터를 복원하는 중에 실패했습니다. 파일 형식을 확인해주세요.', 'error');
+    }
+  };
+
   const restoreSession = () => {
     if (pendingSession) {
       setItems((pendingSession as any).items);
@@ -1176,6 +1264,8 @@ export default function App() {
               onDelete={handleDeleteProject}
               onNew={handleNewProject}
               onAddNewProject={handleAddNewProject}
+              onExportBackup={handleExportBackup}
+              onImportBackup={handleImportBackup}
             />
 
             {/* 실시간 자동 저장 스위치 및 상태 지시등 (High Density) */}
@@ -1309,6 +1399,8 @@ export default function App() {
                 onDelete={handleDeleteProject}
                 onNew={handleNewProject}
                 onAddNewProject={handleAddNewProject}
+                onExportBackup={handleExportBackup}
+                onImportBackup={handleImportBackup}
               />
               {/* 실시간 자동 저장 스위치 및 상태 지시등 (Standard) */}
               <div className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200/85 px-3 py-1 rounded-full shadow-sm select-none border border-slate-200/50 transition-all font-sans" id="standard-autosave-panel">
