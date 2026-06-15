@@ -1,129 +1,549 @@
-import React, { useState } from 'react';
-import { Plus, Trash2, Edit2, Check, X, Tags } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash2, Edit2, Check, X, Tags, Sliders, Info, HelpCircle, ChevronUp, ChevronDown, Sparkles } from 'lucide-react';
+import { CustomClassificationRule } from '../types';
 
 interface Props {
   categories: string[];
   onUpdate: (categories: string[]) => void;
   isOpen: boolean;
   onClose: () => void;
+  customRules: CustomClassificationRule[];
+  onUpdateRules: (rules: CustomClassificationRule[]) => void;
+  onApplyRules?: (rules: CustomClassificationRule[]) => void;
+  initialTab?: 'categories' | 'rules';
 }
 
-export default function CategoryManager({ categories, onUpdate, isOpen, onClose }: Props) {
+// Read-only system rules for reference inside the UI
+const SYSTEM_MAPPING_RULES: Record<string, string> = {
+  '고강도 PVC관': '고강도PVC',
+  '폴리부틸렌관': 'PB',
+  '일반용경질염화비닐관': 'PVC',
+  '배배관용스테인리스강관': 'STS위생관',
+  '형강/찬넬/인서트': 'SUPPORT류',
+  '세대감압밸브': '감압변',
+  '온수분배기/구동기': '난방분배기',
+  '온수기/제습기': '마감자재',
+  '배관인식표/TAG': '명판',
+  '게이트/볼/버터플라이 밸브': '밸브류',
+  '관보온/밸브보온': '보온재',
+  '잡재료비/용접봉': '소모잡자재',
+  '수도/온수계량기': '수도계량기',
+  '방수/강관스리브': '스리브',
+  '동파방지전열선': '열선',
+  '시스템찬넬/시스템가대': '조립식가대',
+  '3구 분기관/브라켓': '통합거치대',
+  '스프링클러 헤드': '소방부속',
+  '소방용 CPVC': 'CPVC 소방관',
+};
+
+export default function CategoryManager({ 
+  categories, 
+  onUpdate, 
+  isOpen, 
+  onClose,
+  customRules = [],
+  onUpdateRules,
+  onApplyRules,
+  initialTab = 'categories'
+}: Props) {
+  const [activeTab, setActiveTab] = useState<'categories' | 'rules'>(initialTab);
+  
+  // Category management states
   const [newCategory, setNewCategory] = useState('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
 
+  // Rules management states
+  const [rulePattern, setRulePattern] = useState('');
+  const [ruleCategory, setRuleCategory] = useState(categories[0] || '');
+  const [ruleDesc, setRuleDesc] = useState('');
+  const [ruleSearch, setRuleSearch] = useState('');
+  const [rulePriority, setRulePriority] = useState<number>(10);
+  const [showSystemRules, setShowSystemRules] = useState(false);
+
+  // Sync tab state when open/initialTab props change
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
+
+  // Set default rule category once categories load
+  useEffect(() => {
+    if (categories.length > 0 && !ruleCategory) {
+      setRuleCategory(categories[0]);
+    }
+  }, [categories, ruleCategory]);
+
   if (!isOpen) return null;
 
-  const handleAdd = () => {
+  // Category Handlers
+  const handleAddCategory = () => {
     if (newCategory.trim() && !categories.includes(newCategory.trim())) {
       onUpdate([...categories, newCategory.trim()]);
       setNewCategory('');
     }
   };
 
-  const handleDelete = (index: number) => {
+  const handleDeleteCategory = (index: number) => {
+    const deletedCat = categories[index];
     const newList = categories.filter((_, i) => i !== index);
     onUpdate(newList);
+    
+    // Also warn if custom rules refer to this deleted category
+    const anyRuleRefState = customRules.some(r => r.category === deletedCat);
+    if (anyRuleRefState) {
+      // Auto-assign rule category of affected rules to the first available category
+      const firstAvailable = newList[0] || '';
+      const updatedRules = customRules.map(r => r.category === deletedCat ? { ...r, category: firstAvailable } : r);
+      onUpdateRules(updatedRules);
+    }
   };
 
-  const startEditing = (index: number) => {
+  const startEditingCategory = (index: number) => {
     setEditingIndex(index);
     setEditingValue(categories[index]);
   };
 
-  const saveEdit = () => {
+  const saveEditCategory = () => {
     if (editingIndex !== null && editingValue.trim()) {
+      const oldCat = categories[editingIndex];
+      const newCat = editingValue.trim();
       const newList = [...categories];
-      newList[editingIndex] = editingValue.trim();
+      newList[editingIndex] = newCat;
       onUpdate(newList);
       setEditingIndex(null);
+
+      // Also update affected custom rules
+      const updatedRules = customRules.map(r => r.category === oldCat ? { ...r, category: newCat } : r);
+      onUpdateRules(updatedRules);
     }
   };
 
+  // Rule Handlers
+  const handleAddRule = () => {
+    if (!rulePattern.trim()) return;
+    
+    const duplicate = customRules.some(r => r.pattern.toLowerCase().replace(/\s+/g, '') === rulePattern.trim().toLowerCase().replace(/\s+/g, ''));
+    if (duplicate) {
+      alert('동일한 키워드를 사용하는 규칙이 이미 존재합니다.');
+      return;
+    }
+
+    const newRule: CustomClassificationRule = {
+      id: Date.now().toString(),
+      pattern: rulePattern.trim(),
+      category: ruleCategory || categories[0] || '미분류',
+      isEnabled: true,
+      priority: Number(rulePriority) || 10,
+      description: ruleDesc.trim() || undefined
+    };
+
+    onUpdateRules([...customRules, newRule]);
+    setRulePattern('');
+    setRuleDesc('');
+    setRulePriority(10);
+  };
+
+  const handleDeleteRule = (id: string) => {
+    const updated = customRules.filter(r => r.id !== id);
+    onUpdateRules(updated);
+  };
+
+  const handleToggleRule = (id: string) => {
+    const updated = customRules.map(r => r.id === id ? { ...r, isEnabled: !r.isEnabled } : r);
+    onUpdateRules(updated);
+  };
+
+  const handleIncreasePriority = (id: string) => {
+    const updated = customRules.map(r => r.id === id ? { ...r, priority: (r.priority ?? 10) + 1 } : r);
+    onUpdateRules(updated);
+  };
+
+  const handleDecreasePriority = (id: string) => {
+    const updated = customRules.map(r => r.id === id ? { ...r, priority: Math.max(0, (r.priority ?? 10) - 1) } : r);
+    onUpdateRules(updated);
+  };
+
+  const handleSetPriority = (id: string, val: number) => {
+    const updated = customRules.map(r => r.id === id ? { ...r, priority: isNaN(val) ? 0 : val } : r);
+    onUpdateRules(updated);
+  };
+
+  const handleRunActiveRules = () => {
+    if (onApplyRules) {
+      onApplyRules(customRules);
+    }
+  };
+
+  const filteredRules = customRules.filter(r => 
+    r.pattern.toLowerCase().includes(ruleSearch.toLowerCase()) ||
+    r.category.toLowerCase().includes(ruleSearch.toLowerCase()) ||
+    (r.description || '').toLowerCase().includes(ruleSearch.toLowerCase())
+  );
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+      <div className={`bg-white rounded-2xl w-full ${activeTab === 'rules' ? 'max-w-2xl' : 'max-w-md'} shadow-2xl overflow-hidden flex flex-col h-[85vh] transition-all duration-300`}>
+        {/* Modal Header */}
         <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-600 rounded-lg">
-              <Tags className="w-5 h-5 text-white" />
+              {activeTab === 'categories' ? (
+                <Tags className="w-5 h-5 text-white" />
+              ) : (
+                <Sliders className="w-5 h-5 text-white" />
+              )}
             </div>
-            <h2 className="text-xl font-bold text-slate-800">카테고리 관리</h2>
+            <h2 className="text-xl font-bold text-slate-800">
+              {activeTab === 'categories' ? '카테고리 및 분류 규칙 관리' : '자동 분류 규칙 설정'}
+            </h2>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
             <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
 
-        <div className="p-6 overflow-y-auto flex-grow space-y-4">
-          <div className="flex gap-2">
-            <input 
-              type="text" 
-              value={newCategory}
-              onChange={(e) => setNewCategory(e.target.value)}
-              placeholder="새 카테고리 이름 입력..."
-              className="flex-grow px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-800"
-              onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-            />
-            <button 
-              onClick={handleAdd}
-              className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors"
-            >
-              <Plus className="w-6 h-6" />
-            </button>
-          </div>
-
-          <div className="space-y-2">
-            {categories.map((cat, idx) => (
-              <div 
-                key={idx} 
-                className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl group hover:bg-slate-100 transition-colors"
-              >
-                {editingIndex === idx ? (
-                  <>
-                    <input 
-                      type="text" 
-                      value={editingValue}
-                      onChange={(e) => setEditingValue(e.target.value)}
-                      className="flex-grow px-3 py-1 border border-indigo-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-200 text-slate-800"
-                      autoFocus
-                    />
-                    <button onClick={saveEdit} className="p-1.5 text-green-600 hover:bg-green-50 rounded-md">
-                      <Check className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => setEditingIndex(null)} className="p-1.5 text-slate-400 hover:bg-slate-200 rounded-md">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <span className="flex-grow font-medium text-slate-700">{cat}</span>
-                    <button 
-                      onClick={() => startEditing(idx)}
-                      className="p-1.5 text-slate-400 hover:bg-white hover:text-indigo-600 rounded-md opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => handleDelete(idx)}
-                      className="p-1.5 text-slate-400 hover:bg-white hover:text-red-600 rounded-md opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
+        {/* Tabs Control */}
+        <div className="flex border-b border-slate-100 bg-slate-50/50">
+          <button
+            onClick={() => setActiveTab('categories')}
+            className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'categories'
+                ? 'border-indigo-600 text-indigo-600 bg-white'
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50'
+            }`}
+          >
+            <Tags className="w-4 h-4" />
+            카테고리 관리
+          </button>
+          <button
+            onClick={() => setActiveTab('rules')}
+            className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'rules'
+                ? 'border-indigo-600 text-indigo-600 bg-white'
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50'
+            }`}
+          >
+            <Sliders className="w-4 h-4" />
+            분류 규칙 설정
+          </button>
         </div>
 
+        {/* Tab Contents */}
+        <div className="p-6 overflow-y-auto flex-grow space-y-4">
+          
+          {activeTab === 'categories' ? (
+            /* --- CATEGORIES TAB --- */
+            <div className="space-y-4">
+              <div className="text-xs text-slate-500 flex items-center gap-1.5 p-2 bg-indigo-50 border border-indigo-100/50 rounded-lg">
+                <Info className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <span>카테고리의 이름을 추가하거나 편집할 수 있습니다. 규칙에 사용된 원본 이름도 연동됩니다.</span>
+              </div>
+
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  placeholder="새 카테고리 이름 입력..."
+                  className="flex-grow px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-800 text-sm"
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
+                />
+                <button 
+                  onClick={handleAddCategory}
+                  className="p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-[45vh] overflow-y-auto pr-1">
+                {categories.map((cat, idx) => (
+                  <div 
+                    key={idx} 
+                    className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl group hover:bg-slate-100 transition-colors"
+                  >
+                    {editingIndex === idx ? (
+                      <>
+                        <input 
+                          type="text" 
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          className="flex-grow px-3 py-1 border border-indigo-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-200 text-slate-800 text-sm"
+                          autoFocus
+                          onKeyDown={(e) => e.key === 'Enter' && saveEditCategory()}
+                        />
+                        <button onClick={saveEditCategory} className="p-1.5 text-green-600 hover:bg-green-50 rounded-md">
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setEditingIndex(null)} className="p-1.5 text-slate-400 hover:bg-slate-200 rounded-md">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="flex-grow font-medium text-slate-700 text-sm">{cat}</span>
+                        <button 
+                          onClick={() => startEditingCategory(idx)}
+                          className="p-1.5 text-slate-400 hover:bg-white hover:text-indigo-600 rounded-md opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteCategory(idx)}
+                          className="p-1.5 text-slate-400 hover:bg-white hover:text-red-600 rounded-md opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            /* --- RULES TAB (CLASSIFICATION RULES) --- */
+            <div className="space-y-6">
+              <div className="text-xs text-slate-500 p-3 bg-indigo-50 border border-indigo-100/50 rounded-xl space-y-1">
+                <div className="flex items-center gap-1.5 font-semibold text-indigo-800">
+                  <Info className="w-4 h-4" />
+                  <span>분류 규칙이란?</span>
+                </div>
+                <p className="leading-relaxed">
+                  특정 <strong>키워드(품명이나 규격)</strong>가 설계 내역 품목의 텍스트에 포함되어 있으면, 지정한 <strong>카테고리</strong>로 자동 분류해 주는 핵심 로직 규칙입니다.
+                  사용자 지정 규칙은 시스템 기본 규칙보다 우선해 적용됩니다.
+                </p>
+              </div>
+
+              {/* Add New Custom Rule Section */}
+              <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-3">
+                <h3 className="text-sm font-bold text-slate-700 flex items-center gap-1.5 border-b border-slate-200 pb-2">
+                  <Plus className="w-4 h-4 text-indigo-600" />
+                  신규 분류 규칙 추가
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">키워드 패턴 (매칭)</label>
+                    <input 
+                      type="text"
+                      placeholder="예: 실린더, 세대수전"
+                      value={rulePattern}
+                      onChange={(e) => setRulePattern(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 bg-white rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">매칭할 카테고리</label>
+                    <select
+                      value={ruleCategory}
+                      onChange={(e) => setRuleCategory(e.target.value)}
+                      className="w-full px-3 py-[7px] border border-slate-200 bg-white rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-800"
+                    >
+                      {categories.map((cat, idx) => (
+                        <option key={idx} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">우선순위(위 단계 매칭)</label>
+                    <input 
+                      type="number"
+                      min="0"
+                      placeholder="기본값: 10"
+                      value={rulePriority}
+                      onChange={(e) => setRulePriority(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full px-3 py-[7px] border border-slate-200 bg-white rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-800 font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 mb-1">설명 (메모)</label>
+                  <input 
+                    type="text"
+                    placeholder="예: 현장 수동 배부용 이형관"
+                    value={ruleDesc}
+                    onChange={(e) => setRuleDesc(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 bg-white rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-sm text-slate-800 animate-none"
+                  />
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    onClick={handleAddRule}
+                    disabled={!rulePattern.trim()}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-lg text-xs transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100"
+                  >
+                    <Plus className="w-4 h-4" />
+                    규칙 추가
+                  </button>
+                </div>
+              </div>
+
+              {/* Custom Rules List */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                    <Sliders className="w-4 h-4 text-slate-500" />
+                    사용자 지정 규칙 리스트 ({customRules.length}개)
+                  </h3>
+
+                  <input 
+                    type="text"
+                    placeholder="규칙 검색..."
+                    value={ruleSearch}
+                    onChange={(e) => setRuleSearch(e.target.value)}
+                    className="px-3 py-1 border border-slate-200 rounded-lg outline-none text-xs text-slate-700 focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="space-y-2 max-h-[35vh] overflow-y-auto pr-1">
+                  {filteredRules.length === 0 ? (
+                    <div className="text-center py-6 border-2 border-dashed border-slate-100 rounded-xl text-slate-400 text-xs">
+                      등록된 사용자 정의 규칙이 없습니다. 위의 추가 폼에서 첫 번째 규칙을 등록해 보세요!
+                    </div>
+                  ) : (
+                    [...filteredRules]
+                      .sort((a, b) => (b.priority ?? 10) - (a.priority ?? 10))
+                      .map((rule, idx) => (
+                        <div 
+                          key={rule.id}
+                          className={`p-3 border rounded-xl flex items-center justify-between gap-4 transition-all ${
+                            rule.isEnabled ? 'bg-white border-slate-200' : 'bg-slate-50/50 border-slate-100 opacity-60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 flex-grow">
+                            <span 
+                              className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold shrink-0 select-none ${
+                                rule.isEnabled 
+                                  ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' 
+                                  : 'bg-slate-100 text-slate-400'
+                              }`}
+                              title={`매칭 평가 순서 - #${idx + 1}`}
+                            >
+                              {idx + 1}
+                            </span>
+                            <div className="space-y-1 min-w-0 flex-grow">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-slate-800 text-sm break-all">'{rule.pattern}'</span>
+                                <span className="text-slate-400 text-xs text-nowrap">포함되면</span>
+                                <span className="px-2 py-0.5 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 font-bold rounded-full">
+                                  {rule.category}
+                                </span>
+                              </div>
+                              {rule.description && (
+                                <p className="text-xs text-slate-400 truncate">{rule.description}</p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2.5 shrink-0">
+                            {/* Priority controller */}
+                            <div className="flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-150">
+                              <span className="text-[10px] font-semibold text-slate-400 select-none" title="우선순위가 높을수록 먼저 분류 적용을 수행합니다.">우선순위:</span>
+                              <input 
+                                type="number"
+                                min="0"
+                                value={rule.priority ?? 10}
+                                onChange={(e) => handleSetPriority(rule.id, Math.max(0, parseInt(e.target.value) || 0))}
+                                className="w-8 text-center bg-transparent text-xs font-bold text-slate-800 outline-none p-0 border-none focus:ring-0"
+                              />
+                              <div className="flex flex-col">
+                                <button 
+                                  onClick={() => handleIncreasePriority(rule.id)}
+                                  className="p-px text-slate-400 hover:text-indigo-600 rounded"
+                                  title="순위 높이기(+1)"
+                                >
+                                  <ChevronUp className="w-3" />
+                                </button>
+                                <button 
+                                  onClick={() => handleDecreasePriority(rule.id)}
+                                  className="p-px text-slate-400 hover:text-indigo-600 rounded"
+                                  title="순위 낮추기(-1)"
+                                >
+                                  <ChevronDown className="w-3" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Toggle active switch */}
+                            <button
+                              onClick={() => handleToggleRule(rule.id)}
+                              className={`w-9 h-5 rounded-full p-0.5 transition-colors focus:outline-none shrink-0 ${
+                                rule.isEnabled ? 'bg-indigo-600' : 'bg-slate-300'
+                              }`}
+                            >
+                              <div className={`w-4 h-4 rounded-full bg-white transition-transform ${
+                                rule.isEnabled ? 'translate-x-[16px]' : 'translate-x-0'
+                              }`} />
+                            </button>
+
+                            {/* Delete rule button */}
+                            <button
+                              onClick={() => handleDeleteRule(rule.id)}
+                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-slate-50 rounded-lg transition-colors border border-transparent hover:border-slate-100 shrink-0"
+                              title="규칙 삭제"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                  )}
+                </div>
+              </div>
+
+              {/* Trigger manual matching on current rows */}
+              {onApplyRules && customRules.length > 0 && (
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleRunActiveRules}
+                    className="text-xs font-bold px-4 py-1.5 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 font-medium text-indigo-700 rounded-lg transition-colors shadow-sm"
+                  >
+                    현재 시트 데이터에 분류 규칙 즉시 적용 (분류 재적용)
+                  </button>
+                </div>
+              )}
+
+              {/* System Built-in Reference Collapsible section */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowSystemRules(!showSystemRules)}
+                  className="w-full flex items-center justify-between p-3 bg-slate-100 hover:bg-slate-150 transition-colors text-slate-700 font-bold text-xs"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <HelpCircle className="w-4 h-4 text-slate-500" />
+                    시스템 기본 분류 규칙 목록 참고 ({Object.keys(SYSTEM_MAPPING_RULES).length}개)
+                  </span>
+                  <span>{showSystemRules ? '접기 ▲' : '열기 ▼'}</span>
+                </button>
+
+                {showSystemRules && (
+                  <div className="p-3 bg-slate-50 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs max-h-[20vh] overflow-y-auto">
+                    {Object.entries(SYSTEM_MAPPING_RULES).map(([key, value]) => (
+                      <div key={key} className="p-1.5 bg-white border border-slate-150 rounded flex justify-between gap-1 items-center">
+                        <span className="font-semibold text-slate-600 truncate max-w-[60%]">{key}</span>
+                        <span className="px-1.5 py-0.5 text-[10px] text-slate-500 bg-slate-100 rounded font-bold">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+        </div>
+
+        {/* Footer controls */}
         <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end">
           <button 
             onClick={onClose}
-            className="px-6 py-2 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+            className="px-6 py-2 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-150 text-sm"
           >
-            확인
+            설정 완료
           </button>
         </div>
       </div>

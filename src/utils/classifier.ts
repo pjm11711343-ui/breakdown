@@ -1,5 +1,5 @@
 
-import { SpecItem } from '../types';
+import { SpecItem, CustomClassificationRule } from '../types';
 
 const MAPPING_RULES: Record<string, string> = {
   '고강도 PVC관': '고강도PVC',
@@ -140,7 +140,10 @@ const MAPPING_RULES: Record<string, string> = {
   '공구손료': '공구손료'
 };
 
-export function autoClassify(item: SpecItem): { category: string; remark: string } {
+export function autoClassify(
+  item: SpecItem, 
+  customRules?: CustomClassificationRule[]
+): { category: string; remark: string } {
   // Rule: If material price is 0 but labor price/amount is greater than 0, classify as "미분류"
   if ((!item.materialUnitPrice || item.materialUnitPrice === 0) && (item.laborUnitPrice > 0 || item.laborAmount > 0)) {
     return { category: '미분류', remark: '노무비 단독 항목 (공정분리 미분류)' };
@@ -158,6 +161,24 @@ export function autoClassify(item: SpecItem): { category: string; remark: string
   // Rule: If both material and labor prices are 0, classify as "지금자재"
   if (item.materialUnitPrice === 0 && item.laborUnitPrice === 0) {
     return { category: '지금자재', remark: '지금자재' };
+  }
+
+  // 1. Apply user custom rules first
+  if (customRules && customRules.length > 0) {
+    const sortedRules = [...customRules].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+    for (const rule of sortedRules) {
+      if (!rule.isEnabled) continue;
+      const cleanPattern = rule.pattern.replace(/\s+/g, '').toLowerCase();
+      const cleanName = item.name.replace(/\s+/g, '').toLowerCase();
+      const cleanSpec = (item.specification || '').replace(/\s+/g, '').toLowerCase();
+      
+      if (cleanName.includes(cleanPattern) || cleanSpec.includes(cleanPattern)) {
+        return { 
+          category: rule.category, 
+          remark: `사용자 정의 규칙 (${rule.pattern}, 우선순위: ${rule.priority ?? 0})` 
+        };
+      }
+    }
   }
   
   for (const [key, cat] of Object.entries(MAPPING_RULES)) {

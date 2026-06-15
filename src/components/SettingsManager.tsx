@@ -27,6 +27,32 @@ export default function SettingsManager({
 }: Props) {
   if (!isOpen) return null;
 
+  // Keep track of the initial font family when modal opened to support Cancel/Revert action
+  const [initialFont] = React.useState(fontFamily);
+  const [tempFontFamily, setTempFontFamily] = React.useState(fontFamily);
+  const [isPreviewEnabled, setIsPreviewEnabled] = React.useState(true);
+
+  // Sync with main application when preview is toggled/changed
+  React.useEffect(() => {
+    if (isPreviewEnabled) {
+      onFontFamilyChange(tempFontFamily);
+    } else {
+      onFontFamilyChange(initialFont);
+    }
+  }, [tempFontFamily, isPreviewEnabled, onFontFamilyChange, initialFont]);
+
+  const handleSaveAndClose = () => {
+    // Apply final selected font family permanently
+    onFontFamilyChange(tempFontFamily);
+    onClose();
+  };
+
+  const handleCancelAndClose = () => {
+    // Revert parent font back to what it was initially
+    onFontFamilyChange(initialFont);
+    onClose();
+  };
+
   const fontOptions = [
     { name: '굴림 (Default)', value: '"Gulim", "굴림", Dotum, "돋움", sans-serif' },
     { name: '돋움', value: 'Dotum, "돋움", sans-serif' },
@@ -50,7 +76,7 @@ export default function SettingsManager({
               <p className="text-[11px] text-slate-500 font-bold uppercase tracking-widest mt-1">System Configuration</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+          <button onClick={handleCancelAndClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors" title="닫기 (변경점 취소)">
             <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
@@ -93,14 +119,14 @@ export default function SettingsManager({
               <h3 className="font-bold underline decoration-indigo-200 decoration-4 underline-offset-4">타이포그래피 설정</h3>
             </div>
             
-            <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
-              {/* Font Family */}
+            <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 space-y-5">
+              {/* Font Family Selection */}
               <div>
                 <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">글꼴 (Font Family)</label>
                 <select 
-                  value={fontFamily}
-                  onChange={(e) => onFontFamilyChange(e.target.value)}
-                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={tempFontFamily}
+                  onChange={(e) => setTempFontFamily(e.target.value)}
+                  className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold"
                 >
                   {fontOptions.map(opt => (
                     <option key={opt.value} value={opt.value}>{opt.name}</option>
@@ -108,8 +134,55 @@ export default function SettingsManager({
                 </select>
               </div>
 
+              {/* Font Preview Controls & Live Specimen Box */}
+              <div className="pt-3 border-t border-slate-200/60 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-slate-700">전체 실시간 앱 미리보기</span>
+                    <span className="text-[10px] text-slate-400">활성화 시 변경사항이 전체 화면에 즉시 적용됩니다</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsPreviewEnabled(!isPreviewEnabled)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      isPreviewEnabled ? 'bg-indigo-600' : 'bg-slate-200'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        isPreviewEnabled ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {/* Font Specimen Box */}
+                <div 
+                  className="p-4 bg-white rounded-xl border border-slate-200 space-y-2 select-none shadow-sm transition-all"
+                  style={{ fontFamily: tempFontFamily }}
+                >
+                  <div className="flex justify-between items-center border-b border-slate-100 pb-1.5 mb-1 text-[10px]">
+                    <span className="font-extrabold uppercase text-indigo-600 tracking-wider">
+                      글꼴 미리보기 표본 (PREVIEW SAMPLE)
+                    </span>
+                    <span className="text-slate-400 opacity-85 font-semibold">
+                      {fontOptions.find(opt => opt.value === tempFontFamily)?.name || '사용자 설정'}
+                    </span>
+                  </div>
+                  <p className="text-sm font-black text-slate-800 leading-snug">
+                    기계설비 공정분리 및 일위대가 내역분리 지능형 마스터
+                  </p>
+                  <p className="text-xs text-slate-500 leading-normal font-bold">
+                    본 시스템은 실시간 데이터 백업 및 복원, 고강도 엑셀 파싱 분석을 지원합니다.
+                  </p>
+                  <p className="text-[11px] text-slate-400 tracking-wider font-semibold">
+                    가나다라마바사 아자차카타파하 ABCDEFGHIJKLMNOPQRSTUVWXYZ 1234567890
+                  </p>
+                </div>
+              </div>
+
               {/* Font Size */}
-              <div>
+              <div className="pt-3 border-t border-slate-200/60">
                 <div className="flex justify-between items-center mb-2">
                   <label className="text-xs font-black text-slate-400 uppercase tracking-widest">글자 크기 (Font Size)</label>
                   <span className="text-sm font-bold text-indigo-600">{fontSize}px</span>
@@ -185,12 +258,18 @@ export default function SettingsManager({
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end">
+        <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
           <button 
-            onClick={onClose}
+            onClick={handleCancelAndClose}
+            className="px-6 py-3 bg-white border border-slate-200 text-slate-500 font-bold rounded-2xl hover:bg-slate-100 hover:text-slate-800 transition-all"
+          >
+            취소 및 닫기
+          </button>
+          <button 
+            onClick={handleSaveAndClose}
             className="px-8 py-3 bg-slate-900 text-white font-bold rounded-2xl hover:bg-black transition-all shadow-xl shadow-slate-200"
           >
-            설정 저장 및 닫기
+            설정 저장 및 적용
           </button>
         </div>
       </div>

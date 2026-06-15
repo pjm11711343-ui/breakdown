@@ -31,6 +31,15 @@ export interface Project {
 
 export type ThemeType = 'industrial' | 'modern' | 'minimal' | 'high-density';
 
+export interface CustomClassificationRule {
+  id: string;
+  pattern: string;
+  category: string;
+  isEnabled: boolean;
+  priority: number; // Higher number = higher priority
+  description?: string;
+}
+
 export interface AppConfig {
   theme: ThemeType;
   fontFamily: string;

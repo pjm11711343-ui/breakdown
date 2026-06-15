@@ -25,7 +25,7 @@ async function startServer() {
   // API endpoint for classification
   app.post('/api/classify', async (req, res) => {
     try {
-      const { items, categories } = req.body;
+      const { items, categories, customRules } = req.body;
       if (!items || !Array.isArray(items)) {
         return res.status(400).json({ error: 'Items must be an array' });
       }
@@ -73,12 +73,32 @@ async function startServer() {
         if (item.materialUnitPrice === 0 && item.laborUnitPrice === 0) {
           category = '지금자재';
         } else {
-          // 1. Local Rule Match
-          for (const [key, cat] of Object.entries(MAPPING_RULES)) {
-            const cleanKey = key.replace(/\s+/g, '');
-            if (name.includes(cleanKey) || cleanKey.includes(name)) {
-              category = cat;
-              break;
+          // Check custom rules first!
+          let customMatched = false;
+          if (customRules && Array.isArray(customRules)) {
+            const sortedRules = [...customRules].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+            for (const rule of sortedRules) {
+              if (!rule.isEnabled) continue;
+              const cleanPattern = rule.pattern.replace(/\s+/g, '').toLowerCase();
+              const cleanName = item.name.replace(/\s+/g, '').toLowerCase();
+              const cleanSpec = (item.specification || '').replace(/\s+/g, '').toLowerCase();
+              
+              if (cleanName.includes(cleanPattern) || cleanSpec.includes(cleanPattern)) {
+                category = rule.category;
+                customMatched = true;
+                break;
+              }
+            }
+          }
+
+          if (!customMatched) {
+            // 1. Local Rule Match
+            for (const [key, cat] of Object.entries(MAPPING_RULES)) {
+              const cleanKey = key.replace(/\s+/g, '');
+              if (name.includes(cleanKey) || cleanKey.includes(name)) {
+                category = cat;
+                break;
+              }
             }
           }
 

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { SpecItem, ThemeType } from '../types';
-import { Download, Table, Cpu, Filter, Maximize2, RotateCcw } from 'lucide-react';
+import { Download, Table, Cpu, Filter, Maximize2, RotateCcw, Zap, Sparkles, AlertTriangle, User } from 'lucide-react';
 import { motion } from 'motion/react';
 import ExcelUpload from './ExcelUpload';
 import * as XLSX from 'xlsx';
@@ -144,6 +144,86 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
       : ['px-2', 'px-4', 'px-6', 'px-8', 'px-10'];
       
     return `${pyValue} ${pxMap[density - 1]}`;
+  };
+
+  const renderRuleIndicator = (item: SpecItem) => {
+    if (showAggregated) return null;
+
+    let type: 'custom' | 'system' | 'manual' | 'warning' | 'auto' = 'auto';
+    let titleText = '자동 공정 매칭';
+    let descriptionText = '내장 스마트 알고리즘에 의해 자동 분류가 적용되었습니다.';
+    let ruleDetails = item.remark || '';
+    let IconComponent = Cpu;
+    let colorClass = 'text-blue-600 bg-blue-50 border-blue-100';
+
+    const isCustom = item.remark && item.remark.includes('사용자 정의 규칙');
+    const isManual = item.originalCategory && item.category !== item.originalCategory;
+    const isUnclassified = !item.category || item.category === '미분류';
+    const isSimpleFallback = item.remark === item.category;
+
+    if (isManual) {
+      type = 'manual';
+      titleText = '수동 재지정 처리 완료 👤';
+      IconComponent = User;
+      colorClass = 'text-amber-700 bg-amber-50 border-amber-200';
+      descriptionText = '사용자가 직접 선택 항목의 분류를 수동으로 지정했습니다.';
+      ruleDetails = `기존 제안: ${item.originalCategory || '없음'} ➔ 현재 설정: ${item.category}`;
+    } else if (isCustom) {
+      type = 'custom';
+      titleText = '사용자 매칭 규칙 적용 ⚡';
+      IconComponent = Zap;
+      colorClass = 'text-purple-700 bg-purple-50/80 border-purple-200';
+      descriptionText = '사용자 정의 분류 규칙 조건에 매칭되어 자동 분류되었습니다.';
+      ruleDetails = item.remark;
+    } else if (isUnclassified) {
+      type = 'warning';
+      titleText = '미분류 및 미지정 상태 ⚠️';
+      IconComponent = AlertTriangle;
+      colorClass = 'text-red-700 bg-red-50 border-red-200';
+      descriptionText = '조건에 맞는 매칭 규칙이 발견되지 않아 미분류 상태입니다.';
+      ruleDetails = item.remark || '공정 내역 분석 대기 중';
+    } else if (isSimpleFallback) {
+      type = 'auto';
+      titleText = '내장 키워드 매칭 🤖';
+      IconComponent = Cpu;
+      colorClass = 'text-indigo-600 bg-indigo-50 border-indigo-150';
+      descriptionText = '공정분리 내장 품명/규격 사전 매핑 알고리즘이 적용되었습니다.';
+      ruleDetails = `공정분리 지정어: "${item.category}" 매칭`;
+    } else {
+      type = 'system';
+      titleText = 'AI 알고리즘 분석 🤖';
+      IconComponent = Sparkles;
+      colorClass = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+      descriptionText = '공종 계층 코드(0101**) 특이사항 및 단가 정보의 복합 해석 규칙이 적용되었습니다.';
+      ruleDetails = item.remark;
+    }
+
+    return (
+      <div className="relative group/tooltip inline-flex items-center shrink-0 select-none ml-1.5" onClick={(e) => e.stopPropagation()}>
+        <div 
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border transition-all hover:scale-105 cursor-help shadow-xs ${colorClass}`}
+        >
+          <IconComponent className="w-2.5 h-2.5 shrink-0" />
+          <span className="text-[9px] leading-none uppercase">
+            {type === 'manual' ? '수동' : type === 'custom' ? '규칙' : type === 'warning' ? '미지정' : 'AI'}
+          </span>
+        </div>
+
+        {/* Dynamic Pure Tailwind Tooltip */}
+        <div className="absolute z-[99] bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-2.5 bg-slate-900 border border-slate-800 text-white rounded-lg shadow-xl opacity-0 pointer-events-none group-hover/tooltip:opacity-100 transition-opacity duration-200 ease-out text-[10px] font-medium whitespace-normal text-left">
+          <div className="tooltip-arrow absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-900" />
+          <div className="flex items-center gap-1.5 font-black text-white pb-1 border-b border-slate-800 mb-1.5">
+            <IconComponent className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+            <span>{titleText}</span>
+          </div>
+          <p className="text-slate-300 leading-relaxed mb-2">{descriptionText}</p>
+          <div className="bg-slate-950 p-1.5 rounded border border-slate-800/50 font-mono text-[9px] text-indigo-300 break-words">
+            <span className="text-slate-400 block font-sans font-bold text-[8px] uppercase tracking-tighter mb-0.5">상세 분석 근거 및 이력:</span>
+            {ruleDetails}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   const handleDownload = () => {
@@ -973,7 +1053,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                                   {showAggregated ? `Σ${itemIdx + 1}` : (itemIdx + 1).toString().padStart(3, '0')}
                                 </td>
                                 <td className={`${getCellPadding()} font-bold border-r border-[#141414]/5 text-slate-900 break-words min-w-[100px] max-w-[200px] text-[11px]`}>{item.name}</td>
-                                <td className={`${getCellPadding()} font-mono opacity-80 italic border-r border-[#141414]/5 break-words min-w-[100px] max-w-[200px] text-[11px]`}>{item.specification}</td>
+                                <td className={`${getCellPadding()} opacity-80 border-r border-[#141414]/5 break-words min-w-[100px] max-w-[200px] text-[11px]`}>{item.specification}</td>
                                 <td className={`${getCellPadding()} text-center border-r border-[#141414]/5 whitespace-nowrap text-[11px]`}>{item.unit}</td>
                                 <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/5 whitespace-nowrap text-[11px]`}>{item.quantity.toLocaleString()}</td>
                                 <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/10 whitespace-nowrap text-black font-bold bg-[#F9F9F9] text-[11px]`}>₩{(item.materialUnitPrice || 0).toLocaleString()}</td>
@@ -1028,7 +1108,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                                                 ? 'bg-amber-100 text-amber-700' 
                                                 : 'bg-indigo-100 text-indigo-700'
                                             }`}>
-                                              {item.category || '미분류'}
+                                              {item.category || '미분류'}</span>{renderRuleIndicator(item)}<span className="hidden">
                                             </span>
                                             <span className="opacity-0 group-hover:opacity-100 text-indigo-400 text-[10px]">✎</span>
                                             {item.originalCategory && item.category !== item.originalCategory && (
@@ -1134,7 +1214,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                              {(itemIdx + 1).toString().padStart(3, '0')}
                            </td>
                            <td className={`${getCellPadding()} font-bold border-r border-[#141414]/10 text-slate-900 break-words min-w-[100px] max-w-[200px] ${theme === 'high-density' ? 'text-[10.5px]' : ''}`}>{item.name}</td>
-                           <td className={`${getCellPadding()} font-mono opacity-80 italic border-r border-[#141414]/10 break-words min-w-[100px] max-w-[200px] ${theme === 'high-density' ? 'text-[9px]' : ''}`}>{item.specification}</td>
+                           <td className={`${getCellPadding()} opacity-80 border-r border-[#141414]/10 break-words min-w-[100px] max-w-[200px] ${theme === 'high-density' ? 'text-[9px]' : ''}`}>{item.specification}</td>
                            <td className={`${getCellPadding()} text-center border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[10px]' : ''}`}>{item.unit}</td>
                            <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[10px]' : ''}`}>{item.quantity.toLocaleString()}</td>
                            <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-bold bg-[#F9F9F9] text-[10px]' : 'text-slate-600'}`}>₩{(item.materialUnitPrice || 0).toLocaleString()}</td>
@@ -1158,7 +1238,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                              />
                            </td>
                              <td className="px-4 py-1 text-center whitespace-nowrap">
-                               <div className="flex items-center gap-1.5">
+                               <div className="flex items-center gap-1.5">{renderRuleIndicator(item)}
                                  <select 
                                    value={item.category || ""}
                                    onChange={(e) => onUpdateCategory(item.id, e.target.value)}

@@ -124,7 +124,7 @@ export default function PriceAnalysis({ items, theme }: Props) {
                     </span>
                     <h3 className="font-bold text-base lg:text-lg truncate">{group.name}</h3>
                   </div>
-                  <p className="text-sm opacity-60 font-mono tracking-tight truncate">{group.specification}</p>
+                  <p className="text-sm opacity-60 tracking-tight truncate">{group.specification}</p>
                 </div>
 
                 <div className="flex flex-row items-center justify-between lg:justify-end gap-4 lg:gap-8 border-t lg:border-t-0 pt-4 lg:pt-0 border-slate-100">

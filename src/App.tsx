@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { SpecItem, ThemeType, Project } from './types';
+import { SpecItem, ThemeType, Project, CustomClassificationRule } from './types';
 import { autoClassify } from './utils/classifier';
 import TemplateSelector from './components/TemplateSelector';
 import Dashboard from './components/Dashboard';
@@ -16,7 +16,7 @@ import ExcelUpload from './components/ExcelUpload';
 import CategoryManager from './components/CategoryManager';
 import SettingsManager from './components/SettingsManager';
 import ProjectSiteManager from './components/ProjectSiteManager';
-import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X, Save, Lock, KeySquare } from 'lucide-react';
+import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X, Save, Lock, KeySquare, Sliders } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 import * as XLSX from 'xlsx';
@@ -225,6 +225,65 @@ export default function App() {
   const [items, setItems] = useState<SpecItem[]>([]);
   const [activeTab, setActiveTab] = useState<'list' | 'analysis'>('list');
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
+  const [categoryManagerTab, setCategoryManagerTab] = useState<'categories' | 'rules'>('categories');
+  const [customClassificationRules, setCustomClassificationRules] = useState<CustomClassificationRule[]>(() => {
+    try {
+      const saved = localStorage.getItem('mechauto_custom_rules');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.map((r: any) => ({
+            ...r,
+            priority: typeof r.priority === 'number' ? r.priority : 10
+          }));
+        }
+      }
+    } catch (e) {
+      console.error('Error loading custom rules:', e);
+    }
+    return [
+      { id: 'rule-sample-1', pattern: '소음방지', category: 'PB', isEnabled: true, priority: 20, description: '소음방지 키워드 매칭 기본 규칙' },
+      { id: 'rule-sample-2', pattern: '안전보호구', category: '지금자재', isEnabled: true, priority: 10, description: '안전 장비 및 수동 보호구 자동 지금자재 처리용' }
+    ];
+  });
+
+  // Persist classification rules
+  useEffect(() => {
+    try {
+      localStorage.setItem('mechauto_custom_rules', JSON.stringify(customClassificationRules));
+    } catch (e) {
+      console.error('Error saving custom rules:', e);
+    }
+  }, [customClassificationRules]);
+
+  const handleApplyRules = (updatedRules = customClassificationRules) => {
+    if (items.length === 0) {
+      showNotification('적용할 시트 데이터가 없습니다. 먼저 엑셀 파일을 업로드해 주세요.', 'error');
+      return;
+    }
+    
+    checkLockAndProceed(() => {
+      let changedCount = 0;
+      setItems(prevItems => {
+        return prevItems.map(item => {
+          const { category: newCategory, remark } = autoClassify(item, updatedRules);
+          const finalCategory = newCategory || item.category;
+          if (finalCategory !== item.category) {
+            changedCount++;
+            return {
+              ...item,
+              category: finalCategory,
+              originalCategory: finalCategory,
+              remark: remark || item.remark
+            };
+          }
+          return item;
+        });
+      });
+      showNotification(`분류 규칙 일괄 적용 완료! ${changedCount}개의 품목 카테고리가 재조정되었습니다.`, 'success');
+    });
+  };
+
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [isClassifying, setIsClassifying] = useState(false);
   const [isSectionSummaryOpen, setIsSectionSummaryOpen] = useState(false);
@@ -878,7 +937,8 @@ export default function App() {
                 section: bi.section,
                 remark: bi.remark
               })),
-              categories
+              categories,
+              customRules: customClassificationRules
             })
           });
           
@@ -993,7 +1053,7 @@ export default function App() {
   const handleDataLoaded = (newItems: SpecItem[], wb: XLSX.WorkBook) => {
     // Apply automatic classification based on rules immediately upon upload
     const classifiedItems = newItems.map(item => {
-      const { category, remark } = autoClassify(item);
+      const { category, remark } = autoClassify(item, customClassificationRules);
       const finalCategory = category || item.category;
       return { 
         ...item, 
@@ -2044,7 +2104,10 @@ export default function App() {
             subtitle={theme === 'high-density' ? 'AI 로직 및 환경 변수 설정' : undefined}
           />
           <button 
-            onClick={() => setIsCategoryManagerOpen(true)}
+            onClick={() => {
+              setCategoryManagerTab('categories');
+              setIsCategoryManagerOpen(true);
+            }}
             className={`w-full flex items-center gap-3 px-4 py-3 transition-all ${
               theme === 'high-density' 
                 ? 'p-3 border-b border-[#141414] text-left opacity-70 hover:bg-white/50' 
@@ -2053,6 +2116,20 @@ export default function App() {
           >
             <Tags size={theme === 'high-density' ? 14 : 20} />
             <span>카테고리 관리</span>
+          </button>
+          <button 
+            onClick={() => {
+              setCategoryManagerTab('rules');
+              setIsCategoryManagerOpen(true);
+            }}
+            className={`w-full flex items-center gap-3 px-4 py-3 transition-all ${
+              theme === 'high-density' 
+                ? 'p-3 border-b border-[#141414] text-left opacity-70 hover:bg-white/50' 
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl font-medium text-sm'
+            }`}
+          >
+            <Sliders size={theme === 'high-density' ? 14 : 20} />
+            <span>분류 규칙 설정</span>
           </button>
         </nav>
 
@@ -2090,7 +2167,10 @@ export default function App() {
             <span className="text-[10px] font-bold">분석</span>
           </button>
           <button 
-            onClick={() => setIsCategoryManagerOpen(true)}
+            onClick={() => {
+              setCategoryManagerTab('categories');
+              setIsCategoryManagerOpen(true);
+            }}
             className="flex flex-col items-center gap-1 p-2 text-slate-400"
           >
             <Tags size={20} />
@@ -2164,6 +2244,10 @@ export default function App() {
                 onClose={() => setIsCategoryManagerOpen(false)}
                 categories={categories}
                 onUpdate={setCategories}
+                customRules={customClassificationRules}
+                onUpdateRules={setCustomClassificationRules}
+                onApplyRules={handleApplyRules}
+                initialTab={categoryManagerTab}
               />
 
               <SettingsManager 
