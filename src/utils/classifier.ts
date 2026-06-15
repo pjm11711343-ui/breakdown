@@ -54,7 +54,7 @@ const MAPPING_RULES: Record<string, string> = {
   '무용접고정식커플링': '강관부속',
   '강관용접': '강관부속',
   '용접합후렌지': '강관부속',
-  '일체형 고정 틀': '고정틀',
+  '일체형 고정 틀': '입상고정틀+내화충진재',
   '온수분배기': '난방분배기',
   '온도조절밸브': '난방분배기',
   '구동기': '난방분배기',
@@ -62,7 +62,7 @@ const MAPPING_RULES: Record<string, string> = {
   '유니온엘보': '난방분배기',
   '코일고정U핀': '난방코일',
   'FLOORPANEL': '난방코일',
-  '내화충진재': '내화충진재',
+  '내화충진재': '입상고정틀+내화충진재',
   '에어컨 냉매배관': '냉매배관',
   '에어컨 냉매박스': '냉매배관',
   '테스트용질소': '냉매배관',
@@ -170,6 +170,27 @@ export function autoClassify(item: SpecItem): { category: string; remark: string
 
   // Section Specific Overrides
   const section = item.section || '';
+
+  // Core User rule: 공정에 0101로시작하는 번호가 없거나 옥내공사용수배관설치비, 가설소화호스함, 지수층 배관설치비, 주차장 우수유도 배관설치비, 지하 환기덕트공사비들은 가설공사 분류해줘
+  const normNameForTemp = name.replace(/\s+/g, '');
+  const normSpecForTemp = spec.replace(/\s+/g, '');
+  
+  const has0101InDigits = section ? section.split(/[^0-9]/).some(part => part.startsWith('0101')) : true;
+  
+  const isTemporaryWorkName = normNameForTemp.includes('옥내공사용수배관설치비') ||
+                              normNameForTemp.includes('가설소화호스함') ||
+                              normNameForTemp.includes('지수층배관설치비') ||
+                              normNameForTemp.includes('주차장우수유도배관설치비') ||
+                              normNameForTemp.includes('지하환기덕트공사비') ||
+                              normSpecForTemp.includes('옥내공사용수배관설치비') ||
+                              normSpecForTemp.includes('가설소화호스함') ||
+                              normSpecForTemp.includes('지수층배관설치비') ||
+                              normSpecForTemp.includes('주차장우수유도배관설치비') ||
+                              normSpecForTemp.includes('지하환기덕트공사비');
+
+  if ((section && !has0101InDigits) || isTemporaryWorkName) {
+    return { category: '가설공사', remark: '가설공사' };
+  }
 
   // Core User rule: 펌프가대설치(배수펌프) 또는 펌프가대설치는 조립식가대로 분류해줘
   if (name.includes('펌프가대설치')) {
@@ -567,7 +588,7 @@ export function autoClassify(item: SpecItem): { category: string; remark: string
     category = '밸브류';
   }
   if (name.includes('일체형고정틀(STS)/K-TYPE')) {
-    category = '고정틀';
+    category = '입상고정틀+내화충진재';
   }
   if (name.includes('안전발판사다리')) {
     category = '마감자재';
@@ -588,6 +609,11 @@ export function autoClassify(item: SpecItem): { category: string; remark: string
     if (name.includes('동만') || name.includes('동망') || name.includes('동관') || name.includes('동')) {
       category = 'PVC';
     }
+  }
+
+  // Final override for 가설공사
+  if ((section && !has0101InDigits) || isTemporaryWorkName) {
+    category = '가설공사';
   }
 
   return { 

@@ -25,10 +25,10 @@ import LZString from 'lz-string';
 const INITIAL_CATEGORIES = [
   '백강관', '강관부속', 'STS위생관', 'STS위생부속', 'STS난방관', 'STS난방부속', 
   '고강도PVC', 'PVC', 'PB', '냉매배관', '난방코일', '난방분배기', 
-  '밸브류', '수도계량기', '감압변', '스리브', '내화충진재', '고정틀', 
+  '밸브류', '수도계량기', '감압변', '스리브', '입상고정틀+내화충진재', 
   '조립식가대', 'SUPPORT류', '마감자재', '통합거치대', '보온재', '소모잡자재', 
-  '공구손료', '안전장비류', '가설공사', '명판', '휀장비류', '기타자재',
-  '지금자재', '외주'
+  '공구손료', '안전장비류', '명판', '휀장비류', '기타자재', '지금자재', 
+  '외주', '가설공사'
 ];
 
 const STORAGE_KEY = 'mechauto_session_data';
@@ -671,6 +671,48 @@ export default function App() {
     setItems(prev => prev.map(item => 
       item.id === id ? { ...item, memo: newMemo } : item
     ));
+  };
+
+  const handleUpdateSafetyAmount = (amount: number) => {
+    setItems(prev => {
+      const idx = prev.findIndex(item => item.id === 'manual-safety-item');
+      if (idx !== -1) {
+        if (amount <= 0) {
+          return prev.filter(item => item.id !== 'manual-safety-item');
+        }
+        return prev.map(item => 
+          item.id === 'manual-safety-item' 
+            ? { 
+                ...item, 
+                materialUnitPrice: amount,
+                materialAmount: amount, 
+                unitPrice: amount, 
+                amount: amount 
+              } 
+            : item
+        );
+      } else if (amount > 0) {
+        const newItem: SpecItem = {
+          id: 'manual-safety-item',
+          name: '안전장비류 (수동 입력)',
+          specification: '현장안전용품',
+          unit: '식',
+          quantity: 1,
+          materialUnitPrice: amount,
+          materialAmount: amount,
+          laborUnitPrice: 0,
+          laborAmount: 0,
+          unitPrice: amount,
+          amount: amount,
+          category: '안전장비류',
+          section: '가설 및 안전공사',
+          remark: '수동 입력'
+        };
+        return [...prev, newItem];
+      }
+      return prev;
+    });
+    showNotification('안전장비류 수동 입력 금액이 반영되었습니다.', 'success');
   };
 
   const handleDataLoaded = (newItems: SpecItem[], wb: XLSX.WorkBook) => {
@@ -1466,6 +1508,7 @@ export default function App() {
                     theme={theme} 
                     categories={INITIAL_CATEGORIES}
                     onCategoryClick={(cat) => setCategoryFilter(cat)}
+                    onUpdateSafetyAmount={handleUpdateSafetyAmount}
                   />
                   {isSectionSummaryOpen && (
                     <SectionSummaryCards 

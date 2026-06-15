@@ -847,7 +847,12 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                     itemsByCategory[cat][sec].push(item);
                   });
 
-                  return Object.entries(itemsByCategory).sort().map(([catName, sections], catIdx) => {
+                  return Object.entries(itemsByCategory).sort((a, b) => {
+                    const idxA = categories.indexOf(a[0]);
+                    const idxB = categories.indexOf(b[0]);
+                    const getVal = (idx: number) => idx === -1 ? 9999 : idx;
+                    return getVal(idxA) - getVal(idxB);
+                  }).map(([catName, sections], catIdx) => {
                     const catItems = Object.values(sections).flat();
                     const catMaterialTotal = catItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0);
                     const catLaborTotal = catItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0);

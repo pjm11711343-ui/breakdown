@@ -8,10 +8,14 @@ interface Props {
   theme: ThemeType;
   categories: string[];
   onCategoryClick?: (category: string) => void;
+  onUpdateSafetyAmount?: (amount: number) => void;
 }
 
-export default function CategorySummaryCards({ items, theme, categories, onCategoryClick }: Props) {
+export default function CategorySummaryCards({ items, theme, categories, onCategoryClick, onUpdateSafetyAmount }: Props) {
   if (items.length === 0) return null;
+
+  const [isEditingSafety, setIsEditingSafety] = React.useState(false);
+  const [safetyInputVal, setSafetyInputVal] = React.useState('');
 
   // Filter out '미분류', '외주', '열선', and '지금자재' for summary calculation
   const filteredItems = items.filter(item => {
@@ -34,9 +38,10 @@ export default function CategorySummaryCards({ items, theme, categories, onCateg
     return acc;
   }, {} as Record<string, { amount: number; count: number }>);
 
-  // Strictly follow the provided categories array order
+  // Strictly follow the provided categories array order (except safety equipment)
   const sortedCategories = categories
     .map(name => {
+      if (name === '안전장비류') return null;
       const data = categoryData[name];
       if (!data) return null;
       return {
@@ -49,7 +54,7 @@ export default function CategorySummaryCards({ items, theme, categories, onCateg
 
   // Append any extra categories that might exist but aren't in the main list
   const extraCategories = Object.entries(categoryData)
-    .filter(([name]) => !categories.includes(name))
+    .filter(([name]) => !categories.includes(name) && name !== '안전장비류')
     .map(([name, data]) => ({
       name,
       ...data,
@@ -57,7 +62,16 @@ export default function CategorySummaryCards({ items, theme, categories, onCateg
     }))
     .sort((a, b) => b.amount - a.amount);
 
-  const finalCategories = [...sortedCategories, ...extraCategories];
+  const safetyData = categoryData['안전장비류'] || { amount: 0, count: 0 };
+  const safetyCategory = {
+    name: '안전장비류',
+    amount: safetyData.amount,
+    count: safetyData.count,
+    percentage: totalAmount > 0 ? (safetyData.amount / totalAmount) * 100 : 0
+  };
+
+  const filteredFinalCategories = [...sortedCategories, ...extraCategories];
+  filteredFinalCategories.push(safetyCategory);
 
   const unclassifiedItemsList = items.filter(item => !item.category || item.category === '미분류');
   const unclassifiedCount = unclassifiedItemsList.length;
@@ -74,7 +88,7 @@ export default function CategorySummaryCards({ items, theme, categories, onCateg
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-[11px] opacity-60 italic font-mono">GROUPS: {finalCategories.length}</span>
+            <span className="text-[11px] opacity-60 italic font-mono">GROUPS: {filteredFinalCategories.length}</span>
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-0 divide-x divide-y divide-[#141414]">
@@ -109,24 +123,88 @@ export default function CategorySummaryCards({ items, theme, categories, onCateg
             </div>
           )}
 
-          {finalCategories.map((cat) => (
-            <div 
-              key={cat.name} 
-              onClick={() => onCategoryClick?.(cat.name)}
-              className="p-3 flex flex-col justify-between hover:bg-[#F9F9F9] transition-colors border-[#141414] cursor-pointer"
-            >
-              <div className="flex justify-between items-start mb-1">
-                <span className="text-[11px] font-black text-slate-500 uppercase truncate" title={cat.name}>{cat.name}</span>
-                <span className="text-[11px] font-mono font-bold bg-blue-100 text-blue-700 px-1 border border-blue-200">
-                  {cat.percentage.toFixed(1)}%
-                </span>
+          {filteredFinalCategories.map((cat) => {
+            if (cat.name === '안전장비류') {
+              return (
+                <div 
+                  key={cat.name} 
+                  onClick={() => onCategoryClick?.(cat.name)}
+                  className="p-3 flex flex-col justify-between bg-indigo-50/30 hover:bg-indigo-50/50 transition-colors border-[#141414] cursor-pointer border-l-4 border-l-indigo-600"
+                >
+                  <div className="flex justify-between items-start mb-1">
+                    <span className="text-[11px] font-black text-indigo-700 uppercase truncate" title={cat.name}>🛡️ {cat.name}</span>
+                    <span className="text-[11px] font-mono font-bold bg-indigo-100 text-indigo-700 px-1 border border-indigo-200">
+                      {cat.percentage.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    {isEditingSafety ? (
+                      <div className="flex items-center gap-1 mt-1" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-xs font-mono font-bold text-indigo-600">₩</span>
+                        <input
+                          type="text"
+                          value={safetyInputVal}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9]/g, '');
+                            setSafetyInputVal(val);
+                          }}
+                          onBlur={() => {
+                            setIsEditingSafety(false);
+                            onUpdateSafetyAmount?.(Number(safetyInputVal) || 0);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              setIsEditingSafety(false);
+                              onUpdateSafetyAmount?.(Number(safetyInputVal) || 0);
+                            } else if (e.key === 'Escape') {
+                              setIsEditingSafety(false);
+                            }
+                          }}
+                          className="w-full px-1.5 py-0.5 text-xs font-mono border border-indigo-500 rounded outline-none bg-white font-bold"
+                          placeholder="금액..."
+                          autoFocus
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-sm font-mono font-black italic tracking-tighter text-indigo-900">₩{cat.amount.toLocaleString()}</span>
+                        <span 
+                          className="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold bg-white px-1.5 py-0.5 rounded border border-indigo-200 shadow-sm flex items-center" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSafetyInputVal(cat.amount ? String(cat.amount) : '');
+                            setIsEditingSafety(true);
+                          }}
+                        >
+                          수동 ✎
+                        </span>
+                      </div>
+                    )}
+                    <span className="text-[9px] opacity-50 uppercase font-bold text-indigo-700 mt-1">{cat.count} items (수동입력 가능)</span>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div 
+                key={cat.name} 
+                onClick={() => onCategoryClick?.(cat.name)}
+                className="p-3 flex flex-col justify-between hover:bg-[#F9F9F9] transition-colors border-[#141414] cursor-pointer"
+              >
+                <div className="flex justify-between items-start mb-1">
+                  <span className="text-[11px] font-black text-slate-500 uppercase truncate" title={cat.name}>{cat.name}</span>
+                  <span className="text-[11px] font-mono font-bold bg-blue-100 text-blue-700 px-1 border border-blue-200">
+                    {cat.percentage.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-sm font-mono font-black italic tracking-tighter">₩{cat.amount.toLocaleString()}</span>
+                  <span className="text-[11px] opacity-40 uppercase font-bold">{cat.count} items</span>
+                </div>
               </div>
-              <div className="flex flex-col">
-                <span className="text-sm font-mono font-black italic tracking-tighter">₩{cat.amount.toLocaleString()}</span>
-                <span className="text-[11px] opacity-40 uppercase font-bold">{cat.count} items</span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
@@ -223,48 +301,129 @@ export default function CategorySummaryCards({ items, theme, categories, onCateg
           </motion.div>
         )}
 
-        {finalCategories.map((cat, idx) => (
-          <motion.div
-            key={cat.name}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.03 }}
-            onClick={() => onCategoryClick?.(cat.name)}
-            className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-indigo-200 hover:-translate-y-0.5 transition-all group relative overflow-hidden cursor-pointer"
-          >
-            <div className="absolute top-0 right-0 w-16 h-16 -mr-4 -mt-4 bg-indigo-50 rounded-full blur-2xl group-hover:bg-indigo-100 transition-colors" />
-            
-            <div className="relative z-10">
-              <div className="flex justify-between items-start mb-3">
-                <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest group-hover:text-indigo-500 transition-colors">
-                  {cat.name}
-                </span>
-                <span className="text-[11px] font-black text-indigo-700 bg-indigo-100/50 px-2 py-0.5 rounded-md border border-indigo-100">
-                  {cat.percentage.toFixed(1)}%
-                </span>
-              </div>
-              
-              <div className="text-xl font-mono font-black text-slate-900 mb-4 group-hover:scale-[1.02] origin-left transition-transform">
-                ₩{cat.amount.toLocaleString()}
-              </div>
-              
-              <div className="flex flex-col gap-2">
-                <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden border border-slate-100">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${cat.percentage}%` }}
-                    transition={{ duration: 0.8, ease: "easeOut", delay: idx * 0.05 }}
-                    className="h-full bg-indigo-500 rounded-full group-hover:bg-indigo-600 transition-colors shadow-[0_0_8px_rgba(79,70,229,0.3)]" 
-                  />
+        {filteredFinalCategories.map((cat, idx) => {
+          if (cat.name === '안전장비류') {
+            return (
+              <motion.div
+                key={cat.name}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.03 }}
+                onClick={() => onCategoryClick?.(cat.name)}
+                className="bg-indigo-50/50 p-5 rounded-2xl border-2 border-indigo-200 shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all group relative overflow-hidden cursor-pointer border-l-4 border-l-indigo-600"
+              >
+                <div className="absolute top-0 right-0 w-16 h-16 -mr-4 -mt-4 bg-indigo-100 rounded-full blur-2xl" />
+                
+                <div className="relative z-10">
+                  <div className="flex justify-between items-start mb-3">
+                    <span className="text-[11px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-1">
+                      🛡️ {cat.name}
+                    </span>
+                    <span className="text-[11px] font-black text-indigo-700 bg-indigo-100/50 px-2 py-0.5 rounded-md border border-indigo-100">
+                      {cat.percentage.toFixed(1)}%
+                    </span>
+                  </div>
+                  
+                  {isEditingSafety ? (
+                    <div className="flex flex-col gap-1 mt-2" onClick={(e) => e.stopPropagation()}>
+                      <label className="text-[9px] font-black text-indigo-600 uppercase">안전장비류 금액 입력</label>
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm font-mono font-bold text-slate-400">₩</span>
+                        <input
+                          type="text"
+                          value={safetyInputVal}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9]/g, '');
+                            setSafetyInputVal(val);
+                          }}
+                          onBlur={() => {
+                            setIsEditingSafety(false);
+                            onUpdateSafetyAmount?.(Number(safetyInputVal) || 0);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              setIsEditingSafety(false);
+                              onUpdateSafetyAmount?.(Number(safetyInputVal) || 0);
+                            } else if (e.key === 'Escape') {
+                              setIsEditingSafety(false);
+                            }
+                          }}
+                          className="w-full px-2 py-1 text-xs font-mono border border-indigo-500 rounded-lg outline-none bg-white font-bold"
+                          placeholder="금액 입력..."
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-4 flex items-center justify-between">
+                      <div className="text-xl font-mono font-black text-slate-900 group-hover:scale-[1.02] origin-left transition-transform">
+                        ₩{cat.amount.toLocaleString()}
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSafetyInputVal(cat.amount ? String(cat.amount) : '');
+                          setIsEditingSafety(true);
+                        }}
+                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-white hover:bg-slate-50 px-2.5 py-1 rounded-full border border-indigo-100 shadow-sm transition-all"
+                      >
+                        수동 입력 ✎
+                      </button>
+                    </div>
+                  )}
+                  
+                  <div className="mt-4 flex justify-between items-center border-t border-indigo-100/50 pt-2 font-bold text-indigo-500">
+                    <span className="text-[11px] uppercase">Processed Items</span>
+                    <span className="text-[11px] font-mono">{cat.count} (수동 입력됨)</span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] text-slate-400 font-bold uppercase">Processed Items</span>
-                  <span className="text-[11px] text-slate-600 font-bold font-mono">{cat.count}</span>
+              </motion.div>
+            );
+          }
+
+          return (
+            <motion.div
+              key={cat.name}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.03 }}
+              onClick={() => onCategoryClick?.(cat.name)}
+              className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-indigo-200 hover:-translate-y-0.5 transition-all group relative overflow-hidden cursor-pointer"
+            >
+              <div className="absolute top-0 right-0 w-16 h-16 -mr-4 -mt-4 bg-indigo-50 rounded-full blur-2xl group-hover:bg-indigo-100 transition-colors" />
+              
+              <div className="relative z-10">
+                <div className="flex justify-between items-start mb-3">
+                  <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest group-hover:text-indigo-500 transition-colors">
+                    {cat.name}
+                  </span>
+                  <span className="text-[11px] font-black text-indigo-700 bg-indigo-100/50 px-2 py-0.5 rounded-md border border-indigo-100">
+                    {cat.percentage.toFixed(1)}%
+                  </span>
+                </div>
+                
+                <div className="text-xl font-mono font-black text-slate-900 mb-4 group-hover:scale-[1.02] origin-left transition-transform">
+                  ₩{cat.amount.toLocaleString()}
+                </div>
+                
+                <div className="flex flex-col gap-2">
+                  <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden border border-slate-100">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${cat.percentage}%` }}
+                      transition={{ duration: 0.8, ease: "easeOut", delay: idx * 0.05 }}
+                      className="h-full bg-indigo-500 rounded-full group-hover:bg-indigo-600 transition-colors shadow-[0_0_8px_rgba(79,70,229,0.3)]" 
+                    />
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] text-slate-400 font-bold uppercase">Processed Items</span>
+                    <span className="text-[11px] text-slate-600 font-bold font-mono">{cat.count}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          </motion.div>
-        ))}
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );

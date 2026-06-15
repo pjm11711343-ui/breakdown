@@ -44,10 +44,10 @@ async function startServer() {
         '일반행거': 'SUPPORT류', '절연행가': 'SUPPORT류', 'U자형볼트': 'SUPPORT류', '인서트플레이트': 'SUPPORT류', '달대볼트': 'SUPPORT류',
         '감압밸브': '감압변', '세대별물감압밸브': '감압변',
         '용접식관이음쇠': '강관부속', '무용접엘보': '강관부속', '무용접티이': '강관부속', '무용접플랜지아답타니플': '강관부속', '무용접고정식커플링': '강관부속', '강관용접': '강관부속', '용접합후렌지': '강관부속',
-        '일체형 고정 틀': '고정 틀',
+        '일체형 고정 틀': '입상고정틀+내화충진재',
         '온수분배기': '난방분배기', '온도조절밸브': '난방분배기', '구동기': '난방분배기', '씽크수전지지대': '난방분배기', '유니온엘보': '난방분배기',
         '코일고정U핀': '난방코일', 'FLOORPANEL': '난방코일',
-        '내화충진재': '내화충진재',
+        '내화충진재': '입상고정틀+내화충진재',
         '에어컨 냉매배관': '냉매배관', '에어컨 냉매박스': '냉매배관', '테스트용질소': '냉매배관',
         '제습기': '마감자재', '방열기': '마감자재', '온수기': '마감자재', '터파기': '마감자재', '되메우기': '마감자재', '모래부설': '마감자재',
         'IDNTIFICATION&TAGGING': '명판', '배관인식표': '명판',
@@ -211,6 +211,29 @@ async function startServer() {
           }
           if (name.includes('강관스리브')) {
             category = '스리브';
+          }
+
+          // Rule for 가설공사
+          const section = item.section || '';
+          const spec = item.specification || '';
+          const normNameForTemp = name.replace(/\s+/g, '');
+          const normSpecForTemp = spec.replace(/\s+/g, '');
+
+          const has0101InDigits = section ? section.split(/[^0-9]/).some((part: string) => part.startsWith('0101')) : true;
+
+          const isTemporaryWorkName = normNameForTemp.includes('옥내공사용수배관설치비') ||
+                                      normNameForTemp.includes('가설소화호스함') ||
+                                      normNameForTemp.includes('지수층배관설치비') ||
+                                      normNameForTemp.includes('주차장우수유도배관설치비') ||
+                                      normNameForTemp.includes('지하환기덕트공사비') ||
+                                      normSpecForTemp.includes('옥내공사용수배관설치비') ||
+                                      normSpecForTemp.includes('가설소화호스함') ||
+                                      normSpecForTemp.includes('지수층배관설치비') ||
+                                      normSpecForTemp.includes('주차장우수유도배관설치비') ||
+                                      normSpecForTemp.includes('지하환기덕트공사비');
+
+          if ((section && !has0101InDigits) || isTemporaryWorkName) {
+            category = '가설공사';
           }
         }
 
