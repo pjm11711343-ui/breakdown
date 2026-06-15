@@ -16,7 +16,7 @@ import ExcelUpload from './components/ExcelUpload';
 import CategoryManager from './components/CategoryManager';
 import SettingsManager from './components/SettingsManager';
 import ProjectSiteManager from './components/ProjectSiteManager';
-import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X } from 'lucide-react';
+import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X, Save } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 import * as XLSX from 'xlsx';
@@ -238,6 +238,13 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProjectName, setCurrentProjectName] = useState<string>('');
   
+  // Real-time Save & Manual Save States
+  const [isAutoSavingIndicator, setIsAutoSavingIndicator] = useState(false);
+  const [lastAutoSavedTime, setLastAutoSavedTime] = useState<string>('');
+  const [isAutoSaveActive, setIsAutoSaveActive] = useState(true);
+  const [isManualSaveNamingOpen, setIsManualSaveNamingOpen] = useState(false);
+  const [manualSaveName, setManualSaveName] = useState('');
+  
   // Share Project State
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
@@ -370,6 +377,76 @@ export default function App() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
     }
   }, [items, theme, fontFamily, fontSize]);
+
+  // Real-time site-specific auto-saving hook
+  useEffect(() => {
+    if (isAutoSaveActive && currentProjectName && items.length > 0 && theme) {
+      setIsAutoSavingIndicator(true);
+      
+      const existingId = projects.find(p => p.name === currentProjectName)?.id;
+      const updatedProject: Project = {
+        id: existingId || (Date.now().toString(36) + Math.random().toString(36).substring(2)),
+        name: currentProjectName,
+        items,
+        theme,
+        config: {
+          theme,
+          fontFamily,
+          fontSize
+        },
+        categories,
+        updatedAt: Date.now()
+      };
+
+      setProjects(prev => {
+        const updated = prev.some(p => p.name === currentProjectName)
+          ? prev.map(p => p.name === currentProjectName ? updatedProject : p)
+          : [...prev, updatedProject];
+        localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        return updated;
+      });
+
+      const now = new Date();
+      setLastAutoSavedTime(now.toTimeString().split(' ')[0]);
+
+      const timer = setTimeout(() => {
+        setIsAutoSavingIndicator(false);
+      }, 700);
+      return () => clearTimeout(timer);
+    }
+  }, [items, theme, fontFamily, fontSize, categories, currentProjectName, isAutoSaveActive]);
+
+  const handleManualSave = () => {
+    if (!theme) {
+      showNotification('테마를 먼저 선택해야 저장할 수 있습니다.', 'error');
+      return;
+    }
+    if (items.length === 0) {
+      showNotification('저장할 내역 데이터가 없습니다.', 'error');
+      return;
+    }
+
+    if (currentProjectName) {
+      handleSaveProject(currentProjectName);
+      const now = new Date();
+      setLastAutoSavedTime(now.toTimeString().split(' ')[0]);
+      showNotification(`현장 [ ${currentProjectName} ] 정보가 성공적으로 수동 저장되었습니다.`, 'success');
+    } else {
+      setManualSaveName('');
+      setIsManualSaveNamingOpen(true);
+    }
+  };
+
+  const handleConfirmManualSave = () => {
+    if (!manualSaveName.trim()) {
+      showNotification('현장명을 입력해야 저장이 가능합니다.', 'error');
+      return;
+    }
+    handleSaveProject(manualSaveName.trim());
+    const now = new Date();
+    setLastAutoSavedTime(now.toTimeString().split(' ')[0]);
+    setIsManualSaveNamingOpen(false);
+  };
 
   const handleShareProject = async () => {
     if (items.length === 0) {
@@ -724,9 +801,9 @@ export default function App() {
         <header className="flex items-center justify-between px-6 py-3 bg-[#141414] text-white">
           <div className="flex items-center gap-4">
             <div className="w-8 h-8 bg-[#3B82F6] flex items-center justify-center font-bold text-lg rounded-sm">M</div>
-            <h1 className="text-sm font-semibold tracking-widest uppercase truncate max-w-[300px]">기계설비 공정분리 툴 v4.0</h1>
+            <h1 className="text-sm font-semibold tracking-widest uppercase truncate max-w-[200px]">기계설비 공정분리 툴 v4.0</h1>
             
-            <div className="h-6 w-px bg-white/20 mx-2" />
+            <div className="h-6 w-px bg-white/20 mx-1" />
             
             <ProjectSiteManager 
               projects={projects}
@@ -737,12 +814,27 @@ export default function App() {
               onDelete={handleDeleteProject}
               onNew={handleNewProject}
             />
+
+            {currentProjectName && (
+              <div className="hidden xl:flex items-center gap-1.5 text-[9px] bg-emerald-950/60 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 font-mono">
+                <span className={`w-1.5 h-1.5 rounded-full ${isAutoSavingIndicator ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
+                <span>실시간 저장 {lastAutoSavedTime ? `완료 (${lastAutoSavedTime})` : '활성화'}</span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-6">
-            <div className="text-[11px] opacity-60 font-mono">가동 상태: 정상</div>
+            <div className="text-[11px] opacity-60 font-mono hidden md:block">가동 상태: 정상</div>
             <div className="flex gap-2 items-center">
               {items.length > 0 && (
                 <>
+                  <button 
+                    onClick={handleManualSave}
+                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-[10px] font-bold uppercase rounded border border-emerald-500 text-white transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    title="현재 수동 저장"
+                  >
+                    <Save size={12} />
+                    수동 저장
+                  </button>
                   <button 
                     onClick={handleShareProject}
                     className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-[10px] font-bold uppercase rounded border border-amber-500 text-white transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -776,12 +868,12 @@ export default function App() {
     return (
       <header className="flex flex-col md:flex-row md:items-start justify-between gap-4 p-6 lg:p-10 pb-4">
         <div>
-          <div className="flex items-center gap-2 text-sm text-slate-400 mb-1">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400 mb-1">
             <span>데이터 관리</span>
             <ChevronRight size={14} />
             <span className="text-indigo-500 font-medium font-mono uppercase tracking-wider">{theme || '신규'} 테마</span>
             <ChevronRight size={14} />
-            <div className="ml-2">
+            <div className="ml-2 flex flex-wrap items-center gap-2">
               <ProjectSiteManager 
                 projects={projects}
                 currentProjectName={currentProjectName}
@@ -791,6 +883,12 @@ export default function App() {
                 onDelete={handleDeleteProject}
                 onNew={handleNewProject}
               />
+              {currentProjectName && (
+                <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-full shadow-sm">
+                  <span className={`w-2 h-2 rounded-full ${isAutoSavingIndicator ? 'bg-amber-500 animate-ping' : 'bg-emerald-500'}`} />
+                  <span>실시간 자동 저장 {lastAutoSavedTime ? `완료 (${lastAutoSavedTime})` : '활성화됨'}</span>
+                </div>
+              )}
             </div>
           </div>
           <h1 className="text-3xl font-bold tracking-tight">기계설비 공정 분석 마스터</h1>
@@ -800,6 +898,14 @@ export default function App() {
           <div className="flex items-center gap-3">
              {items.length > 0 && (
                <>
+                 <button 
+                   onClick={handleManualSave}
+                   className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all shadow-lg shadow-emerald-100 text-sm font-bold cursor-pointer"
+                   title="현장 수동 저장"
+                 >
+                   <Save size={16} />
+                   <span>수동 저장</span>
+                 </button>
                  <button 
                    onClick={handleShareProject}
                    className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition-all shadow-lg shadow-amber-200 text-sm font-bold cursor-pointer"
@@ -977,7 +1083,6 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
-
       {/* Share Project Modal */}
       <AnimatePresence>
         {isShareModalOpen && (
@@ -1131,6 +1236,76 @@ export default function App() {
                   }`}
                 >
                   닫기
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Manual Save Naming Modal */}
+      <AnimatePresence>
+        {isManualSaveNamingOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center p-4 backdrop-blur-sm bg-slate-900/40"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className={`w-full max-w-sm overflow-hidden shadow-2xl relative ${
+                theme === 'high-density' ? 'bg-white border-2 border-[#141414]' : 'bg-white rounded-2xl border border-slate-100'
+              }`}
+            >
+              <div className={`px-6 py-4 border-b flex justify-between items-center ${
+                theme === 'high-density' ? 'bg-[#141414] text-white border-[#141414]' : 'bg-slate-50'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <Save size={16} />
+                  <h3 className="text-sm font-bold uppercase tracking-tight">새 현장 수동 저장</h3>
+                </div>
+                <button onClick={() => setIsManualSaveNamingOpen(false)} className="text-slate-400 hover:text-slate-600">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-6">
+                <label className="block text-[10px] font-black uppercase text-slate-400 mb-2">
+                  신규 현장 프로젝트명 (Site Name)
+                </label>
+                <input
+                  autoFocus
+                  type="text"
+                  value={manualSaveName}
+                  onChange={(e) => setManualSaveName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleConfirmManualSave()}
+                  placeholder="예: 마포 웰스트림 아파트 기계설비공사"
+                  className={`w-full px-4 py-3 text-sm font-bold border focus:ring-0 outline-none transition-all text-slate-900 ${
+                    theme === 'high-density' ? 'border-[#141414] rounded-none focus:bg-yellow-50' : 'border-slate-200 rounded-xl focus:border-indigo-500'
+                  }`}
+                />
+                <p className="mt-3 text-[10px] text-slate-500 leading-normal">
+                  현재 분석 및 가공된 내역 품목 정보가 이 현장명으로 안전하게 영구 저장됩니다. 향후 '현장 보관함'에서 언제든 다시 불러올 수 있습니다.
+                </p>
+              </div>
+              <div className="px-6 py-4 flex gap-2 border-t border-slate-50 bg-slate-50/50">
+                <button
+                  onClick={() => setIsManualSaveNamingOpen(false)}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-colors ${
+                    theme === 'high-density' ? 'border-[#141414] hover:bg-slate-100 text-black' : 'border-slate-200 text-slate-500 hover:bg-slate-50 bg-white'
+                  }`}
+                >
+                  취소
+                </button>
+                <button
+                  onClick={handleConfirmManualSave}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg text-white transition-opacity ${
+                    theme === 'high-density' ? 'bg-[#141414] hover:bg-black' : 'bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-100'
+                  }`}
+                >
+                  저장 및 동기화
                 </button>
               </div>
             </motion.div>

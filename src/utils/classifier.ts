@@ -171,6 +171,108 @@ export function autoClassify(item: SpecItem): { category: string; remark: string
   // Section Specific Overrides
   const section = item.section || '';
 
+  // Core User rule: 펌프가대설치(배수펌프) 또는 펌프가대설치는 조립식가대로 분류해줘
+  if (name.includes('펌프가대설치')) {
+    return { category: '조립식가대', remark: '조립식가대' };
+  }
+
+  // Core User rule: 공정 01010406으로 시작하는 공정들에서 아티론보온은 외주로 분류해줘
+  if (section.includes('01010406')) {
+    const normName = name.replace(/\s+/g, '');
+    const normSpec = spec.replace(/\s+/g, '');
+    if (normName.includes('아티론보온') || normSpec.includes('아티론보온')) {
+      return { category: '외주', remark: '외주' };
+    }
+  }
+
+  // Core User rule: 공정에 01010804 관보온은 외주로 분류해줘
+  if (section.includes('01010804')) {
+    const normName = name.replace(/\s+/g, '');
+    const normSpec = spec.replace(/\s+/g, '');
+    if (normName.includes('관보온') || normSpec.includes('관보온')) {
+      return { category: '외주', remark: '외주' };
+    }
+  }
+
+  // Core User rule: 공정 01010604에 F.D(STL)은 외주로 분류해줘
+  if (section.includes('01010604')) {
+    const normName = name.toLowerCase();
+    const normSpec = spec.toLowerCase();
+    
+    if (
+      normName.includes('f.d(stl)') || 
+      normName.includes('fd(stl)') || 
+      (normName.includes('f.d') && normName.includes('stl')) ||
+      (normName.includes('fd') && normName.includes('stl')) ||
+      normName === 'f.d' ||
+      normName === 'fd' ||
+      normSpec.includes('f.d(stl)') ||
+      normSpec.includes('fd(stl)')
+    ) {
+      return { category: '외주', remark: '외주' };
+    }
+  }
+
+  // Core User rule: PART 010104010, 01010401, 01010801공정에 품명:폴리푸틸렌관 규격:PB,난방용, D15는 난방코일로 분류, D20은 PB로 분류, 위생용은 PB로 분류
+  if (section.includes('01010401') || section.includes('01010801') || section.includes('010104010')) {
+    const normName = name.toLowerCase();
+    const normSpec = spec.toLowerCase();
+    
+    const hasPB = normName.includes('폴리부틸렌') || normName.includes('폴리푸틸렌') || normName.includes('pb') ||
+                  normSpec.includes('폴리부틸렌') || normSpec.includes('폴리푸틸렌') || normSpec.includes('pb');
+                  
+    if (hasPB) {
+      const hasD20 = normName.includes('20') || normSpec.includes('20') || normSpec.includes('d20');
+      const hasD15 = normName.includes('15') || normSpec.includes('15') || normSpec.includes('d15');
+      
+      if (hasD20) {
+        return { category: 'PB', remark: 'PB' };
+      } else if (hasD15) {
+        const isHeating = normName.includes('난방') || normSpec.includes('난방');
+        const isSanitary = normName.includes('위생') || normSpec.includes('위생') || normName.includes('급수') || normSpec.includes('급수') || normName.includes('급탕') || normSpec.includes('급탕');
+        
+        if (isHeating) {
+          return { category: '난방코일', remark: '난방코일' };
+        } else if (isSanitary) {
+          return { category: 'PB', remark: 'PB' };
+        } else {
+          if (section.includes('난방')) {
+            return { category: '난방코일', remark: '난방코일' };
+          }
+          return { category: 'PB', remark: 'PB' };
+        }
+      }
+    }
+  }
+
+  // User rule for 01010403 starting sections
+  if (section.includes('01010403')) {
+    const normName = name.toLowerCase();
+    const normSpec = spec.toLowerCase();
+    
+    const hasPB = normName.includes('폴리부틸렌') || normName.includes('폴리푸틸렌') || normName.includes('pb') ||
+                  normSpec.includes('폴리부틸렌') || normSpec.includes('폴리푸틸렌') || normSpec.includes('pb');
+                  
+    if (hasPB) {
+      const normSpecNoSec = normSpec.replace(/\s+/g, '');
+      const isIntegratedStand = (normSpecNoSec.includes('pb수전엘보') && (normSpecNoSec.includes('15') || normSpecNoSec.includes('d15'))) ||
+                               (normSpecNoSec.includes('pb티이') && (normSpecNoSec.includes('15') || normSpecNoSec.includes('d15')));
+      
+      if (isIntegratedStand) {
+        return { category: '통합거치대', remark: '통합거치대' };
+      }
+
+      const hasD15 = normName.includes('15') || normSpec.includes('15') || normSpec.includes('d15');
+      const isSanitary = normName.includes('위생') || normSpec.includes('위생') || 
+                         normName.includes('급수') || normSpec.includes('급수') || 
+                         normName.includes('급탕') || normSpec.includes('급탕');
+                         
+      if (hasD15 || isSanitary) {
+        return { category: 'PB', remark: 'PB' };
+      }
+    }
+  }
+
   // 1. 난방공사 (Heating)
   if (section.includes('난방') || name.includes('난방')) {
     if (category.startsWith('STS') || name.includes('스텐') || name.includes('스테인리스') || name.includes('STS')) {
@@ -322,7 +424,7 @@ export function autoClassify(item: SpecItem): { category: string; remark: string
   if (name.includes('멀티캡')) {
     category = '마감자재';
   }
-  if (name.includes('시스템가대브라켓') || name.includes('조립식찬넬설치공사') || name.includes('시스템찬넬')) {
+  if (name.includes('시스템가대브라켓') || name.includes('조립식찬넬설치공사') || name.includes('시스템찬넬') || name.includes('펌프가대설치')) {
     category = '조립식가대';
   }
   if (section.includes('조립식찬넬설치공사') && name.includes('그외부속류')) {
@@ -348,7 +450,11 @@ export function autoClassify(item: SpecItem): { category: string; remark: string
     category = '외주';
   }
   if (name.includes('일반배관용STS강관이음쇠')) {
-    category = 'STS위생부속';
+    if (section.includes('01010403')) {
+      category = '통합거치대';
+    } else {
+      category = 'STS위생부속';
+    }
   }
   if (name.toLowerCase().includes('플랜지(flange)') && spec.toLowerCase().includes('pvcts플랜지')) {
     category = 'PVC';
@@ -360,6 +466,103 @@ export function autoClassify(item: SpecItem): { category: string; remark: string
   }
 
   // User requested rules
+  if (section.includes('01010401') || section.includes('01010801') || section.includes('010104010')) {
+    const normName = name.replace(/\s+/g, '').toLowerCase();
+    const normSpec = spec.replace(/\s+/g, '').toLowerCase();
+    
+    const hasPB = normName.includes('폴리부틸렌') || normName.includes('폴리푸틸렌') || normName.includes('pb') ||
+                  normSpec.includes('폴리부틸렌') || normSpec.includes('폴리푸틸렌') || normSpec.includes('pb');
+                  
+    if (hasPB) {
+      const hasD20 = normName.includes('20') || normSpec.includes('20') || normSpec.includes('d20');
+      const hasD15 = normName.includes('15') || normSpec.includes('15') || normSpec.includes('d15');
+      
+      if (hasD20) {
+        category = 'PB';
+      } else if (hasD15) {
+        const isHeating = normName.includes('난방') || normSpec.includes('난방');
+        const isSanitary = normName.includes('위생') || normSpec.includes('위생') || normName.includes('급수') || normSpec.includes('급수') || normName.includes('급탕') || normSpec.includes('급탕');
+        
+        if (isHeating) {
+          category = '난방코일';
+        } else if (isSanitary) {
+          category = 'PB';
+        } else {
+          if (section.includes('난방')) {
+            category = '난방코일';
+          } else {
+            category = 'PB';
+          }
+        }
+      }
+    }
+  }
+
+  // User rule for 01010403 starting sections
+  if (section.includes('01010403')) {
+    const normName = name.replace(/\s+/g, '').toLowerCase();
+    const normSpec = spec.replace(/\s+/g, '').toLowerCase();
+    
+    const hasPB = normName.includes('폴리부틸렌') || normName.includes('폴리푸틸렌') || normName.includes('pb') ||
+                  normSpec.includes('폴리부틸렌') || normSpec.includes('폴리푸틸렌') || normSpec.includes('pb');
+                  
+    if (hasPB) {
+      const normSpecNoSec = normSpec.replace(/\s+/g, '');
+      const isIntegratedStand = (normSpecNoSec.includes('pb수전엘보') && (normSpecNoSec.includes('15') || normSpecNoSec.includes('d15'))) ||
+                               (normSpecNoSec.includes('pb티이') && (normSpecNoSec.includes('15') || normSpecNoSec.includes('d15')));
+
+      if (isIntegratedStand) {
+        category = '통합거치대';
+      } else {
+        const hasD15 = normName.includes('15') || normSpec.includes('15') || normSpec.includes('d15');
+        const isSanitary = normName.includes('위생') || normSpec.includes('위생') || 
+                           normName.includes('급수') || normSpec.includes('급수') || 
+                           normName.includes('급탕') || normSpec.includes('급탕');
+                           
+        if (hasD15 || isSanitary) {
+          category = 'PB';
+        }
+      }
+    }
+  }
+
+  // User rule for 01010406 starting sections
+  if (section.includes('01010406')) {
+    const normName = name.replace(/\s+/g, '');
+    const normSpec = spec.replace(/\s+/g, '');
+    if (normName.includes('아티론보온') || normSpec.includes('아티론보온')) {
+      category = '외주';
+    }
+  }
+
+  // User rule for 01010804 starting sections
+  if (section.includes('01010804')) {
+    const normName = name.replace(/\s+/g, '');
+    const normSpec = spec.replace(/\s+/g, '');
+    if (normName.includes('관보온') || normSpec.includes('관보온')) {
+      category = '외주';
+    }
+  }
+
+  // User rule for 01010604 starting sections
+  if (section.includes('01010604')) {
+    const normName = name.replace(/\s+/g, '').toLowerCase();
+    const normSpec = spec.replace(/\s+/g, '').toLowerCase();
+    
+    if (
+      normName.includes('f.d(stl)') || 
+      normName.includes('fd(stl)') || 
+      (normName.includes('f.d') && normName.includes('stl')) ||
+      (normName.includes('fd') && normName.includes('stl')) ||
+      normName === 'f.d' ||
+      normName === 'fd' ||
+      normSpec.includes('f.d(stl)') ||
+      normSpec.includes('fd(stl)')
+    ) {
+      category = '외주';
+    }
+  }
+
   if (name.includes('압력계설치(STS)')) {
     category = '밸브류';
   }
