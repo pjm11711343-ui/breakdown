@@ -11,18 +11,29 @@ interface Props {
   onLoad: (project: Project) => void;
   onDelete: (id: string) => void;
   onNew: () => void;
+  onAddNewProject: (name: string) => void;
 }
 
-export default function ProjectSiteManager({ projects, currentProjectName, theme, onSave, onLoad, onDelete, onNew }: Props) {
+export default function ProjectSiteManager({ projects, currentProjectName, theme, onSave, onLoad, onDelete, onNew, onAddNewProject }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [isNaming, setIsNaming] = useState(false);
   const [newName, setNewName] = useState(currentProjectName);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [isAddingNewProject, setIsAddingNewProject] = useState(false);
+  const [newProjectNameInput, setNewProjectNameInput] = useState('');
 
   const handleSave = () => {
     if (newName.trim()) {
       onSave(newName);
       setIsNaming(false);
+    }
+  };
+
+  const handleAddNewProjectSubmit = () => {
+    if (newProjectNameInput.trim()) {
+      onAddNewProject(newProjectNameInput.trim());
+      setIsAddingNewProject(false);
+      setNewProjectNameInput('');
     }
   };
 
@@ -57,16 +68,19 @@ export default function ProjectSiteManager({ projects, currentProjectName, theme
         </div>
 
         <button
-          onClick={onNew}
+          onClick={() => {
+            setNewProjectNameInput('');
+            setIsAddingNewProject(true);
+          }}
           className={`p-2 transition-all flex items-center gap-1.5 border ${
             isHighDensity 
               ? 'bg-yellow-400 text-black border-[#141414] font-black uppercase text-[9px] hover:bg-yellow-300' 
               : 'bg-white text-indigo-600 border-indigo-100 rounded-xl hover:bg-indigo-50 text-xs font-bold shadow-sm'
           }`}
-          title="완전 새로 시작하기"
+          title="새로운 빈 분석 현장 추가"
         >
           <Plus size={14} />
-          <span className="hidden sm:inline">새 현장</span>
+          <span className="hidden sm:inline">새 현장 추가</span>
         </button>
       </div>
 
@@ -92,11 +106,12 @@ export default function ProjectSiteManager({ projects, currentProjectName, theme
                 </div>
                 <button 
                   onClick={() => {
-                    onNew();
+                    setNewProjectNameInput('');
+                    setIsAddingNewProject(true);
                     setIsOpen(false);
                   }}
                   className={`p-1.5 hover:bg-white/10 rounded transition-colors ${isHighDensity ? 'text-blue-400' : 'text-indigo-600'}`}
-                  title="새 현장 초기화"
+                  title="새 현장 추가"
                 >
                   <Plus size={18} />
                 </button>
@@ -112,11 +127,28 @@ export default function ProjectSiteManager({ projects, currentProjectName, theme
                   }}
                 >
                   <div className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center shrink-0">
+                    <Save size={16} />
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-black text-green-700">현장 신규 등록 (현재 데이터 포함)</span>
+                    <span className="text-[9px] opacity-60 uppercase">Save current data as new site</span>
+                  </div>
+                </div>
+
+                <div 
+                  className={`p-3 border-b cursor-pointer hover:bg-amber-50 transition-colors flex items-center gap-3 ${isHighDensity ? 'border-[#141414]/10' : 'border-slate-50'}`}
+                  onClick={() => {
+                    setNewProjectNameInput('');
+                    setIsAddingNewProject(true);
+                    setIsOpen(false);
+                  }}
+                >
+                  <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
                     <Plus size={16} />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-xs font-black text-green-700">현장 신규 등록 (데이터 포함)</span>
-                    <span className="text-[9px] opacity-60 uppercase">Add current work as new site</span>
+                    <span className="text-xs font-black text-amber-700">새 빈 현장 추가 (비어있는 공간)</span>
+                    <span className="text-[9px] opacity-60 uppercase">Add a brand new empty site</span>
                   </div>
                 </div>
 
@@ -301,6 +333,76 @@ export default function ProjectSiteManager({ projects, currentProjectName, theme
                   }`}
                 >
                   즉시 삭제
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Brand New Project Modal */}
+      <AnimatePresence>
+        {isAddingNewProject && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center p-4 backdrop-blur-sm bg-slate-900/40"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className={`w-full max-w-sm overflow-hidden shadow-2xl border-2 ${
+                isHighDensity ? 'bg-[#E7E6E1] border-black rounded-none' : 'bg-white border-slate-100 rounded-2xl'
+              }`}
+            >
+              <div className={`px-6 py-4 border-b flex justify-between items-center ${
+                isHighDensity ? 'bg-[#141414] text-white border-b-2 border-black' : 'bg-indigo-50 border-b border-indigo-100 text-indigo-900'
+              }`}>
+                <h3 className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                  <Plus size={16} className={isHighDensity ? 'text-yellow-400' : 'text-indigo-600'} />
+                  새 분석 현장 추가
+                </h3>
+                <button onClick={() => setIsAddingNewProject(false)} className="hover:rotate-90 transition-transform">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-6">
+                <label className="block text-[9px] font-black uppercase text-slate-400 mb-2">새로운 현장 프로젝트명</label>
+                <input
+                  autoFocus
+                  type="text"
+                  value={newProjectNameInput}
+                  onChange={(e) => setNewProjectNameInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddNewProjectSubmit()}
+                  placeholder="예: 마포 더 클래시 건설현장"
+                  className={`w-full px-4 py-3 text-sm font-bold border focus:ring-0 outline-none transition-all text-slate-900 ${
+                    isHighDensity ? 'border-[#141414] rounded-none focus:bg-[#dfddd6]' : 'border-slate-200 rounded-xl focus:border-indigo-500'
+                  }`}
+                />
+                <p className="mt-3 text-[10px] text-slate-500 leading-normal">
+                  생성 시 기존의 작업 내역은 보관함에 안전하게 자동 저장된 상태로 유지되며, 완전히 분리된 비어있는 새로운 내역분리 작업 공간이 시작됩니다.
+                </p>
+              </div>
+              <div className="px-6 py-4 flex gap-2 bg-slate-50 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsAddingNewProject(false)}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg border ${
+                    isHighDensity ? 'border-[#141414] hover:bg-slate-200 text-[#141414] bg-[#E7E6E1]' : 'border-slate-200 text-slate-500 hover:bg-slate-50 bg-white'
+                  }`}
+                >
+                  취소(닫기)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddNewProjectSubmit}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg text-white ${
+                    isHighDensity ? 'bg-[#141414] hover:bg-black' : 'bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-100'
+                  }`}
+                >
+                  현장 추가하기
                 </button>
               </div>
             </motion.div>

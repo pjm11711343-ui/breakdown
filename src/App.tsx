@@ -680,6 +680,68 @@ export default function App() {
     showNotification('새로운 현장 작업 공간이 준비되었습니다.', 'info');
   };
 
+  const handleAddNewProject = (name: string) => {
+    if (!name.trim()) return;
+
+    // Auto-save existing project first if active to prevent data loss
+    if (items.length > 0 && currentProjectName && theme) {
+      try {
+        const existingId = projects.find(p => p.name === currentProjectName)?.id;
+        const currentData: Project = {
+          id: existingId || (Date.now().toString(36) + Math.random().toString(36).substring(2)),
+          name: currentProjectName,
+          items,
+          theme,
+          config: { theme, fontFamily, fontSize },
+          categories,
+          updatedAt: Date.now(),
+          status: projects.find(p => p.name === currentProjectName)?.status || 'working'
+        };
+        setProjects(prev => {
+          const updated = prev.some(p => p.name === currentProjectName)
+            ? prev.map(p => p.name === currentProjectName ? currentData : p)
+            : [...prev, currentData];
+          localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+          return updated;
+        });
+      } catch (e) {
+        console.error('Failed to auto-save before new project swap', e);
+      }
+    }
+
+    // Setup new empty project instance
+    const newProjId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+    const newProject: Project = {
+      id: newProjId,
+      name: name.trim(),
+      items: [],
+      theme: theme || 'standard',
+      config: {
+        theme: theme || 'standard',
+        fontFamily,
+        fontSize
+      },
+      categories: INITIAL_CATEGORIES,
+      updatedAt: Date.now(),
+      status: 'working'
+    };
+
+    setProjects(prev => {
+      const updated = [...prev, newProject];
+      localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+      return updated;
+    });
+
+    setItems([]);
+    setTheme(theme || 'standard');
+    setWorkbook(null);
+    setCurrentProjectName(name.trim());
+    setCategories(INITIAL_CATEGORIES);
+    setIsProjectLocked(false);
+
+    showNotification(`새 현장 '${name.trim()}' 추가 및 활성화 되었습니다. 기계설비 엑셀 파일을 업로드해 주세요!`, 'success');
+  };
+
   const restoreSession = () => {
     if (pendingSession) {
       setItems((pendingSession as any).items);
@@ -1113,6 +1175,7 @@ export default function App() {
               onLoad={handleLoadProject}
               onDelete={handleDeleteProject}
               onNew={handleNewProject}
+              onAddNewProject={handleAddNewProject}
             />
 
             {/* 실시간 자동 저장 스위치 및 상태 지시등 (High Density) */}
@@ -1245,6 +1308,7 @@ export default function App() {
                 onLoad={handleLoadProject}
                 onDelete={handleDeleteProject}
                 onNew={handleNewProject}
+                onAddNewProject={handleAddNewProject}
               />
               {/* 실시간 자동 저장 스위치 및 상태 지시등 (Standard) */}
               <div className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200/85 px-3 py-1 rounded-full shadow-sm select-none border border-slate-200/50 transition-all font-sans" id="standard-autosave-panel">
