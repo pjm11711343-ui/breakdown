@@ -10,6 +10,20 @@ interface Props {
 }
 
 export default function SectionSummaryCards({ items, theme, onClose }: Props) {
+  // Helper to calculate category amount without labor costs (노무비 제외한 순수 재료비/자재비 합산)
+  const getItemCategoryAmount = (item: SpecItem): number => {
+    if (item.materialAmount !== undefined && item.materialAmount !== null && item.materialAmount !== 0) {
+      return item.materialAmount;
+    }
+    if (item.laborAmount && item.laborAmount > 0) {
+      if (item.materialAmount !== undefined && item.materialAmount !== null) {
+        return item.materialAmount;
+      }
+      return Math.max(0, item.amount - item.laborAmount);
+    }
+    return item.amount || 0;
+  };
+
   const sections = [...new Set(items.map(item => item.section || '기타 공정'))].sort();
   const totalProjectAmount = items.reduce((sum, item) => sum + item.amount, 0);
 
@@ -17,10 +31,10 @@ export default function SectionSummaryCards({ items, theme, onClose }: Props) {
     const sectionItems = items.filter(i => (i.section || '기타 공정') === sectionName);
     const totalAmount = sectionItems.reduce((sum, i) => sum + i.amount, 0);
     
-    // Group by category within this section
+    // Group by category within this section (노무비 제외한 자재비 기준)
     const categoryBreakdown = sectionItems.reduce((acc, item) => {
       const cat = item.category || '기타';
-      acc[cat] = (acc[cat] || 0) + item.amount;
+      acc[cat] = (acc[cat] || 0) + getItemCategoryAmount(item);
       return acc;
     }, {} as Record<string, number>);
 

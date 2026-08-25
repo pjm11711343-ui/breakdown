@@ -17,6 +17,20 @@ export default function CategorySummaryCards({ items, theme, categories, onCateg
   const [isEditingSafety, setIsEditingSafety] = React.useState(false);
   const [safetyInputVal, setSafetyInputVal] = React.useState('');
 
+  // Helper to calculate category amount without labor costs (노무비 제외한 순수 재료비/자재비 합산)
+  const getItemCategoryAmount = (item: SpecItem): number => {
+    if (item.materialAmount !== undefined && item.materialAmount !== null && item.materialAmount !== 0) {
+      return item.materialAmount;
+    }
+    if (item.laborAmount && item.laborAmount > 0) {
+      if (item.materialAmount !== undefined && item.materialAmount !== null) {
+        return item.materialAmount;
+      }
+      return Math.max(0, item.amount - item.laborAmount);
+    }
+    return item.amount || 0;
+  };
+
   // Filter out '미분류', '외주', '열선', and '지금자재' for summary calculation
   const filteredItems = items.filter(item => {
     const cat = item.category || '미분류';
@@ -25,15 +39,15 @@ export default function CategorySummaryCards({ items, theme, categories, onCateg
 
   if (filteredItems.length === 0) return null;
 
-  const totalAmount = filteredItems.reduce((sum, item) => sum + item.amount, 0);
+  const totalAmount = filteredItems.reduce((sum, item) => sum + getItemCategoryAmount(item), 0);
   
-  // Calculate totals by category for filtered items
+  // Calculate totals by category for filtered items (노무비 제외)
   const categoryData = filteredItems.reduce((acc, item) => {
     const cat = item.category || '미분류';
     if (!acc[cat]) {
       acc[cat] = { amount: 0, count: 0 };
     }
-    acc[cat].amount += item.amount;
+    acc[cat].amount += getItemCategoryAmount(item);
     acc[cat].count += 1;
     return acc;
   }, {} as Record<string, { amount: number; count: number }>);
@@ -75,7 +89,7 @@ export default function CategorySummaryCards({ items, theme, categories, onCateg
 
   const unclassifiedItemsList = items.filter(item => !item.category || item.category === '미분류');
   const unclassifiedCount = unclassifiedItemsList.length;
-  const unclassifiedAmount = unclassifiedItemsList.reduce((sum, item) => sum + item.amount, 0);
+  const unclassifiedAmount = unclassifiedItemsList.reduce((sum, item) => sum + getItemCategoryAmount(item), 0);
 
   if (theme === 'high-density') {
     return (

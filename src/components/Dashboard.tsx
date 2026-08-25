@@ -10,6 +10,20 @@ interface Props {
 }
 
 export default function Dashboard({ items, theme, onOpenSectionSummary }: Props) {
+  // Helper to calculate category amount without labor costs (노무비 제외한 순수 재료비/자재비 합산)
+  const getItemCategoryAmount = (item: SpecItem): number => {
+    if (item.materialAmount !== undefined && item.materialAmount !== null && item.materialAmount !== 0) {
+      return item.materialAmount;
+    }
+    if (item.laborAmount && item.laborAmount > 0) {
+      if (item.materialAmount !== undefined && item.materialAmount !== null) {
+        return item.materialAmount;
+      }
+      return Math.max(0, item.amount - item.laborAmount);
+    }
+    return item.amount || 0;
+  };
+
   const filteredItems = items.filter(item => {
     const cat = item.category || '미분류';
     return !['미분류', '외주', '열선', '지금자재'].includes(cat);
@@ -18,7 +32,7 @@ export default function Dashboard({ items, theme, onOpenSectionSummary }: Props)
   const categoryTotals = filteredItems.reduce((acc, item) => {
     const cat = item.category || '미분류';
     if (!acc[cat]) acc[cat] = 0;
-    acc[cat] += item.amount;
+    acc[cat] += getItemCategoryAmount(item);
     return acc;
   }, {} as Record<string, number>);
 
@@ -27,7 +41,7 @@ export default function Dashboard({ items, theme, onOpenSectionSummary }: Props)
     value
   })).sort((a, b) => b.value - a.value);
 
-  const totalAmount = filteredItems.reduce((sum, item) => sum + item.amount, 0);
+  const totalAmount = filteredItems.reduce((sum, item) => sum + getItemCategoryAmount(item), 0);
 
   const colors = ['#4F46E5', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1'];
 
