@@ -17,8 +17,18 @@ import ExcelUpload from './components/ExcelUpload';
 import CategoryManager from './components/CategoryManager';
 import SettingsManager from './components/SettingsManager';
 import ProjectSiteManager from './components/ProjectSiteManager';
-import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X, Save, Lock, KeySquare, Sliders } from 'lucide-react';
+import SiteListSidebar from './components/SiteListSidebar';
+import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X, Save, Lock, KeySquare, Sliders, Cloud, CheckCircle2, RefreshCw, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import {
+  saveProjectToFirestore,
+  deleteProjectFromFirestore,
+  subscribeProjectsFromFirestore,
+  saveActiveSessionToFirestore,
+  subscribeActiveSessionFromFirestore,
+  saveCustomRulesToFirestore,
+  subscribeCustomRulesFromFirestore
+} from './lib/firebase';
 
 import * as XLSX from 'xlsx';
 import LZString from 'lz-string';
@@ -248,10 +258,13 @@ export default function App() {
     ];
   });
 
-  // Persist classification rules
+  // Persist classification rules to local and Firestore
   useEffect(() => {
     try {
       localStorage.setItem('mechauto_custom_rules', JSON.stringify(customClassificationRules));
+      saveCustomRulesToFirestore(customClassificationRules).catch(err => {
+        console.warn('Failed to sync rules to Firestore:', err);
+      });
     } catch (e) {
       console.error('Error saving custom rules:', e);
     }
@@ -297,8 +310,11 @@ export default function App() {
   // Project Management State
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentProjectName, setCurrentProjectName] = useState<string>('');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
   
-  // Real-time Save & Manual Save States
+  // Cloud & Local Sync Status
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'syncing' | 'error'>('synced');
+  const [lastCloudSyncedTime, setLastCloudSyncedTime] = useState<string>('');
   const [isAutoSavingIndicator, setIsAutoSavingIndicator] = useState(false);
   const [lastAutoSavedTime, setLastAutoSavedTime] = useState<string>('');
   const [isAutoSaveActive, setIsAutoSaveActive] = useState(true);
@@ -320,9 +336,9 @@ export default function App() {
   const [pendingSession, setPendingSession] = useState<{ items: SpecItem[], theme: ThemeType, timestamp: number } | null>(null);
   const [isRecoveryModalOpen, setIsRecoveryModalOpen] = useState(false);
 
-  // Check for existing session and projects on mount
+  // 1. Setup real-time Firestore listeners & Cloud Hydration
   useEffect(() => {
-    // Load Projects
+    // Load local projects cache first
     const savedProjects = localStorage.getItem(PROJECTS_KEY);
     if (savedProjects) {
       try {
@@ -332,8 +348,34 @@ export default function App() {
       }
     }
 
-    // Check Shared link
-    const checkSharedLink = async () => {
+    // Subscribe to Firestore Projects for real-time multi-PC synchronization
+    const unsubscribeProjects = subscribeProjectsFromFirestore(firestoreProjects => {
+      if (firestoreProjects && firestoreProjects.length >= 0) {
+        setProjects(firestoreProjects);
+        try {
+          localStorage.setItem(PROJECTS_KEY, JSON.stringify(firestoreProjects));
+        } catch (e) {
+          // ignore
+        }
+        setCloudSyncStatus('synced');
+        setLastCloudSyncedTime(new Date().toTimeString().split(' ')[0]);
+      }
+    });
+
+    // Subscribe to Firestore Custom Rules
+    const unsubscribeRules = subscribeCustomRulesFromFirestore(firestoreRules => {
+      if (firestoreRules && firestoreRules.length > 0) {
+        setCustomClassificationRules(firestoreRules);
+        try {
+          localStorage.setItem('mechauto_custom_rules', JSON.stringify(firestoreRules));
+        } catch (e) {
+          // ignore
+        }
+      }
+    });
+
+    // Check Shared link or Firestore Active Session on Mount
+    const checkSharedOrCloudSession = async () => {
       try {
         let shareDataStr = '';
         
@@ -346,7 +388,6 @@ export default function App() {
           // Check hash
           const hash = window.location.hash;
           if (hash) {
-            // strip leading hatch if needed
             const cleanHash = hash.startsWith('#') ? hash.substring(1) : hash;
             const hashParams = new URLSearchParams(cleanHash);
             const hashShare = hashParams.get('share');
@@ -362,14 +403,12 @@ export default function App() {
         }
 
         if (shareDataStr) {
-          // 100% robust clean-up and URL-decoding
           try {
             shareDataStr = decodeURIComponent(shareDataStr).trim();
           } catch (e) {
             console.warn("Failed to decodeURIComponent shareDataStr", e);
           }
 
-          // Clear URL share parameter
           const cleanUrl = window.location.origin + window.location.pathname;
           window.history.replaceState(null, '', cleanUrl);
 
@@ -385,7 +424,6 @@ export default function App() {
               if (restoredState.categories) setCategories(restoredState.categories);
               if (restoredState.projectName) setCurrentProjectName(restoredState.projectName);
               
-              // Clear pending session to prevent recovery popup if successfully loaded shared config
               setIsRecoveryModalOpen(false);
               setPendingSession(null);
               
@@ -401,27 +439,54 @@ export default function App() {
       return false;
     };
 
+    let unsubscribeActiveSession: (() => void) | null = null;
+
     const runInitCheck = async () => {
-      const loadedShare = await checkSharedLink();
+      const loadedShare = await checkSharedOrCloudSession();
       
-      // Load Last Session if share wasn't loaded
+      // If no explicit share link, subscribe to active cloud session
       if (!loadedShare) {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (parsed.items && parsed.items.length > 0) {
-              setPendingSession(parsed);
-              setIsRecoveryModalOpen(true);
+        unsubscribeActiveSession = subscribeActiveSessionFromFirestore(cloudSession => {
+          if (cloudSession && cloudSession.items && cloudSession.items.length > 0) {
+            // If local is currently empty or initial load, auto hydrate from cloud
+            setItems(prevItems => {
+              if (prevItems.length === 0) {
+                if (cloudSession.theme) setTheme(cloudSession.theme);
+                if (cloudSession.fontFamily) setFontFamily(cloudSession.fontFamily);
+                if (cloudSession.fontSize) setFontSize(cloudSession.fontSize);
+                if (cloudSession.categories && cloudSession.categories.length > 0) setCategories(cloudSession.categories);
+                if (cloudSession.projectName) setCurrentProjectName(cloudSession.projectName);
+                setIsProjectLocked(!!cloudSession.isLocked);
+                return cloudSession.items;
+              }
+              return prevItems;
+            });
+          } else {
+            // Fallback to local session recovery if cloud is empty
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+              try {
+                const parsed = JSON.parse(saved);
+                if (parsed.items && parsed.items.length > 0) {
+                  setPendingSession(parsed);
+                  setIsRecoveryModalOpen(true);
+                }
+              } catch (e) {
+                console.error('Failed to parse saved session', e);
+              }
             }
-          } catch (e) {
-            console.error('Failed to parse saved session', e);
           }
-        }
+        });
       }
     };
 
     runInitCheck();
+
+    return () => {
+      unsubscribeProjects();
+      unsubscribeRules();
+      if (unsubscribeActiveSession) unsubscribeActiveSession();
+    };
   }, []);
 
   // Update root styles for font
@@ -444,16 +509,17 @@ export default function App() {
     }
   }, [items, theme, fontFamily, fontSize]);
 
-  // Real-time site-specific auto-saving hook
+  // Real-time site-specific auto-saving hook (Syncs to both Local & Firestore Cloud)
   useEffect(() => {
-    if (isAutoSaveActive && currentProjectName && items.length > 0 && theme) {
+    if (isAutoSaveActive && items.length > 0 && theme) {
       setIsAutoSavingIndicator(true);
-      
-      const existingProj = projects.find(p => p.name === currentProjectName);
+      setCloudSyncStatus('syncing');
+
+      const existingProj = currentProjectName ? projects.find(p => p.name === currentProjectName) : null;
       const existingId = existingProj?.id;
       const updatedProject: Project = {
         id: existingId || (Date.now().toString(36) + Math.random().toString(36).substring(2)),
-        name: currentProjectName,
+        name: currentProjectName || '작업 현장',
         items,
         theme,
         config: {
@@ -466,12 +532,38 @@ export default function App() {
         status: existingProj?.status || (isProjectLocked ? 'completed' : 'working')
       };
 
-      setProjects(prev => {
-        const updated = prev.some(p => p.name === currentProjectName)
-          ? prev.map(p => p.name === currentProjectName ? updatedProject : p)
-          : [...prev, updatedProject];
-        localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
-        return updated;
+      if (currentProjectName) {
+        setProjects(prev => {
+          const updated = prev.some(p => p.name === currentProjectName)
+            ? prev.map(p => p.name === currentProjectName ? updatedProject : p)
+            : [...prev, updatedProject];
+          try {
+            localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+
+        // Save project to Firestore
+        saveProjectToFirestore(updatedProject).catch(err => {
+          console.warn('Firestore auto-save project failed:', err);
+        });
+      }
+
+      // Save global active session to Firestore so any PC opening gets this exact state!
+      saveActiveSessionToFirestore({
+        projectName: currentProjectName,
+        items,
+        theme,
+        fontFamily,
+        fontSize,
+        categories,
+        isLocked: isProjectLocked
+      }).then(() => {
+        setCloudSyncStatus('synced');
+        setLastCloudSyncedTime(new Date().toTimeString().split(' ')[0]);
+      }).catch(err => {
+        console.warn('Firestore auto-save session failed:', err);
+        setCloudSyncStatus('error');
       });
 
       const now = new Date();
@@ -498,7 +590,7 @@ export default function App() {
       handleSaveProject(currentProjectName);
       const now = new Date();
       setLastAutoSavedTime(now.toTimeString().split(' ')[0]);
-      showNotification(`현장 [ ${currentProjectName} ] 정보가 성공적으로 수동 저장되었습니다.`, 'success');
+      showNotification(`현장 [ ${currentProjectName} ] 정보가 클라우드 및 모든 기기에 저장되었습니다.`, 'success');
     } else {
       setManualSaveName('');
       setIsManualSaveNamingOpen(true);
@@ -547,13 +639,14 @@ export default function App() {
     });
   };
 
-  const handleSaveProject = (name: string) => {
+  const handleSaveProject = async (name: string) => {
     if (!theme) {
       showNotification('테마를 먼저 선택해야 저장할 수 있습니다.', 'error');
       return;
     }
 
     try {
+      setCloudSyncStatus('syncing');
       const existingId = projects.find(p => p.name === name)?.id;
       const newProject: Project = {
         id: existingId || (Date.now().toString(36) + Math.random().toString(36).substring(2)),
@@ -579,10 +672,26 @@ export default function App() {
       });
 
       setCurrentProjectName(name);
-      showNotification(`현장 '${name}' 정보가 성공적으로 수동 저장되었습니다.`, 'success');
+
+      // Persist to Cloud Firestore
+      await saveProjectToFirestore(newProject);
+      await saveActiveSessionToFirestore({
+        projectName: name,
+        items,
+        theme,
+        fontFamily,
+        fontSize,
+        categories,
+        isLocked: isProjectLocked
+      });
+
+      setCloudSyncStatus('synced');
+      setLastCloudSyncedTime(new Date().toTimeString().split(' ')[0]);
+      showNotification(`현장 '${name}' 정보가 클라우드 및 모든 기기에 성공적으로 저장되었습니다.`, 'success');
     } catch (e) {
       console.error('Failed to save project', e);
-      showNotification('저장 중 오류가 발생했습니다. 저장공간이 부족할 수 있습니다.', 'error');
+      setCloudSyncStatus('error');
+      showNotification('저장 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.', 'error');
     }
   };
 
@@ -611,13 +720,25 @@ export default function App() {
         return updated;
       });
 
+      // Synchronize active session & project status to Firestore
+      saveProjectToFirestore(updatedProject).catch(console.warn);
+      saveActiveSessionToFirestore({
+        projectName: project.name,
+        items: project.items || [],
+        theme: project.theme,
+        fontFamily: project.config?.fontFamily || '"Gulim", "굴림", Dotum, "돋움", sans-serif',
+        fontSize: project.config?.fontSize || 11,
+        categories: project.categories || INITIAL_CATEGORIES,
+        isLocked: true
+      }).catch(console.warn);
+
       showNotification(`현장 '${project.name}' 내역이 '내역분리 완료(수정 보호)' 상태로 로드되었습니다.`, 'success');
     } catch (e) {
       showNotification('데이터를 불러오는 중 오류가 발생했습니다.', 'error');
     }
   };
 
-  const handleCompleteProject = () => {
+  const handleCompleteProject = async () => {
     if (!currentProjectName) {
       showNotification('내역분리 완료를 수행할 활성화된 현장이 없습니다.', 'error');
       return;
@@ -626,8 +747,10 @@ export default function App() {
     setIsProjectLocked(true);
 
     const existingProj = projects.find(p => p.name === currentProjectName);
+    let targetProject: Project;
+
     if (existingProj) {
-      const updatedProj: Project = {
+      targetProject = {
         ...existingProj,
         status: 'completed',
         items,
@@ -635,31 +758,47 @@ export default function App() {
       };
 
       setProjects(prev => {
-        const updated = prev.map(p => p.name === currentProjectName ? updatedProj : p)
-          .some(p => p.name === currentProjectName) ? prev.map(p => p.name === currentProjectName ? updatedProj : p) : [...prev, updatedProj];
+        const updated = prev.map(p => p.name === currentProjectName ? targetProject : p);
         localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
         return updated;
       });
     } else {
       const newProjId = Date.now().toString(36) + Math.random().toString(36).substring(2);
-      const newProj: Project = {
+      targetProject = {
         id: newProjId,
         name: currentProjectName,
         items,
-        theme,
-        config: { theme, fontFamily, fontSize },
+        theme: theme || 'industrial',
+        config: { theme: theme || 'industrial', fontFamily, fontSize },
         categories,
         updatedAt: Date.now(),
         status: 'completed'
       };
       setProjects(prev => {
-        const updated = [...prev, newProj];
+        const updated = [...prev, targetProject];
         localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
         return updated;
       });
     }
 
-    showNotification('현장의 내역분리가 완료 처리되었습니다. (수정 시 비밀번호 필요)', 'success');
+    try {
+      await saveProjectToFirestore(targetProject);
+      await saveActiveSessionToFirestore({
+        projectName: currentProjectName,
+        items,
+        theme,
+        fontFamily,
+        fontSize,
+        categories,
+        isLocked: true
+      });
+      setCloudSyncStatus('synced');
+      setLastCloudSyncedTime(new Date().toTimeString().split(' ')[0]);
+    } catch (err) {
+      console.warn('Failed to sync completed status to Firestore:', err);
+    }
+
+    showNotification('현장의 내역분리가 완료 처리되어 모든 PC 및 기기에 동기화되었습니다. (수정 시 비밀번호 필요)', 'success');
   };
 
   const checkLockAndProceed = (action: () => void) => {
@@ -692,6 +831,7 @@ export default function App() {
             localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
             return updated;
           });
+          saveProjectToFirestore(updatedProj).catch(console.warn);
         }
       }
 
@@ -704,7 +844,7 @@ export default function App() {
     }
   };
 
-  const handleDeleteProject = (id: string) => {
+  const handleDeleteProject = async (id: string) => {
     try {
       const projectToDelete = projects.find(p => p.id === id);
       if (!projectToDelete) return;
@@ -718,7 +858,10 @@ export default function App() {
       if (projectToDelete.name === currentProjectName) {
         setCurrentProjectName('');
       }
-      showNotification(`현장 '${projectToDelete.name}' 프로젝트가 삭제되었습니다.`, 'info');
+
+      await deleteProjectFromFirestore(id);
+
+      showNotification(`현장 '${projectToDelete.name}' 프로젝트가 클라우드에서 삭제되었습니다.`, 'info');
     } catch (e) {
       console.error('Failed to delete project', e);
       showNotification('삭제 중 오류가 발생했습니다.', 'error');
@@ -740,7 +883,7 @@ export default function App() {
     showNotification('새로운 현장 작업 공간이 준비되었습니다.', 'info');
   };
 
-  const handleAddNewProject = (name: string) => {
+  const handleAddNewProject = async (name: string) => {
     if (!name.trim()) return;
 
     // Auto-save existing project first if active to prevent data loss
@@ -764,6 +907,7 @@ export default function App() {
           localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
           return updated;
         });
+        saveProjectToFirestore(currentData).catch(console.warn);
       } catch (e) {
         console.error('Failed to auto-save before new project swap', e);
       }
@@ -775,9 +919,9 @@ export default function App() {
       id: newProjId,
       name: name.trim(),
       items: [],
-      theme: theme || 'standard',
+      theme: theme || 'industrial',
       config: {
-        theme: theme || 'standard',
+        theme: theme || 'industrial',
         fontFamily,
         fontSize
       },
@@ -793,13 +937,23 @@ export default function App() {
     });
 
     setItems([]);
-    setTheme(theme || 'standard');
+    setTheme(theme || 'industrial');
     setWorkbook(null);
     setCurrentProjectName(name.trim());
-    setCategories(INITIAL_CATEGORIES);
     setIsProjectLocked(false);
 
-    showNotification(`새 현장 '${name.trim()}' 추가 및 활성화 되었습니다. 기계설비 엑셀 파일을 업로드해 주세요!`, 'success');
+    await saveProjectToFirestore(newProject);
+    await saveActiveSessionToFirestore({
+      projectName: name.trim(),
+      items: [],
+      theme: theme || 'industrial',
+      fontFamily,
+      fontSize,
+      categories: INITIAL_CATEGORIES,
+      isLocked: false
+    });
+
+    showNotification(`새 현장 '${name.trim()}' 추가 및 클라우드 동기화가 완료되었습니다. 기계설비 엑셀 파일을 업로드해 주세요!`, 'success');
   };
 
   const handleExportBackup = () => {
@@ -1181,6 +1335,13 @@ export default function App() {
                 )}
               </div>
             )}
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-white/10 text-[9px] font-mono border border-white/15" title="모든 PC 및 기기와 실시간 클라우드 동기화 중">
+              <Cloud size={11} className={cloudSyncStatus === 'syncing' ? 'text-amber-400 animate-spin' : 'text-sky-400'} />
+              <span className="text-white/80">클라우드:</span>
+              <span className="text-emerald-400 font-bold">
+                {cloudSyncStatus === 'syncing' ? '동기화 중...' : (lastCloudSyncedTime ? `동기화됨 (${lastCloudSyncedTime})` : '연결됨')}
+              </span>
+            </div>
           </div>
           <div className="flex items-center gap-6">
             <div className="text-[11px] opacity-60 font-mono hidden md:block">가동 상태: 정상</div>
@@ -1246,6 +1407,15 @@ export default function App() {
                 onExportBackup={handleExportBackup}
                 onImportBackup={handleImportBackup}
               />
+              {/* 클라우드 동기화 상태 뱃지 (Standard) */}
+              <div className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200/85 px-3 py-1 rounded-full shadow-sm select-none border border-slate-200/50 transition-all font-sans text-xs" id="standard-cloud-sync-panel" title="다른 PC나 브라우저에서 열어도 작업 내역이 동일하게 유지됩니다">
+                <Cloud size={14} className={cloudSyncStatus === 'syncing' ? 'text-amber-500 animate-spin' : 'text-indigo-600'} />
+                <span className="font-bold text-slate-700">클라우드</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${cloudSyncStatus === 'syncing' ? 'bg-amber-400 animate-ping' : (cloudSyncStatus === 'error' ? 'bg-rose-500' : 'bg-emerald-500')}`} />
+                <span className="text-[11px] font-mono text-slate-500">
+                  {cloudSyncStatus === 'syncing' ? '동기화중' : (lastCloudSyncedTime ? `동기화됨 (${lastCloudSyncedTime})` : '실시간 연결')}
+                </span>
+              </div>
               {/* 실시간 자동 저장 스위치 및 상태 지시등 (Standard) */}
               <div className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200/85 px-3 py-1 rounded-full shadow-sm select-none border border-slate-200/50 transition-all font-sans" id="standard-autosave-panel">
                 <button
@@ -1844,129 +2014,82 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Sidebar Navigation */}
-      <aside className={`fixed left-0 top-0 h-full w-64 border-r hidden lg:flex flex-col z-20 ${
-        theme === 'industrial' ? 'bg-slate-900 border-slate-800' : 
-        theme === 'high-density' ? 'bg-[#EBEAE8] border-[#141414]' :
-        'bg-white border-slate-200 shadow-sm'
-      }`}>
-        {theme === 'high-density' ? (
-          <div className="bg-[#141414] p-4 text-white">
-             <span className="text-[10px] uppercase font-bold tracking-widest">레이아웃 및 시스템 구성</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3 mb-10 px-6 pt-10">
-            <div className="p-2 bg-indigo-600 rounded-xl">
-              <FileSpreadsheet className="w-6 h-6 text-white" />
-            </div>
-            <span className="font-bold text-xl tracking-tight">MechAuto</span>
-          </div>
-        )}
-
-        <nav className={`flex-grow space-y-0 ${theme === 'high-density' ? '' : 'px-6 space-y-1'}`}>
-          <NavItem 
-            icon={<FileSpreadsheet size={theme === 'high-density' ? 14 : 20} />} 
-            label="계약 내역서" 
-            active={activeTab === 'list'} 
-            onClick={() => setActiveTab('list')}
-            theme={theme}
-            subtitle={theme === 'high-density' ? '품명/규격 중심 표준 입찰 양식' : undefined}
-          />
-          <NavItem 
-            icon={<BarChart3 size={theme === 'high-density' ? 14 : 20} />} 
-            label="단가 분석 뷰" 
-            active={activeTab === 'analysis'} 
-            onClick={() => setActiveTab('analysis')}
-            theme={theme}
-            subtitle={theme === 'high-density' ? '품목별 단가 편차 및 이상 징후 분석' : undefined}
-          />
-          <NavItem 
-            icon={<Settings size={theme === 'high-density' ? 14 : 20} />} 
-            label="시스템 설정" 
-            theme={theme}
-            onClick={() => setIsSettingsOpen(true)}
-            subtitle={theme === 'high-density' ? 'AI 로직 및 환경 변수 설정' : undefined}
-          />
-          <button 
-            onClick={() => {
-              setCategoryManagerTab('categories');
-              setIsCategoryManagerOpen(true);
-            }}
-            className={`w-full flex items-center gap-3 px-4 py-3 transition-all ${
-              theme === 'high-density' 
-                ? 'p-3 border-b border-[#141414] text-left opacity-70 hover:bg-white/50' 
-                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl font-medium text-sm'
-            }`}
-          >
-            <Tags size={theme === 'high-density' ? 14 : 20} />
-            <span>카테고리 관리</span>
-          </button>
-          <button 
-            onClick={() => {
-              setCategoryManagerTab('rules');
-              setIsCategoryManagerOpen(true);
-            }}
-            className={`w-full flex items-center gap-3 px-4 py-3 transition-all ${
-              theme === 'high-density' 
-                ? 'p-3 border-b border-[#141414] text-left opacity-70 hover:bg-white/50' 
-                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl font-medium text-sm'
-            }`}
-          >
-            <Sliders size={theme === 'high-density' ? 14 : 20} />
-            <span>분류 규칙 설정</span>
-          </button>
-        </nav>
-
-        <div className={theme === 'high-density' ? 'p-4 border-t border-[#141414]' : 'px-6 pb-10'}>
-          <button 
-            onClick={() => setTheme(null)}
-            className={`w-full flex items-center gap-3 px-4 py-3 transition-all ${
-              theme === 'high-density' 
-                ? 'bg-[#141414] text-white text-[10px] font-bold uppercase justify-center' 
-                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl'
-            }`}
-          >
-            <LogOut size={theme === 'high-density' ? 12 : 20} />
-            <span className={theme === 'high-density' ? 'tracking-widest' : 'font-medium text-sm'}>양식 다시 선택</span>
-          </button>
-        </div>
-      </aside>
+      {/* Left Project Sites & Navigation Sidebar */}
+      <SiteListSidebar 
+        projects={projects}
+        currentProjectName={currentProjectName}
+        theme={theme}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        isProjectLocked={isProjectLocked}
+        cloudSyncStatus={cloudSyncStatus}
+        lastCloudSyncedTime={lastCloudSyncedTime}
+        isMobileOpen={isMobileSidebarOpen}
+        onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        onLoadProject={(proj) => {
+          handleLoadProject(proj);
+          setIsMobileSidebarOpen(false);
+        }}
+        onDeleteProject={handleDeleteProject}
+        onAddNewProject={handleAddNewProject}
+        onNewProject={() => {
+          handleNewProject();
+          setIsMobileSidebarOpen(false);
+        }}
+        onOpenCategoryManager={(tab) => {
+          setCategoryManagerTab(tab);
+          setIsCategoryManagerOpen(true);
+          setIsMobileSidebarOpen(false);
+        }}
+        onOpenSettings={() => {
+          setIsSettingsOpen(true);
+          setIsMobileSidebarOpen(false);
+        }}
+        onResetTheme={() => setTheme(null)}
+        onExportBackup={handleExportBackup}
+        onImportBackup={handleImportBackup}
+      />
 
       {/* Main Content Area */}
-      <main className={`lg:ml-64 min-h-screen flex flex-col ${theme === 'high-density' ? 'bg-white' : ''} w-full`}>
-        {/* Mobile Navigation (Visible only when sidebar is hidden) */}
-        <div className="lg:hidden flex items-center justify-around p-2 bg-white border-b border-slate-200 sticky top-0 z-40">
+      <main className={`lg:ml-72 xl:ml-80 min-h-screen flex flex-col ${theme === 'high-density' ? 'bg-white' : ''} w-full lg:w-[calc(100%-18rem)] xl:w-[calc(100%-20rem)]`}>
+        {/* Mobile Navigation (Visible only when sidebar is hidden on small screens) */}
+        <div className="lg:hidden flex items-center justify-between px-3 py-2 bg-white border-b border-slate-200 sticky top-0 z-40">
           <button 
-            onClick={() => setActiveTab('list')}
-            className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-all ${activeTab === 'list' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400'}`}
+            type="button"
+            onClick={() => setIsMobileSidebarOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg text-xs"
           >
-            <FileSpreadsheet size={20} />
-            <span className="text-[10px] font-bold">내역서</span>
+            <Menu size={16} />
+            <span>현장 목록</span>
+            {projects.length > 0 && (
+              <span className="ml-0.5 px-1.5 py-0.2 bg-indigo-600 text-white rounded-full text-[10px]">
+                {projects.length}
+              </span>
+            )}
           </button>
-          <button 
-            onClick={() => setActiveTab('analysis')}
-            className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-all ${activeTab === 'analysis' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400'}`}
-          >
-            <BarChart3 size={20} />
-            <span className="text-[10px] font-bold">분석</span>
-          </button>
-          <button 
-            onClick={() => {
-              setCategoryManagerTab('categories');
-              setIsCategoryManagerOpen(true);
-            }}
-            className="flex flex-col items-center gap-1 p-2 text-slate-400"
-          >
-            <Tags size={20} />
-            <span className="text-[10px] font-bold">카테고리</span>
-          </button>
-          <button 
-            onClick={() => setIsSettingsOpen(true)}
-            className="flex flex-col items-center gap-1 p-2 text-slate-400"
-          >
-            <Settings size={20} />
-            <span className="text-[10px] font-bold">설정</span>
-          </button>
+
+          <div className="flex items-center gap-1">
+            <button 
+              onClick={() => setActiveTab('list')}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'list' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500'}`}
+            >
+              <FileSpreadsheet size={15} />
+              <span>내역서</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('analysis')}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'analysis' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500'}`}
+            >
+              <BarChart3 size={15} />
+              <span>단가분석</span>
+            </button>
+            <button 
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-1.5 text-slate-500 hover:text-slate-800"
+            >
+              <Settings size={18} />
+            </button>
+          </div>
         </div>
 
         {renderHeader()}
