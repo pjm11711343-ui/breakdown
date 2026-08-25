@@ -27,9 +27,13 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
 
     reader.onload = (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, {
-          type: 'binary',
+        const buffer = evt.target?.result;
+        if (!buffer) {
+          throw new Error('파일 데이터를 읽어오지 못했습니다.');
+        }
+
+        const wb = XLSX.read(buffer, {
+          type: buffer instanceof ArrayBuffer ? 'array' : 'binary',
           cellStyles: true,
           cellFormula: true,
           cellNF: true,
@@ -37,17 +41,39 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
         });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        
+        // Convert to 2D array of rows (raw values preserved)
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }) as any[][];
 
         if (!data || data.length === 0) {
           throw new Error('데이터가 없거나 잘못된 형식입니다.');
         }
 
-        // Find the header row by looking for the row with the most keyword matches
+        // 1. Propagate merged cells across the data matrix so multi-tier headers inherit parent category names
+        if (ws['!merges'] && Array.isArray(ws['!merges'])) {
+          ws['!merges'].forEach(range => {
+            const { s, e } = range;
+            const topVal = data[s.r] && data[s.r][s.c] !== undefined ? data[s.r][s.c] : '';
+            if (topVal !== '' && topVal !== null && topVal !== undefined) {
+              for (let r = s.r; r <= Math.min(e.r, data.length - 1); r++) {
+                if (!data[r]) data[r] = [];
+                for (let c = s.c; c <= e.c; c++) {
+                  if (r === s.r && c === s.c) continue;
+                  // Only fill if empty
+                  if (data[r][c] === '' || data[r][c] === undefined || data[r][c] === null) {
+                    data[r][c] = topVal;
+                  }
+                }
+              }
+            }
+          });
+        }
+
+        // 2. Find the header row by looking for the row with the most keyword matches
         let headerRowIndex = -1;
         let headers: string[] = [];
         let maxMatches = 0;
-        const constructionKeywords = ['품명', '규격', '수량', '단위', '단가', '금액', '명칭', '비고', '재료비', '노무비', '경비', '합계'];
+        const constructionKeywords = ['품명', '규격', '수량', '단위', '단가', '금액', '명칭', '비고', '재료비', '노무비', '경비', '합계', '자재비', '인건비', '품목'];
         
         for (let i = 0; i < Math.min(data.length, 40); i++) {
           const rowData = data[i];
@@ -56,76 +82,22 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           const rowStr = rowData.map(c => String(c || '').replace(/\s+/g, '').toLowerCase());
           const matches = rowStr.filter(c => constructionKeywords.some(k => c.includes(k))).length;
           
-          // We need a minimum of 2 matches to consider it a real header row
           if (matches > maxMatches && matches >= 2) {
             maxMatches = matches;
             headerRowIndex = i;
           }
         }
 
-        // If no row found with multiple matches, fallback to the previous simple logic but check all rows first
+        // Fallback search if no strong match
         if (headerRowIndex === -1) {
           for (let i = 0; i < Math.min(data.length, 40); i++) {
             const rowData = data[i];
             if (!rowData || !Array.isArray(rowData)) continue;
             const rowStr = rowData.map(c => String(c || '').replace(/\s+/g, '').toLowerCase());
-            if (rowStr.some(c => c.includes('품명') || c.includes('규격') || c.includes('수량') || c.includes('명칭') || c.includes('단위'))) {
+            if (rowStr.some(c => c.includes('품명') || c.includes('규격') || c.includes('수량') || c.includes('명칭') || c.includes('단위') || c.includes('재료비'))) {
               headerRowIndex = i;
               break;
             }
-          }
-        }
-
-        if (headerRowIndex !== -1) {
-          const i = headerRowIndex;
-          const rowData = data[i];
-          
-          // Check the row ABOVE for category headers (e.g., "재료비", "노무비")
-          const prevRow = i > 0 ? (data[i - 1] as any[]) : null;
-          const currentRow = rowData;
-          const maxCols = Math.max(currentRow.length, prevRow ? prevRow.length : 0);
-          headers = new Array(maxCols).fill('');
-
-          // If there's a previous row, it might contain merged category names
-          let lastParentCategory = '';
-          for (let colIdx = 0; colIdx < maxCols; colIdx++) {
-            const prevVal = prevRow && prevRow[colIdx] ? String(prevRow[colIdx]).trim() : '';
-            // If the top cell has value, it's a new category. 
-            // Also handle merged cells where the value is only in the first cell of the merge range.
-            if (prevVal && prevVal.length > 1) {
-              lastParentCategory = prevVal;
-            }
-            
-            const currentVal = String(currentRow[colIdx] || '').trim();
-            const cleanCurrent = currentVal.replace(/\s+/g, '');
-            const cleanParent = lastParentCategory.replace(/\s+/g, '');
-            
-            // Map specific sub-headers to their categories for better identification
-            const isSubHeader = cleanCurrent.includes('단가') || cleanCurrent.includes('금액') || cleanCurrent.includes('단고') || cleanCurrent.includes('계');
-            
-            if (lastParentCategory && isSubHeader) {
-              headers[colIdx] = `${lastParentCategory} ${currentVal}`;
-            } else if (cleanParent.includes('재료비') || cleanParent.includes('노무비') || cleanParent.includes('자재비') || cleanParent.includes('인건비') || cleanParent.includes('합계') || cleanParent.includes('단가')) {
-              headers[colIdx] = currentVal ? `${lastParentCategory} ${currentVal}` : lastParentCategory;
-            } else {
-              headers[colIdx] = currentVal || lastParentCategory;
-            }
-          }
-
-          // Look at the next row for even more sub-headers
-          const nextRow = data[i + 1] as any[];
-          if (nextRow && Array.isArray(nextRow)) {
-            nextRow.forEach((val, colIdx) => {
-              if (colIdx >= headers.length) return;
-              const s = String(val || '').trim();
-              if (s && ['단가', '금액', '합계', '수량', '단위', '규격', '비고'].some(k => s.includes(k))) {
-                if (headers[colIdx] && !headers[colIdx].includes(s)) {
-                  headers[colIdx] = `${headers[colIdx]} ${s}`;
-                } else if (!headers[colIdx]) {
-                  headers[colIdx] = s;
-                }
-              }
-            });
           }
         }
 
@@ -133,54 +105,137 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           throw new Error('유효한 테이블 헤더를 찾을 수 없습니다.');
         }
 
-        // Map columns with expanded keyword lists
-        const getColIdx = (keywords: string[]) => {
-          return headers.findIndex(h => {
-            if (!h) return false;
-            const cleanH = h.replace(/\s+/g, '').toLowerCase();
-            return keywords.some(k => cleanH.includes(k.replace(/\s+/g, '').toLowerCase()));
-          });
-        };
+        // 3. Build combined headers handling 1-tier, 2-tier (parent-child), and 3-tier header designs
+        const i = headerRowIndex;
+        const prevRow = i > 0 ? (data[i - 1] as any[]) : null;
+        const currentRow = data[i] as any[];
+        const nextRow = (i + 1 < data.length) ? (data[i + 1] as any[]) : null;
+        
+        const maxCols = Math.max(
+          currentRow ? currentRow.length : 0, 
+          prevRow ? prevRow.length : 0,
+          nextRow ? nextRow.length : 0
+        );
+        headers = new Array(maxCols).fill('');
+
+        // Helper to check if next row is a subheader row (단가, 금액, 단위, etc.)
+        let isNextRowSubHeader = false;
+        if (nextRow && Array.isArray(nextRow)) {
+          const nextRowMatches = nextRow.map(c => String(c || '').replace(/\s+/g, '').toLowerCase())
+            .filter(s => ['단가', '금액', '단고', '계', '수량', '단위', '규격', '비고'].some(k => s.includes(k))).length;
+          if (nextRowMatches >= 2) {
+            isNextRowSubHeader = true;
+          }
+        }
+
+        // Helper to check if prev row was a parent header row (재료비, 노무비, 합계, etc.)
+        let isPrevRowParentHeader = false;
+        if (prevRow && Array.isArray(prevRow)) {
+          const prevRowMatches = prevRow.map(c => String(c || '').replace(/\s+/g, '').toLowerCase())
+            .filter(s => ['재료비', '자재비', '노무비', '인건비', '경비', '합계', '공사비', '비목'].some(k => s.includes(k))).length;
+          if (prevRowMatches >= 1) {
+            isPrevRowParentHeader = true;
+          }
+        }
+
+        // Forward-fill parent categories if merge metadata was missing
+        if (isPrevRowParentHeader && prevRow) {
+          let lastParent = '';
+          for (let c = 0; c < maxCols; c++) {
+            const val = prevRow[c] ? String(prevRow[c]).trim() : '';
+            if (val && (val.includes('재료') || val.includes('자재') || val.includes('노무') || val.includes('인건') || val.includes('경비') || val.includes('합계') || val.includes('소계') || val.includes('공사비'))) {
+              lastParent = val;
+            } else if (!val && lastParent) {
+              const curr = currentRow && currentRow[c] ? String(currentRow[c]).trim() : '';
+              if (curr && (curr.includes('단가') || curr.includes('금액') || curr.includes('계') || curr.includes('단고'))) {
+                prevRow[c] = lastParent;
+              }
+            }
+          }
+        }
+
+        if (isNextRowSubHeader && currentRow) {
+          let lastParent = '';
+          for (let c = 0; c < maxCols; c++) {
+            const val = currentRow[c] ? String(currentRow[c]).trim() : '';
+            if (val && (val.includes('재료') || val.includes('자재') || val.includes('노무') || val.includes('인건') || val.includes('경비') || val.includes('합계') || val.includes('소계') || val.includes('공사비'))) {
+              lastParent = val;
+            } else if (!val && lastParent) {
+              const nextVal = nextRow && nextRow[c] ? String(nextRow[c]).trim() : '';
+              if (nextVal && (nextVal.includes('단가') || nextVal.includes('금액') || nextVal.includes('계') || nextVal.includes('단고'))) {
+                currentRow[c] = lastParent;
+              }
+            }
+          }
+        }
+
+        for (let colIdx = 0; colIdx < maxCols; colIdx++) {
+          const prevVal = prevRow && prevRow[colIdx] ? String(prevRow[colIdx]).trim() : '';
+          const currentVal = currentRow && currentRow[colIdx] ? String(currentRow[colIdx]).trim() : '';
+          const nextVal = isNextRowSubHeader && nextRow && nextRow[colIdx] ? String(nextRow[colIdx]).trim() : '';
+
+          let combined = '';
+
+          if (isPrevRowParentHeader && prevVal) {
+            // currentRow is subheader, prevRow is parent
+            if (currentVal && !prevVal.includes(currentVal)) {
+              combined = `${prevVal} ${currentVal}`;
+            } else {
+              combined = currentVal || prevVal;
+            }
+          } else if (isNextRowSubHeader && nextVal) {
+            // currentRow is parent, nextRow is subheader
+            if (currentVal && !currentVal.includes(nextVal)) {
+              combined = `${currentVal} ${nextVal}`;
+            } else {
+              combined = nextVal || currentVal;
+            }
+          } else {
+            combined = currentVal || prevVal || nextVal;
+          }
+
+          headers[colIdx] = combined;
+        }
+
+        // 4. Specific Column Matching
+        const cleanHeaders = headers.map(h => (h || '').replace(/\s+/g, '').toLowerCase());
 
         const nameKeywords = [
-          '품명', '항목', '공종', '명칭', '구분', '항목명', '내용', '자재명', '비목', '세부공종', '목', '자재', '공사명', '공 사 명', '품 명', '품   명', 
-          'ITEM', 'DESCRIPTION', '세부항목', '자재내역', '품목', '공 명', '공종(품명)', '공종/품명'
+          '품명', '항목', '공종', '명칭', '구분', '항목명', '내용', '자재명', '비목', '세부공종', '목', '자재', '공사명', 
+          'item', 'description', '세부항목', '자재내역', '품목', '공명', '공종(품명)', '공종/품명'
         ];
         const specKeywords = [
-          '규격', '상세', '사양', '규격및', '도면번호', '규격및사양', '형식', '규 격', '사 양', 'dimensions', 'size', 'spec', 'description', 
-          '형명', '모델', 'model', '모델명', '규격(사양)', '규격사항', '품명(규격)', '품명/규격', '규격/사양', '규격 및 상세', '규격동', '동규격', 
-          '규격·사양', 'SPECIFICATION', 'MODEL', '규격 및 사양', '규격(동)', '규격·동', '규격(특기사항)', '규격·사양·형식', 'TYPE/SIZE', 'DIMENSION',
-          '사각', '두께', '재질'
+          '규격', '상세', '사양', '규격및', '도면번호', '규격및사양', '형식', '규격', '사양', 'dimensions', 'size', 'spec', 'description', 
+          '형명', '모델', 'model', '모델명', '규격(사양)', '규격사항', '품명(규격)', '품명/규격', '규격/사양', '규격및상세', '규격동', '동규격', 
+          '규격·사양', 'specification', '규격및사양', '규격(동)', '규격·동', '규격(특기사항)', '규격·사양·형식', 'type/size', 'dimension'
         ];
-        const unitKeywords = ['단위', '단 위', 'unit', '단  위', '단   위', 'UNIT', 'U/T', '단   위'];
-        const qtyKeywords = ['수량', '설계수량', 'qty', 'quantity', '기성수량', '검측수량', '공수', '설계', '수 량', '합계수량', '실수량', '분량', '정미수량', '수  량', '수   량', 'QUANTITY', 'QTY', '수  료', '설계 수량'];
+        const unitKeywords = ['단위', 'unit', 'u/t'];
+        const qtyKeywords = ['수량', '설계수량', 'qty', 'quantity', '기성수량', '검측수량', '공수', '설계', '합계수량', '실수량', '분량', '정미수량', '수료'];
 
-        const mPriceKeywords = ['재료비단가', '재료단가', '자재단가', '재료비단고', '자제비단가', '자재비단가', '재료비 단가', '자재비 단가', '재료 단가', '자재 단가', '재료비합계 단가', '재료비합계단가', '재료비(단가)', '재료단가(원)', 'MAT. UNIT PRICE', 'M/P', '자재비 단가'];
-        const mAmountKeywords = ['재료금액', '재료비금액', '재료비합계', '자재금액', '자재비금액', '자재비계', '재료비 합계', '자재비 합계', '재료비계', '재료비 합계금액', '재료비(금액)', 'MAT. AMOUNT', 'M/A', '자재비 합계'];
+        const remarkKeywords = ['비고', '산출근거', '특기사항', '적요', 'remark', 'notes', '관련근거'];
 
-        const lPriceKeywords = ['노무비단가', '노무단가', '인건비단가', '노무비단고', '인건비 단가', '노무단 가', '노무비 단가', '인건비단가', '직접노무비', '직노단가', '노무비합계 단가', '노무비합계단가', '노무비(단가)', '노무단가(원)', 'LAB. UNIT PRICE', 'L/P', '인건비 단가'];
-        const lAmountKeywords = ['노무비금액', '노무금액', '노무비합계', '노무비계', '노무액', '인건비합계', '노무비 합계', '인건비 합계', '직접노무비금액', '노무비계', '노무비 합계금액', '노무비(금액)', 'LAB. AMOUNT', 'L/A', '인건비 합계'];
+        const findColByKeywords = (keywords: string[]) => {
+          for (const kw of keywords) {
+            const cleanKw = kw.replace(/\s+/g, '').toLowerCase();
+            const idx = cleanHeaders.findIndex(h => h.includes(cleanKw));
+            if (idx !== -1) return idx;
+          }
+          return -1;
+        };
 
-        const totalPriceKeywords = ['합계단가', '단가', '단 가', '단 고', '계단가', '총단가', '단가합계', '단 가 계', '종합단가', '합 계 단 가', 'TOTAL PRICE', 'UNIT PRICE', '단가계'];
-        const totalAmountKeywords = ['금액합계', '합계금액', '금액', '합계', '계', '총액', '소계', '공사금액', '금 액', '합계금액', '합 계 금 액', 'TOTAL AMOUNT', 'TOTAL', '금액계'];
+        const nameIdx = findColByKeywords(nameKeywords);
+        let specIdx = findColByKeywords(specKeywords);
+        const unitIdx = findColByKeywords(unitKeywords);
+        const qtyIdx = findColByKeywords(qtyKeywords);
+        const remarkIdx = findColByKeywords(remarkKeywords);
 
-        const remarkKeywords = ['비고', '산출근거', '비 고', '특기사항', '적요', 'REMARK', 'NOTES', '관련근거'];
-
-        const nameIdx = getColIdx(nameKeywords);
-        let specIdx = getColIdx(specKeywords);
-        const unitIdx = getColIdx(unitKeywords);
-        const qtyIdx = getColIdx(qtyKeywords);
-
-        // Advanced Fallback Logic for Specification Column:
-        // Construction excels often place "Spec" right after "Name".
-        // We scan up to 3 columns after the "Name" column to find a suitable "Spec" candidate.
+        // Advanced Fallback Logic for Specification Column
         if (nameIdx !== -1 && specIdx === -1) {
-          for (let i = 1; i <= 3; i++) {
-            const checkIdx = nameIdx + i;
+          for (let c = 1; c <= 3; c++) {
+            const checkIdx = nameIdx + c;
             if (checkIdx < headers.length) {
-              const h = headers[checkIdx].toLowerCase().replace(/\s+/g, '');
-              // A good specimen column is NOT another known mandatory column
-              const isOtherKey = [...unitKeywords, ...qtyKeywords, ...totalPriceKeywords, ...totalAmountKeywords]
+              const h = cleanHeaders[checkIdx];
+              const isOtherKey = [...unitKeywords, ...qtyKeywords, '단가', '금액', '재료', '노무', '합계', '비고']
                 .some(k => h.includes(k.replace(/\s+/g, '').toLowerCase()));
               
               if (!isOtherKey && h.length > 0) {
@@ -191,75 +246,149 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           }
         }
         
-        // Final fallback: if spec is still -1 but unit is far away from name, assume middle is spec
         if (specIdx === -1 && nameIdx !== -1 && unitIdx > nameIdx + 1) {
           specIdx = nameIdx + 1;
         }
-        
-        const materialPriceIdx = getColIdx(mPriceKeywords);
-        const materialAmountIdx = getColIdx(mAmountKeywords);
-        
-        const laborPriceIdx = getColIdx(lPriceKeywords);
-        const laborAmountIdx = getColIdx(lAmountKeywords);
-        
-        const priceIdx = getColIdx(totalPriceKeywords);
-        const amountIdx = getColIdx(totalAmountKeywords);
-        
-        const remarkIdx = getColIdx(remarkKeywords);
 
-        // Refined Fallback Logic: Detect material/labor price columns if not explicitly named
-        // Construction Excels often have 3 pairs of Price/Amount: Material, Labor, and Subtotal
-        const allPriceIndices = headers.map((h, idx) => ({ h: h.replace(/\s+/g, '').toLowerCase(), idx }))
-          .filter(item => item.h.includes('단가') || item.h === '단고' || item.h.includes('unitprice') || item.h === 'price' || item.h.includes('단가계') || item.h.includes('u/p'))
-          .map(item => item.idx);
-        
-        const finalMaterialPriceIdx = materialPriceIdx !== -1 ? materialPriceIdx : (allPriceIndices.length >= 1 ? allPriceIndices[0] : -1);
-        const finalLaborPriceIdx = laborPriceIdx !== -1 ? laborPriceIdx : (allPriceIndices.length >= 2 ? allPriceIndices[1] : -1);
-        const finalPriceIdx = priceIdx !== -1 ? priceIdx : (allPriceIndices.length >= 3 ? allPriceIndices[2] : (allPriceIndices.length === 1 ? allPriceIndices[0] : (allPriceIndices.length >= 1 ? allPriceIndices[allPriceIndices.length - 1] : -1)));
+        // 5. Robust Material, Labor, and Total Price / Amount Column Detection
+        let materialPriceIdx = -1;
+        let materialAmountIdx = -1;
+        let laborPriceIdx = -1;
+        let laborAmountIdx = -1;
+        let totalPriceIdx = -1;
+        let totalAmountIdx = -1;
 
-        const allAmountIndices = headers.map((h, idx) => ({ h: h.replace(/\s+/g, '').toLowerCase(), idx }))
-          .filter(item => item.h.includes('금액') || item.h === '계' || item.h.includes('amount') || item.h === '금액합계' || item.h === '합계')
-          .map(item => item.idx);
-        
-        const finalMaterialAmountIdx = materialAmountIdx !== -1 ? materialAmountIdx : (allAmountIndices.length >= 1 ? allAmountIndices[0] : -1);
-        const finalLaborAmountIdx = laborAmountIdx !== -1 ? laborAmountIdx : (allAmountIndices.length >= 2 ? allAmountIndices[1] : -1);
-        const finalAmountIdx = amountIdx !== -1 ? amountIdx : (allAmountIndices.length >= 3 ? allAmountIndices[2] : (allAmountIndices.length === 1 ? allAmountIndices[0] : -1));
+        // Specific Material Price Keywords
+        const explicitMPriceKeywords = [
+          '재료비단가', '재료단가', '자재단가', '재료비단고', '자재비단가', '자제비단가', '재료비(단가)', '재료(단가)', '자재비(단가)', 
+          '자재(단가)', '재료단가(원)', '재료비단가(원)', '직접재료비단가', '직접재료단가', '재료비_단가', '자재비_단가',
+          'mat.unitprice', 'mat.price', 'materialprice', 'materialunitprice', 'm/p', 'm.u.p', 'mat.u/p'
+        ];
+        // Specific Material Amount Keywords
+        const explicitMAmountKeywords = [
+          '재료비금액', '재료금액', '자재금액', '자재비금액', '재료비계', '자재비계', '재료비합계', '자재비합계', '재료비(금액)', '자재비(금액)', 
+          '재료금액(원)', '재료비금액(원)', '직접재료비금액', '직접재료금액', '재료비_금액', '자재비_금액', 'mat.amount', 'm/a', 'materialamount'
+        ];
+
+        // Specific Labor Price Keywords
+        const explicitLPriceKeywords = [
+          '노무비단가', '노무단가', '인건비단가', '노무비단고', '직접노무비단가', '직노단가', '노무비(단가)', '노무단가(원)', '노무비단가(원)', 
+          '인건비(단가)', '노무비_단가', '인건비_단가', 'lab.unitprice', 'lab.price', 'laborprice', 'laborunitprice', 'l/p', 'lab.u/p'
+        ];
+        // Specific Labor Amount Keywords
+        const explicitLAmountKeywords = [
+          '노무비금액', '노무금액', '인건비금액', '노무비계', '인건비계', '노무비합계', '인건비합계', '직접노무비금액', '노무비(금액)', '인건비(금액)', 
+          '노무금액(원)', '노무비금액(원)', '노무비_금액', '인건비_금액', 'lab.amount', 'l/a', 'laboramount'
+        ];
+
+        // Specific Total Price Keywords
+        const explicitTotalPriceKeywords = [
+          '합계단가', '총단가', '단가합계', '단가계', '종합단가', '계단가', 'totalprice', 'totalunitprice', '합계단고', '총단고'
+        ];
+        // Specific Total Amount Keywords
+        const explicitTotalAmountKeywords = [
+          '합계금액', '총금액', '금액합계', '금액계', '공사금액', '공사비', '총액', '합계액', 'totalamount', 'total'
+        ];
+
+        // First pass: exact matches
+        materialPriceIdx = findColByKeywords(explicitMPriceKeywords);
+        materialAmountIdx = findColByKeywords(explicitMAmountKeywords);
+        laborPriceIdx = findColByKeywords(explicitLPriceKeywords);
+        laborAmountIdx = findColByKeywords(explicitLAmountKeywords);
+        totalPriceIdx = findColByKeywords(explicitTotalPriceKeywords);
+        totalAmountIdx = findColByKeywords(explicitTotalAmountKeywords);
+
+        // Second pass: Combined search (Material & Price, Material & Amount, etc.)
+        cleanHeaders.forEach((h, idx) => {
+          const isMaterial = h.includes('재료') || h.includes('자재') || h.includes('mat');
+          const isLabor = h.includes('노무') || h.includes('인건') || h.includes('lab');
+          const isTotal = h.includes('합계') || h.includes('총') || h.includes('계') || h.includes('소계') || h.includes('total');
+          const isPrice = h.includes('단가') || h.includes('단고') || h.includes('price') || h.includes('u/p') || h.includes('up');
+          const isAmount = h.includes('금액') || h.includes('amount') || h.includes('amt') || (isTotal && !isPrice);
+
+          if (isMaterial && isPrice && materialPriceIdx === -1) materialPriceIdx = idx;
+          if (isMaterial && isAmount && materialAmountIdx === -1) materialAmountIdx = idx;
+          if (isLabor && isPrice && laborPriceIdx === -1) laborPriceIdx = idx;
+          if (isLabor && isAmount && laborAmountIdx === -1) laborAmountIdx = idx;
+          if (isTotal && isPrice && totalPriceIdx === -1) totalPriceIdx = idx;
+          if (isTotal && isAmount && totalAmountIdx === -1) totalAmountIdx = idx;
+        });
+
+        // Third pass: Gather all price columns and all amount columns for positional fallback
+        const allPriceCols: number[] = [];
+        const allAmountCols: number[] = [];
+
+        cleanHeaders.forEach((h, idx) => {
+          if (idx === nameIdx || idx === specIdx || idx === unitIdx || idx === qtyIdx || idx === remarkIdx) return;
+          if (h.includes('단가') || h.includes('단고') || h.includes('price') || h.includes('u/p') || h.includes('up')) {
+            allPriceCols.push(idx);
+          } else if (h.includes('금액') || h.includes('amount') || h.includes('amt') || h.includes('계')) {
+            allAmountCols.push(idx);
+          }
+        });
+
+        // Positional fallback for standard Korean estimate structure: [재료비, 노무비, 합계]
+        if (materialPriceIdx === -1) {
+          if (allPriceCols.length >= 1) materialPriceIdx = allPriceCols[0];
+        }
+        if (materialAmountIdx === -1) {
+          if (allAmountCols.length >= 1) materialAmountIdx = allAmountCols[0];
+        }
+
+        if (laborPriceIdx === -1 && allPriceCols.length >= 2) {
+          laborPriceIdx = allPriceCols[1];
+        }
+        if (laborAmountIdx === -1 && allAmountCols.length >= 2) {
+          laborAmountIdx = allAmountCols[1];
+        }
+
+        if (totalPriceIdx === -1) {
+          totalPriceIdx = allPriceCols.length >= 3 ? allPriceCols[2] : (allPriceCols.length > 0 ? allPriceCols[allPriceCols.length - 1] : -1);
+        }
+        if (totalAmountIdx === -1) {
+          totalAmountIdx = allAmountCols.length >= 3 ? allAmountCols[2] : (allAmountCols.length > 0 ? allAmountCols[allAmountCols.length - 1] : -1);
+        }
+
+        const finalMaterialPriceIdx = materialPriceIdx;
+        const finalLaborPriceIdx = laborPriceIdx;
+        const finalPriceIdx = totalPriceIdx;
+
+        const finalMaterialAmountIdx = materialAmountIdx;
+        const finalLaborAmountIdx = laborAmountIdx;
+        const finalAmountIdx = totalAmountIdx;
 
         let currentSection = '기본 내역';
         const items: SpecItem[] = [];
 
-        // Determine critical indices with fallbacks
-        const effectiveNameIdx = nameIdx !== -1 ? nameIdx : headers.findIndex(h => h.includes('품명')) !== -1 ? headers.findIndex(h => h.includes('품명')) : 1; 
-        const effectiveQtyIdx = qtyIdx !== -1 ? qtyIdx : headers.findIndex(h => h.includes('수량')) !== -1 ? headers.findIndex(h => h.includes('수량')) : -1;
-
-        // Check if the next row is a sub-header row to skip it during data processing
-        let actualDataStartIndex = headerRowIndex + 1;
-        const potentialSubHeaderRow = data[headerRowIndex + 1];
-        if (potentialSubHeaderRow && Array.isArray(potentialSubHeaderRow)) {
-          const nextRowStr = potentialSubHeaderRow.map(c => String(c || '').replace(/\s+/g, '').toLowerCase());
-          const subHeaderKeywords = ['단위', '수량', '단가', '금액', '합계', '비고', '재료비', '노무비'];
-          const matches = nextRowStr.filter(s => subHeaderKeywords.some(k => s.includes(k)));
-          if (matches.length >= 3) { // Use higher threshold to avoid skipping data rows
-            actualDataStartIndex = headerRowIndex + 2;
-          }
-        }
-
+        // Determine actual data start index
+        const actualDataStartIndex = isNextRowSubHeader ? headerRowIndex + 2 : headerRowIndex + 1;
         const rows = data.slice(actualDataStartIndex);
 
         // Find optimal name column if not explicitly defined
         let finalNameIdx = nameIdx;
         if (finalNameIdx === -1) {
-          // Pick the first column that usually contains names (likely Col 1 or 2, skipped if it looks like No.)
           for (let c = 0; c < headers.length; c++) {
             const h = headers[c] ? headers[c].toLowerCase() : '';
             if (h.includes('no') || h.includes('번호') || h.includes('순번')) continue;
-            if (c !== unitIdx && c !== qtyIdx && c !== finalPriceIdx && c !== finalAmountIdx) {
+            if (c !== unitIdx && c !== qtyIdx && c !== finalPriceIdx && c !== finalAmountIdx && c !== finalMaterialPriceIdx) {
               finalNameIdx = c;
               break;
             }
           }
         }
         if (finalNameIdx === -1) finalNameIdx = 1; // Last resort
+
+        const cleanNum = (val: any): number => {
+          if (val === undefined || val === null || val === '') return 0;
+          if (typeof val === 'number') return isNaN(val) ? 0 : val;
+          const trimmed = String(val).trim();
+          if (trimmed === '-' || trimmed === '—' || trimmed === 'ㅡ' || trimmed === '0' || trimmed === 'N/A' || trimmed === 'null' || trimmed === 'undefined') return 0;
+          const isNegative = trimmed.startsWith('(') && trimmed.endsWith(')');
+          const cleaned = trimmed.replace(/[₩\\,￦\s원]/g, '').replace(/[^\d.-]/g, '');
+          const n = parseFloat(cleaned);
+          if (isNaN(n)) return 0;
+          return isNegative ? -Math.abs(n) : n;
+        };
 
         rows.forEach((row, idx) => {
           if (!row || !Array.isArray(row) || row.length === 0) return;
@@ -268,6 +397,11 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
             if (colIdx < 0 || colIdx >= row.length) return '';
             const val = row[colIdx];
             return val === undefined || val === null ? '' : String(val).trim();
+          };
+
+          const getRawValue = (colIdx: number) => {
+            if (colIdx < 0 || colIdx >= row.length) return undefined;
+            return row[colIdx];
           };
 
           let name = getValue(finalNameIdx);
@@ -281,7 +415,6 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           
           // Handle split Name/Spec in one field or column
           if (name && !spec && (name.includes('(') || name.includes('/') || name.includes('['))) {
-             // Try to extract spec from name if spec column is missing
              const match = name.match(/^(.*?)[(/[](.*?)[)\]]?$/);
              if (match) {
                name = match[1].trim();
@@ -290,62 +423,79 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           }
 
           const unit = getValue(unitIdx);
-          const qtyStr = getValue(qtyIdx !== -1 ? qtyIdx : -1); // use qtyIdx directly
-          const mPriceStr = getValue(finalMaterialPriceIdx);
-          const mAmountStr = getValue(finalMaterialAmountIdx);
-          const lPriceStr = getValue(finalLaborPriceIdx);
-          const lAmountStr = getValue(finalLaborAmountIdx);
-          const priceStr = getValue(finalPriceIdx);
-          const amountStr = getValue(finalAmountIdx);
+          const qtyValue = cleanNum(getRawValue(qtyIdx !== -1 ? qtyIdx : -1));
+          let mPriceValue = cleanNum(getRawValue(finalMaterialPriceIdx));
+          let mAmountValue = cleanNum(getRawValue(finalMaterialAmountIdx));
+          let lPriceValue = cleanNum(getRawValue(finalLaborPriceIdx));
+          let lAmountValue = cleanNum(getRawValue(finalLaborAmountIdx));
+          let rawPriceValue = cleanNum(getRawValue(finalPriceIdx));
+          let rawAmountValue = cleanNum(getRawValue(finalAmountIdx));
           const remark = getValue(remarkIdx);
 
-          const cleanNum = (s: string) => {
-            if (!s) return 0;
-            // Handle scientific notation or weird formats
-            const n = parseFloat(s.replace(/,/g, '').replace(/[^\d.-]/g, ''));
-            return isNaN(n) ? 0 : n;
-          };
+          // 1. Single price/amount format fallback: If material prices are 0 but total price/amount exist and labor is 0
+          if (mPriceValue === 0 && mAmountValue === 0 && lPriceValue === 0 && lAmountValue === 0) {
+            if (rawPriceValue !== 0) mPriceValue = rawPriceValue;
+            if (rawAmountValue !== 0) mAmountValue = rawAmountValue;
+          }
 
-          const qtyValue = cleanNum(qtyStr);
-          let mPriceValue = cleanNum(mPriceStr);
-          let lPriceValue = cleanNum(lPriceStr);
-          const mAmountValue = cleanNum(mAmountStr);
-          const lAmountValue = cleanNum(lAmountStr);
-
-          // Derive unit prices if missing but amounts are present
+          // 2. Unit price derivation from Amount and Quantity if unit price is missing
           if (mPriceValue === 0 && mAmountValue !== 0 && qtyValue > 0) {
-            mPriceValue = mAmountValue / qtyValue;
+            mPriceValue = Math.round((mAmountValue / qtyValue) * 100) / 100;
           }
           if (lPriceValue === 0 && lAmountValue !== 0 && qtyValue > 0) {
-            lPriceValue = lAmountValue / qtyValue;
+            lPriceValue = Math.round((lAmountValue / qtyValue) * 100) / 100;
           }
 
-          // Per user request: if both material and labor have unit prices, exclude labor cost
-          let finalLaborPrice = lPriceValue;
-          let finalLaborAmount = lAmountValue || (qtyValue * lPriceValue);
-          if (mPriceValue > 0 && lPriceValue > 0) {
-            finalLaborPrice = 0;
-            finalLaborAmount = 0;
+          // 3. Amount derivation from Unit price and Quantity if amount is missing
+          if (mAmountValue === 0 && mPriceValue !== 0 && qtyValue > 0) {
+            mAmountValue = Math.round(qtyValue * mPriceValue);
+          }
+          if (lAmountValue === 0 && lPriceValue !== 0 && qtyValue > 0) {
+            lAmountValue = Math.round(qtyValue * lPriceValue);
           }
 
-          // Per user request, the total price (unitPrice) and total amount (amount) in the process separation breakdown should only calculate and sum material costs (재료비).
-          const priceValue = mPriceValue;
-          const amountValue = mAmountValue || (qtyValue * mPriceValue);
-          // Conversely, if total price exists but material/labor unit prices are 0, and we have material/labor amounts
-          // we could potentially derive unit prices if needed, but usually the Excel has them.
+          // 4. Labor price and amount preservation
+          const finalLaborPrice = lPriceValue;
+          const finalLaborAmount = lAmountValue !== 0 ? lAmountValue : (lPriceValue !== 0 && qtyValue > 0 ? Math.round(qtyValue * lPriceValue) : 0);
+
+          // 5. Total unit price (합계 단가) and Total amount (합계 금액) determination
+          let priceValue = rawPriceValue;
+          if (priceValue === 0) {
+            if (mPriceValue !== 0 || finalLaborPrice !== 0) {
+              priceValue = mPriceValue + finalLaborPrice;
+            } else if (rawAmountValue !== 0 && qtyValue > 0) {
+              priceValue = Math.round((rawAmountValue / qtyValue) * 100) / 100;
+            }
+          }
+
+          let amountValue = rawAmountValue;
+          if (amountValue === 0) {
+            if (mAmountValue !== 0 || finalLaborAmount !== 0) {
+              amountValue = mAmountValue + finalLaborAmount;
+            } else if (priceValue !== 0 && qtyValue > 0) {
+              amountValue = Math.round(qtyValue * priceValue);
+            }
+          }
+
+          // If material price is 0, labor is 0, but total price exists, ensure material price reflects the item unit price
+          if (mPriceValue === 0 && finalLaborPrice === 0 && priceValue !== 0) {
+            mPriceValue = priceValue;
+            if (mAmountValue === 0 && amountValue !== 0) {
+              mAmountValue = amountValue;
+            }
+          }
 
           const hasQty = qtyValue !== 0;
-          const hasPrice = priceValue !== 0 || mPriceValue !== 0 || finalLaborPrice !== 0;
-          const hasAmount = amountValue !== 0;
+          const hasPrice = priceValue !== 0 || mPriceValue !== 0 || finalLaborPrice !== 0 || rawPriceValue !== 0;
+          const hasAmount = amountValue !== 0 || mAmountValue !== 0 || finalLaborAmount !== 0 || rawAmountValue !== 0;
           const hasNumericData = hasQty || hasPrice || hasAmount;
 
-          // Section Detection Logic - more aggressive to find titles
+          // Section Detection Logic
           const isNumericTitle = /^\d+(\.\d+)*$/.test(name);
           const isSymbolSection = name.startsWith('∼') || name.startsWith('■') || name.startsWith('□') || name.startsWith('○') || name.startsWith('第');
           const isHeaderStyle = !hasNumericData && (name.length > 2 && (!unit || unit.length > 2));
           
           if (isHeaderStyle || isNumericTitle || isSymbolSection) {
-            // Also ensure it's not actually an item with missing numeric data
             if (!hasNumericData && !unit) {
               currentSection = name;
               return;
@@ -478,17 +628,17 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           // If it has a name and at least one characteristic of a real item
           if (name && (hasNumericData || unit || spec)) {
             items.push({
-              id: `excel-${idx}-${Date.now()}`,
+              id: `excel-${idx}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
               name,
               specification: spec,
               unit,
               quantity: qtyValue,
               materialUnitPrice: mPriceValue,
-              materialAmount: mAmountValue || (qtyValue * mPriceValue),
+              materialAmount: mAmountValue !== 0 ? mAmountValue : (qtyValue > 0 && mPriceValue !== 0 ? Math.round(qtyValue * mPriceValue) : 0),
               laborUnitPrice: finalLaborPrice,
               laborAmount: finalLaborAmount,
               unitPrice: priceValue,
-              amount: amountValue || (qtyValue * priceValue),
+              amount: amountValue !== 0 ? amountValue : (qtyValue > 0 && priceValue !== 0 ? Math.round(qtyValue * priceValue) : 0),
               category: autoCategory,
               section: currentSection,
               remark: (remark === 'null' || remark === 'undefined') ? '' : remark,
@@ -509,7 +659,7 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
         setIsProcessing(false);
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
   if (variant === 'dropzone') {
