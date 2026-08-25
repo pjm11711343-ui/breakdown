@@ -4,6 +4,7 @@ import { Download, Table, Cpu, Filter, Maximize2, RotateCcw, Zap, Sparkles, Aler
 import { motion } from 'motion/react';
 import ExcelUpload from './ExcelUpload';
 import * as XLSX from 'xlsx';
+import { exportStyledExcel } from '../utils/excelExport';
 
 interface Props {
   items: SpecItem[];
@@ -226,163 +227,21 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
     );
   };
 
-  const handleDownload = () => {
-    if (!workbook || items.length === 0) {
-      alert('다운로드할 데이터가 없거나 원본 엑셀 정보가 없습니다.');
+  const handleDownload = async () => {
+    if (items.length === 0) {
+      alert('다운로드할 데이터가 없습니다.');
       return;
     }
 
     try {
-      // Create a high-fidelity clone of the workbook preserving all styles, formulas, merged cells, etc.
-      const wb = XLSX.utils.book_new();
-      wb.Props = workbook.Props ? { ...workbook.Props } : {};
-      wb.Custprops = workbook.Custprops ? { ...workbook.Custprops } : {};
-      
-      workbook.SheetNames.forEach(name => {
-        const srcSheet = workbook.Sheets[name];
-        const tgtSheet: XLSX.WorkSheet = {};
-        
-        for (const key in srcSheet) {
-          if (Object.prototype.hasOwnProperty.call(srcSheet, key)) {
-            if (key.startsWith('!')) {
-              // Preserve sheet properties (ranges, merges, column/row styles, widths, heights)
-              const val = srcSheet[key];
-              if (Array.isArray(val)) {
-                tgtSheet[key] = val.map(item => (typeof item === 'object' && item !== null) ? { ...item } : item);
-              } else if (typeof val === 'object' && val !== null) {
-                tgtSheet[key] = { ...val };
-              } else {
-                tgtSheet[key] = val;
-              }
-            } else {
-              // Preserve cell properties (values, types, styles, formats, formulas)
-              const cell = srcSheet[key];
-              if (cell && typeof cell === 'object') {
-                const cellCopy: any = { ...cell };
-                if (cell.s && typeof cell.s === 'object') {
-                  cellCopy.s = JSON.parse(JSON.stringify(cell.s)); // deep clone styles
-                }
-                tgtSheet[key] = cellCopy;
-              } else {
-                tgtSheet[key] = cell;
-              }
-            }
-          }
-        }
-        XLSX.utils.book_append_sheet(wb, tgtSheet, name);
+      await exportStyledExcel({
+        projectName: '기계설비_공정분리',
+        items,
+        categories
       });
-
-      const firstSheetName = wb.SheetNames[0];
-      const worksheet = wb.Sheets[firstSheetName];
-      
-      // Convert sheet to json array of arrays to find header easily
-      const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-      
-      // Find header row (using similar logic to ExcelUpload)
-      let headerRowIndex = -1;
-      const constructionKeywords = ['품명', '규격', '수량', '단위', '단가', '금액', '명칭', '비고', '재료비', '노무비'];
-      
-      for (let i = 0; i < Math.min(data.length, 40); i++) {
-        const rowData = data[i];
-        if (!rowData || !Array.isArray(rowData)) continue;
-        const rowStr = rowData.map(c => String(c || '').replace(/\s+/g, '').toLowerCase());
-        const matches = rowStr.filter(c => constructionKeywords.some(k => c.includes(k))).length;
-        if (matches >= 2) {
-          headerRowIndex = i;
-          break;
-        }
-      }
-
-      if (headerRowIndex === -1) headerRowIndex = 0;
-
-      const headers = data[headerRowIndex] || [];
-      let categoryColIdx = headers.findIndex(h => String(h || '').includes('자재분류'));
-      let memoColIdx = headers.findIndex(h => String(h || '').includes('메모'));
-      
-      // Utility helper to copy style from preceding col cell in the same row
-      const copyStyleFromLeft = (r: number, targetColIdx: number) => {
-        // Look for any preceding valid cell in the same row to steal styling
-        for (let c = targetColIdx - 1; c >= 0; c--) {
-          const fromCellAddress = XLSX.utils.encode_cell({ r, c });
-          const fromCell = worksheet[fromCellAddress];
-          if (fromCell && fromCell.s && Object.keys(fromCell.s).length > 0) {
-            return JSON.parse(JSON.stringify(fromCell.s));
-          }
-        }
-        return null;
-      };
-
-      if (categoryColIdx === -1) {
-        // If "비고" (Remarks) exists, place it after it.
-        const remarkIdx = headers.findIndex(h => String(h || '').includes('비고'));
-        categoryColIdx = remarkIdx !== -1 ? remarkIdx + 1 : headers.length;
-        
-        // Update header cell
-        const headerCellAddress = XLSX.utils.encode_cell({ r: headerRowIndex, c: categoryColIdx });
-        worksheet[headerCellAddress] = { v: '자재분류', t: 's' };
-        
-        const headerStyle = copyStyleFromLeft(headerRowIndex, categoryColIdx);
-        if (headerStyle) {
-          worksheet[headerCellAddress].s = headerStyle;
-        }
-      }
-
-      if (memoColIdx === -1) {
-        // Place it right next to categoryColIdx
-        memoColIdx = categoryColIdx + 1;
-
-        // Update header cell
-        const headerCellAddress = XLSX.utils.encode_cell({ r: headerRowIndex, c: memoColIdx });
-        worksheet[headerCellAddress] = { v: '메모', t: 's' };
-
-        const headerStyle = copyStyleFromLeft(headerRowIndex, memoColIdx);
-        if (headerStyle) {
-          worksheet[headerCellAddress].s = headerStyle;
-        }
-      }
-
-      // Fill in category and memo for each item
-      items.forEach(item => {
-        if (item.excelRowIdx !== undefined) {
-          const cellAddress = XLSX.utils.encode_cell({ r: item.excelRowIdx, c: categoryColIdx });
-          worksheet[cellAddress] = { v: item.category || '', t: 's' };
-          
-          const rowStyle = copyStyleFromLeft(item.excelRowIdx, categoryColIdx);
-          if (rowStyle) {
-            worksheet[cellAddress].s = rowStyle;
-          }
-
-          const memoCellAddress = XLSX.utils.encode_cell({ r: item.excelRowIdx, c: memoColIdx });
-          worksheet[memoCellAddress] = { v: item.memo || '', t: 's' };
-          if (rowStyle) {
-            worksheet[memoCellAddress].s = rowStyle;
-          }
-        }
-      });
-
-      // Update worksheet column widths (!cols) to give '자재분류' and '메모' nice breathing room
-      const maxColIdx = Math.max(categoryColIdx, memoColIdx);
-      if (!worksheet['!cols']) worksheet['!cols'] = [];
-      while (worksheet['!cols'].length <= maxColIdx) {
-        worksheet['!cols'].push({ wch: 10 });
-      }
-      worksheet['!cols'][categoryColIdx] = { wch: 18 };
-      worksheet['!cols'][memoColIdx] = { wch: 25 };
-
-      // Update sheet range if needed (XLSX usually handles this, but let's be safe)
-      const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-      if (maxColIdx > range.e.c) range.e.c = maxColIdx;
-      worksheet['!ref'] = XLSX.utils.encode_range(range);
-
-      XLSX.writeFile(wb, `공정분리_완료_${new Date().toISOString().slice(0, 10)}.xlsx`, {
-        cellStyles: true,
-        cellNF: true,
-        bookSST: false,
-        sheetStubs: true
-      } as any);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Download error:', error);
-      alert('엑셀 파일 생성 중 오류가 발생했습니다.');
+      alert(error.message || '엑셀 파일 생성 중 오류가 발생했습니다.');
     }
   };
 

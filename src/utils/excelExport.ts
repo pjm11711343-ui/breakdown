@@ -1,0 +1,681 @@
+import ExcelJS from 'exceljs';
+import { SpecItem } from '../types';
+
+interface ExportOptions {
+  projectName?: string;
+  items: SpecItem[];
+  categories?: string[];
+}
+
+export async function exportStyledExcel({
+  projectName = '기계설비_공정분리',
+  items,
+  categories = []
+}: ExportOptions): Promise<void> {
+  if (!items || items.length === 0) {
+    throw new Error('내보낼 데이터가 없습니다.');
+  }
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = '기계설비 공정분리 마스터';
+  workbook.lastModifiedBy = '기계설비 공정분리 마스터';
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
+  // Helper for formatting currency amounts
+  const formatCurrency = (val: number | undefined | null) => (val !== undefined && val !== null ? val : 0);
+
+  // Calculate totals
+  const totalMaterialAmount = items.reduce((sum, item) => sum + (item.materialAmount || 0), 0);
+  const totalLaborAmount = items.reduce((sum, item) => sum + (item.laborAmount || 0), 0);
+  const totalGrandAmount = items.reduce((sum, item) => sum + (item.amount || 0), 0);
+  const dateString = new Date().toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+
+  /* ==========================================================================
+     1. SHEET 1: 공정분리_내역서 (Detailed Sheet with Real Styles)
+     ========================================================================== */
+  const detailSheet = workbook.addWorksheet('공정분리_내역서', {
+    views: [{ state: 'frozen', xSplit: 0, ySplit: 4 }]
+  });
+
+  // Title Row (Row 1)
+  detailSheet.mergeCells('A1:O1');
+  const titleCell = detailSheet.getCell('A1');
+  titleCell.value = `기계설비 공정분리 명세서 [ ${projectName} ]`;
+  titleCell.font = { name: '맑은 고딕', size: 15, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleCell.fill = {
+    type: 'pattern',
+    pattern: 'solid',
+    fgColor: { argb: 'FF1E293B' } // Dark Slate Navy
+  };
+  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  detailSheet.getRow(1).height = 36;
+
+  // Metadata Row (Row 2)
+  detailSheet.mergeCells('A2:H2');
+  const metaCellLeft = detailSheet.getCell('A2');
+  metaCellLeft.value = `현장명: ${projectName}  |  총 품목수: ${items.length.toLocaleString()}개`;
+  metaCellLeft.font = { name: '맑은 고딕', size: 9.5, color: { argb: 'FF475569' } };
+  metaCellLeft.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+  metaCellLeft.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+
+  detailSheet.mergeCells('I2:O2');
+  const metaCellRight = detailSheet.getCell('I2');
+  metaCellRight.value = `출력일자: ${dateString}  |  총 공사금액: ₩${totalGrandAmount.toLocaleString()}`;
+  metaCellRight.font = { name: '맑은 고딕', size: 9.5, bold: true, color: { argb: 'FF1E3A8A' } };
+  metaCellRight.alignment = { horizontal: 'right', vertical: 'middle' };
+  metaCellRight.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+  detailSheet.getRow(2).height = 22;
+
+  // Blank spacing row (Row 3)
+  detailSheet.getRow(3).height = 6;
+
+  // Header Row (Row 4)
+  const headers = [
+    { header: '순번', key: 'no', width: 8 },
+    { header: '공종 구분', key: 'section', width: 22 },
+    { header: '품명', key: 'name', width: 34 },
+    { header: '규격', key: 'specification', width: 28 },
+    { header: '단위', key: 'unit', width: 9 },
+    { header: '수량', key: 'quantity', width: 13 },
+    { header: '재료비 단가', key: 'materialUnitPrice', width: 16 },
+    { header: '재료비 금액', key: 'materialAmount', width: 18 },
+    { header: '노무비 단가', key: 'laborUnitPrice', width: 16 },
+    { header: '노무비 금액', key: 'laborAmount', width: 18 },
+    { header: '합계 단가', key: 'unitPrice', width: 16 },
+    { header: '합계 금액', key: 'amount', width: 19 },
+    { header: '자재 분류', key: 'category', width: 18 },
+    { header: '비고', key: 'remark', width: 20 },
+    { header: '메모', key: 'memo', width: 22 }
+  ];
+
+  const headerRow = detailSheet.getRow(4);
+  headerRow.values = headers.map(h => h.header);
+  headerRow.height = 28;
+
+  const headerBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'medium', color: { argb: 'FF0F172A' } },
+    bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+    left: { style: 'thin', color: { argb: 'FF334155' } },
+    right: { style: 'thin', color: { argb: 'FF334155' } }
+  };
+
+  headerRow.eachCell((cell, colNumber) => {
+    cell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = headerBorder;
+
+    // Special header colors for material, labor, total
+    if (colNumber === 7 || colNumber === 8) {
+      // Material headers: Deep Indigo
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
+    } else if (colNumber === 9 || colNumber === 10) {
+      // Labor headers: Slate Blue
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } };
+    } else if (colNumber === 11 || colNumber === 12) {
+      // Total headers: Dark Amber/Teal
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F766E' } };
+    } else if (colNumber === 13) {
+      // Category header: Purple
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF5B21B6' } };
+    } else {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    }
+  });
+
+  const thinBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+    bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+    left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+    right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+  };
+
+  // Populate data rows
+  let currentRowIndex = 5;
+  items.forEach((item, index) => {
+    const row = detailSheet.getRow(currentRowIndex);
+    const mUnitPrice = formatCurrency(item.materialUnitPrice);
+    const mAmount = item.materialAmount !== undefined && item.materialAmount !== null && item.materialAmount !== 0 
+      ? item.materialAmount 
+      : (mUnitPrice !== 0 && item.quantity > 0 ? Math.round(item.quantity * mUnitPrice) : 0);
+
+    const lUnitPrice = formatCurrency(item.laborUnitPrice);
+    const lAmount = item.laborAmount !== undefined && item.laborAmount !== null && item.laborAmount !== 0 
+      ? item.laborAmount 
+      : (lUnitPrice !== 0 && item.quantity > 0 ? Math.round(item.quantity * lUnitPrice) : 0);
+
+    const uPrice = formatCurrency(item.unitPrice);
+    const totAmount = item.amount !== undefined && item.amount !== null && item.amount !== 0
+      ? item.amount
+      : (uPrice !== 0 && item.quantity > 0 ? Math.round(item.quantity * uPrice) : (mAmount + lAmount));
+
+    row.values = [
+      index + 1,
+      item.section || '기타 공정',
+      item.name || '',
+      item.specification || '',
+      item.unit || '',
+      item.quantity || 0,
+      mUnitPrice,
+      mAmount,
+      lUnitPrice,
+      lAmount,
+      uPrice,
+      totAmount,
+      item.category || '미분류',
+      item.remark || '',
+      item.memo || ''
+    ];
+
+    const isEven = index % 2 === 1;
+    const rowBgColor = isEven ? 'FFF8FAFC' : 'FFFFFFFF';
+
+    row.height = 22;
+
+    row.eachCell((cell, colNumber) => {
+      cell.font = { name: '맑은 고딕', size: 9.5 };
+      cell.border = thinBorder;
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBgColor } };
+
+      // Number formatting & Alignments
+      switch (colNumber) {
+        case 1: // No.
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          cell.font = { name: '맑은 고딕', size: 9, color: { argb: 'FF64748B' } };
+          break;
+        case 2: // Section
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          cell.font = { name: '맑은 고딕', size: 9, bold: true, color: { argb: 'FF334155' } };
+          break;
+        case 3: // Name
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          cell.font = { name: '맑은 고딕', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+          break;
+        case 4: // Spec
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          cell.font = { name: '맑은 고딕', size: 9, color: { argb: 'FF475569' } };
+          break;
+        case 5: // Unit
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          break;
+        case 6: // Quantity
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = Number.isInteger(item.quantity) ? '#,##0' : '#,##0.00';
+          cell.font = { name: '맑은 고딕', size: 9.5, bold: true };
+          break;
+        case 7: // Material Unit Price
+        case 9: // Labor Unit Price
+        case 11: // Total Unit Price
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0';
+          cell.font = { name: '맑은 고딕', size: 9 };
+          break;
+        case 8: // Material Amount
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0';
+          cell.font = { name: '맑은 고딕', size: 9.5, bold: true, color: { argb: 'FF1E40AF' } };
+          break;
+        case 10: // Labor Amount
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0';
+          cell.font = { name: '맑은 고딕', size: 9, color: { argb: 'FF475569' } };
+          break;
+        case 12: // Total Amount
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0';
+          cell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF0F766E' } };
+          break;
+        case 13: // Category
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          const isUnclassified = !item.category || item.category === '미분류';
+          cell.font = {
+            name: '맑은 고딕',
+            size: 9.5,
+            bold: true,
+            color: { argb: isUnclassified ? 'FFB45309' : 'FF4338CA' }
+          };
+          if (isUnclassified) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+          }
+          break;
+        case 14: // Remark
+        case 15: // Memo
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          cell.font = { name: '맑은 고딕', size: 8.5, color: { argb: 'FF64748B' } };
+          break;
+      }
+    });
+
+    currentRowIndex++;
+  });
+
+  // Grand Total Summary Row
+  const totalRow = detailSheet.getRow(currentRowIndex);
+  totalRow.height = 30;
+
+  detailSheet.mergeCells(`A${currentRowIndex}:E${currentRowIndex}`);
+  const totalLabelCell = detailSheet.getCell(`A${currentRowIndex}`);
+  totalLabelCell.value = '합계 (GRAND TOTAL)';
+  totalLabelCell.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF0F172A' } };
+  totalLabelCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+  totalRow.getCell(6).value = { formula: `SUM(F5:F${currentRowIndex - 1})` };
+  totalRow.getCell(6).numFmt = '#,##0';
+
+  totalRow.getCell(7).value = '-';
+  totalRow.getCell(7).alignment = { horizontal: 'center', vertical: 'middle' };
+
+  totalRow.getCell(8).value = { formula: `SUM(H5:H${currentRowIndex - 1})` };
+  totalRow.getCell(8).numFmt = '#,##0';
+
+  totalRow.getCell(9).value = '-';
+  totalRow.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
+
+  totalRow.getCell(10).value = { formula: `SUM(J5:J${currentRowIndex - 1})` };
+  totalRow.getCell(10).numFmt = '#,##0';
+
+  totalRow.getCell(11).value = '-';
+  totalRow.getCell(11).alignment = { horizontal: 'center', vertical: 'middle' };
+
+  totalRow.getCell(12).value = { formula: `SUM(L5:L${currentRowIndex - 1})` };
+  totalRow.getCell(12).numFmt = '#,##0';
+
+  totalRow.getCell(13).value = `${items.length}개 품목`;
+  totalRow.getCell(13).alignment = { horizontal: 'center', vertical: 'middle' };
+
+  totalRow.getCell(14).value = '';
+  totalRow.getCell(15).value = '';
+
+  const totalBorder: Partial<ExcelJS.Borders> = {
+    top: { style: 'thin', color: { argb: 'FF0F172A' } },
+    bottom: { style: 'double', color: { argb: 'FF0F172A' } },
+    left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+  };
+
+  totalRow.eachCell((cell, colNumber) => {
+    cell.font = { name: '맑은 고딕', size: 10.5, bold: true, color: { argb: 'FF0F172A' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF2FF' } }; // Light Indigo
+    cell.border = totalBorder;
+
+    if (colNumber === 8) {
+      cell.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF1E40AF' } };
+    } else if (colNumber === 12) {
+      cell.font = { name: '맑은 고딕', size: 11.5, bold: true, color: { argb: 'FF0F766E' } };
+    }
+  });
+
+  // Set explicit column widths
+  headers.forEach((col, idx) => {
+    detailSheet.getColumn(idx + 1).width = col.width;
+  });
+
+  /* ==========================================================================
+     2. SHEET 2: 자재분류별_집계표 (Category Summary Sheet)
+     ========================================================================== */
+  const categorySheet = workbook.addWorksheet('자재분류별_집계표', {
+    views: [{ state: 'frozen', xSplit: 0, ySplit: 3 }]
+  });
+
+  // Title
+  categorySheet.mergeCells('A1:G1');
+  const catTitle = categorySheet.getCell('A1');
+  catTitle.value = `자재 분류별 집계 현황 [ ${projectName} ]`;
+  catTitle.font = { name: '맑은 고딕', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+  catTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF312E81' } }; // Indigo 900
+  catTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+  categorySheet.getRow(1).height = 34;
+
+  // Subtitle
+  categorySheet.mergeCells('A2:G2');
+  const catSub = categorySheet.getCell('A2');
+  catSub.value = `집계 기준: 공정분리 순수 재료비 기준  |  출력일자: ${dateString}`;
+  catSub.font = { name: '맑은 고딕', size: 9, color: { argb: 'FF475569' } };
+  catSub.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+  catSub.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+  categorySheet.getRow(2).height = 20;
+
+  // Headers
+  const catHeaders = [
+    { header: '순번', width: 8 },
+    { header: '자재 분류명', width: 22 },
+    { header: '품목 수', width: 14 },
+    { header: '재료비 합계 (자재비)', width: 22 },
+    { header: '노무비 합계', width: 20 },
+    { header: '총합계 금액', width: 22 },
+    { header: '재료비 점유율 (%)', width: 18 }
+  ];
+
+  const catHeaderRow = categorySheet.getRow(3);
+  catHeaderRow.values = catHeaders.map(h => h.header);
+  catHeaderRow.height = 26;
+  catHeaderRow.eachCell(cell => {
+    cell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4338CA' } }; // Indigo 700
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = headerBorder;
+  });
+
+  // Calculate category aggregates
+  const categoryMap = new Map<string, { count: number; materialAmount: number; laborAmount: number; totalAmount: number }>();
+  
+  items.forEach(item => {
+    const cat = item.category || '미분류';
+    if (!categoryMap.has(cat)) {
+      categoryMap.set(cat, { count: 0, materialAmount: 0, laborAmount: 0, totalAmount: 0 });
+    }
+    const current = categoryMap.get(cat)!;
+    current.count += 1;
+    
+    const mAmount = item.materialAmount !== undefined && item.materialAmount !== null && item.materialAmount !== 0
+      ? item.materialAmount
+      : (item.materialUnitPrice ? Math.round(item.quantity * item.materialUnitPrice) : 0);
+
+    const lAmount = item.laborAmount !== undefined && item.laborAmount !== null && item.laborAmount !== 0
+      ? item.laborAmount
+      : (item.laborUnitPrice ? Math.round(item.quantity * item.laborUnitPrice) : 0);
+
+    current.materialAmount += mAmount;
+    current.laborAmount += lAmount;
+    current.totalAmount += (item.amount || (mAmount + lAmount));
+  });
+
+  // Sort categories by material amount descending (excluding '미분류' placed at bottom)
+  const sortedCategories = Array.from(categoryMap.entries()).sort((a, b) => {
+    if (a[0] === '미분류') return 1;
+    if (b[0] === '미분류') return -1;
+    return b[1].materialAmount - a[1].materialAmount;
+  });
+
+  let catRowIdx = 4;
+  sortedCategories.forEach(([catName, stats], idx) => {
+    const row = categorySheet.getRow(catRowIdx);
+    const share = totalMaterialAmount > 0 ? stats.materialAmount / totalMaterialAmount : 0;
+
+    row.values = [
+      idx + 1,
+      catName,
+      stats.count,
+      stats.materialAmount,
+      stats.laborAmount,
+      stats.totalAmount,
+      share
+    ];
+
+    row.height = 22;
+    const isEven = idx % 2 === 1;
+    const rowBg = isEven ? 'FFF8FAFC' : 'FFFFFFFF';
+
+    row.eachCell((cell, colNumber) => {
+      cell.font = { name: '맑은 고딕', size: 9.5 };
+      cell.border = thinBorder;
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
+
+      switch (colNumber) {
+        case 1:
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          break;
+        case 2:
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          cell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: catName === '미분류' ? 'FFB45309' : 'FF312E81' } };
+          if (catName === '미분류') {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+          }
+          break;
+        case 3:
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0';
+          break;
+        case 4:
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0';
+          cell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF1E40AF' } };
+          break;
+        case 5:
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0';
+          break;
+        case 6:
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0';
+          cell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF0F766E' } };
+          break;
+        case 7:
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '0.0%';
+          cell.font = { name: '맑은 고딕', size: 9.5, bold: true };
+          break;
+      }
+    });
+
+    catRowIdx++;
+  });
+
+  // Category Total Row
+  const catTotalRow = categorySheet.getRow(catRowIdx);
+  catTotalRow.height = 28;
+  categorySheet.mergeCells(`A${catRowIdx}:B${catRowIdx}`);
+  const catTotalLabel = categorySheet.getCell(`A${catRowIdx}`);
+  catTotalLabel.value = '자재분류 총계 (TOTAL)';
+  catTotalLabel.font = { name: '맑은 고딕', size: 10.5, bold: true, color: { argb: 'FF0F172A' } };
+  catTotalLabel.alignment = { horizontal: 'center', vertical: 'middle' };
+
+  catTotalRow.getCell(3).value = { formula: `SUM(C4:C${catRowIdx - 1})` };
+  catTotalRow.getCell(3).numFmt = '#,##0';
+
+  catTotalRow.getCell(4).value = { formula: `SUM(D4:D${catRowIdx - 1})` };
+  catTotalRow.getCell(4).numFmt = '#,##0';
+
+  catTotalRow.getCell(5).value = { formula: `SUM(E4:E${catRowIdx - 1})` };
+  catTotalRow.getCell(5).numFmt = '#,##0';
+
+  catTotalRow.getCell(6).value = { formula: `SUM(F4:F${catRowIdx - 1})` };
+  catTotalRow.getCell(6).numFmt = '#,##0';
+
+  catTotalRow.getCell(7).value = 1.0;
+  catTotalRow.getCell(7).numFmt = '100.0%';
+
+  catTotalRow.eachCell((cell, colNumber) => {
+    cell.font = { name: '맑은 고딕', size: 10, bold: true };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF2FF' } };
+    cell.border = totalBorder;
+    if (colNumber === 4) cell.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF1E40AF' } };
+    if (colNumber === 6) cell.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF0F766E' } };
+  });
+
+  catHeaders.forEach((col, idx) => {
+    categorySheet.getColumn(idx + 1).width = col.width;
+  });
+
+  /* ==========================================================================
+     3. SHEET 3: 공종별_집계표 (Section Summary Sheet)
+     ========================================================================== */
+  const sectionSheet = workbook.addWorksheet('공종별_집계표', {
+    views: [{ state: 'frozen', xSplit: 0, ySplit: 3 }]
+  });
+
+  // Title
+  sectionSheet.mergeCells('A1:G1');
+  const secTitle = sectionSheet.getCell('A1');
+  secTitle.value = `공종별 내역 집계 현황 [ ${projectName} ]`;
+  secTitle.font = { name: '맑은 고딕', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+  secTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF065F46' } }; // Emerald 800
+  secTitle.alignment = { horizontal: 'center', vertical: 'middle' };
+  sectionSheet.getRow(1).height = 34;
+
+  // Subtitle
+  sectionSheet.mergeCells('A2:G2');
+  const secSub = sectionSheet.getCell('A2');
+  secSub.value = `집계 기준: 내역서 대공종 구분  |  출력일자: ${dateString}`;
+  secSub.font = { name: '맑은 고딕', size: 9, color: { argb: 'FF475569' } };
+  secSub.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+  secSub.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+  sectionSheet.getRow(2).height = 20;
+
+  // Headers
+  const secHeaders = [
+    { header: '순번', width: 8 },
+    { header: '공종명', width: 28 },
+    { header: '품목 수', width: 14 },
+    { header: '재료비 합계', width: 22 },
+    { header: '노무비 합계', width: 20 },
+    { header: '총합계 금액', width: 22 },
+    { header: '금액 점유율 (%)', width: 18 }
+  ];
+
+  const secHeaderRow = sectionSheet.getRow(3);
+  secHeaderRow.values = secHeaders.map(h => h.header);
+  secHeaderRow.height = 26;
+  secHeaderRow.eachCell(cell => {
+    cell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF047857' } }; // Emerald 700
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = headerBorder;
+  });
+
+  // Calculate Section aggregates
+  const sectionMap = new Map<string, { count: number; materialAmount: number; laborAmount: number; totalAmount: number }>();
+  
+  items.forEach(item => {
+    const sec = item.section || '기타 공정';
+    if (!sectionMap.has(sec)) {
+      sectionMap.set(sec, { count: 0, materialAmount: 0, laborAmount: 0, totalAmount: 0 });
+    }
+    const current = sectionMap.get(sec)!;
+    current.count += 1;
+    
+    const mAmount = item.materialAmount !== undefined && item.materialAmount !== null && item.materialAmount !== 0
+      ? item.materialAmount
+      : (item.materialUnitPrice ? Math.round(item.quantity * item.materialUnitPrice) : 0);
+
+    const lAmount = item.laborAmount !== undefined && item.laborAmount !== null && item.laborAmount !== 0
+      ? item.laborAmount
+      : (item.laborUnitPrice ? Math.round(item.quantity * item.laborUnitPrice) : 0);
+
+    current.materialAmount += mAmount;
+    current.laborAmount += lAmount;
+    current.totalAmount += (item.amount || (mAmount + lAmount));
+  });
+
+  const sortedSections = Array.from(sectionMap.entries()).sort((a, b) => b[1].totalAmount - a[1].totalAmount);
+
+  let secRowIdx = 4;
+  sortedSections.forEach(([secName, stats], idx) => {
+    const row = sectionSheet.getRow(secRowIdx);
+    const share = totalGrandAmount > 0 ? stats.totalAmount / totalGrandAmount : 0;
+
+    row.values = [
+      idx + 1,
+      secName,
+      stats.count,
+      stats.materialAmount,
+      stats.laborAmount,
+      stats.totalAmount,
+      share
+    ];
+
+    row.height = 22;
+    const isEven = idx % 2 === 1;
+    const rowBg = isEven ? 'FFF8FAFC' : 'FFFFFFFF';
+
+    row.eachCell((cell, colNumber) => {
+      cell.font = { name: '맑은 고딕', size: 9.5 };
+      cell.border = thinBorder;
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
+
+      switch (colNumber) {
+        case 1:
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          break;
+        case 2:
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          cell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF065F46' } };
+          break;
+        case 3:
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0';
+          break;
+        case 4:
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0';
+          cell.font = { name: '맑은 고딕', size: 9.5, color: { argb: 'FF1E40AF' } };
+          break;
+        case 5:
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0';
+          break;
+        case 6:
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0';
+          cell.font = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FF0F766E' } };
+          break;
+        case 7:
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '0.0%';
+          cell.font = { name: '맑은 고딕', size: 9.5, bold: true };
+          break;
+      }
+    });
+
+    secRowIdx++;
+  });
+
+  // Section Total Row
+  const secTotalRow = sectionSheet.getRow(secRowIdx);
+  secTotalRow.height = 28;
+  sectionSheet.mergeCells(`A${secRowIdx}:B${secRowIdx}`);
+  const secTotalLabel = sectionSheet.getCell(`A${secRowIdx}`);
+  secTotalLabel.value = '공종별 총계 (TOTAL)';
+  secTotalLabel.font = { name: '맑은 고딕', size: 10.5, bold: true, color: { argb: 'FF0F172A' } };
+  secTotalLabel.alignment = { horizontal: 'center', vertical: 'middle' };
+
+  secTotalRow.getCell(3).value = { formula: `SUM(C4:C${secRowIdx - 1})` };
+  secTotalRow.getCell(3).numFmt = '#,##0';
+
+  secTotalRow.getCell(4).value = { formula: `SUM(D4:D${secRowIdx - 1})` };
+  secTotalRow.getCell(4).numFmt = '#,##0';
+
+  secTotalRow.getCell(5).value = { formula: `SUM(E4:E${secRowIdx - 1})` };
+  secTotalRow.getCell(5).numFmt = '#,##0';
+
+  secTotalRow.getCell(6).value = { formula: `SUM(F4:F${secRowIdx - 1})` };
+  secTotalRow.getCell(6).numFmt = '#,##0';
+
+  secTotalRow.getCell(7).value = 1.0;
+  secTotalRow.getCell(7).numFmt = '100.0%';
+
+  secTotalRow.eachCell((cell, colNumber) => {
+    cell.font = { name: '맑은 고딕', size: 10, bold: true };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFECFDF5' } }; // Light Emerald
+    cell.border = totalBorder;
+    if (colNumber === 4) cell.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF1E40AF' } };
+    if (colNumber === 6) cell.font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF0F766E' } };
+  });
+
+  secHeaders.forEach((col, idx) => {
+    sectionSheet.getColumn(idx + 1).width = col.width;
+  });
+
+  /* ==========================================================================
+     4. Write and Trigger Browser Download
+     ========================================================================== */
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  const cleanProjectName = (projectName || '기계설비').replace(/[/\\?%*:|"<>]/g, '_');
+  const dateFormatted = new Date().toISOString().slice(0, 10);
+  link.download = `공정분리_내역결과_${cleanProjectName}_${dateFormatted}.xlsx`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
