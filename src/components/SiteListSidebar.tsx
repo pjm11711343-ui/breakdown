@@ -30,8 +30,8 @@ interface Props {
   projects: Project[];
   currentProjectName: string;
   theme: ThemeType;
-  activeTab: 'list' | 'analysis';
-  setActiveTab: (tab: 'list' | 'analysis') => void;
+  activeTab: 'list' | 'matrix' | 'analysis';
+  setActiveTab: (tab: 'list' | 'matrix' | 'analysis') => void;
   isProjectLocked: boolean;
   cloudSyncStatus: 'synced' | 'syncing' | 'error';
   lastCloudSyncedTime: string;
@@ -252,11 +252,11 @@ export default function SiteListSidebar({
 
       {/* Main Views Navigation */}
       <div className={`p-3 border-b space-y-1 ${isIndustrial ? 'border-slate-800' : isHighDensity ? 'border-[#141414]' : 'border-slate-100'}`}>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-3 gap-1">
           <button
             type="button"
             onClick={() => setActiveTab('list')}
-            className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            className={`flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
               activeTab === 'list'
                 ? isIndustrial
                   ? 'bg-amber-500 text-black shadow-md'
@@ -269,14 +269,36 @@ export default function SiteListSidebar({
                 ? 'bg-white/60 hover:bg-white text-black'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
             }`}
+            title="기본 공정분리 내역서 목록"
           >
-            <FileSpreadsheet size={14} />
+            <FileSpreadsheet size={15} />
             <span>내역서</span>
           </button>
           <button
             type="button"
+            onClick={() => setActiveTab('matrix')}
+            className={`flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+              activeTab === 'matrix'
+                ? isIndustrial
+                  ? 'bg-amber-500 text-black shadow-md'
+                  : isHighDensity
+                  ? 'bg-[#141414] text-white'
+                  : 'bg-indigo-600 text-white shadow-sm'
+                : isIndustrial
+                ? 'bg-slate-800/60 hover:bg-slate-800 text-slate-300'
+                : isHighDensity
+                ? 'bg-white/60 hover:bg-white text-black'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+            }`}
+            title="카테고리별 공정·구간별 집계표 (Matrix 서식)"
+          >
+            <Layers size={15} />
+            <span>구간집계표</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab('analysis')}
-            className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+            className={`flex flex-col items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
               activeTab === 'analysis'
                 ? isIndustrial
                   ? 'bg-amber-500 text-black shadow-md'
@@ -289,9 +311,10 @@ export default function SiteListSidebar({
                 ? 'bg-white/60 hover:bg-white text-black'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
             }`}
+            title="단가 및 금액 분석 대시보드"
           >
-            <BarChart3 size={14} />
-            <span>단가 분석</span>
+            <BarChart3 size={15} />
+            <span>단가분석</span>
           </button>
         </div>
       </div>

@@ -13,12 +13,13 @@ import SectionSummaryCards from './components/SectionSummaryCards';
 import CategorySummaryCards from './components/CategorySummaryCards';
 import DataTable from './components/DataTable';
 import PriceAnalysis from './components/PriceAnalysis';
+import CategoryMatrixView from './components/CategoryMatrixView';
 import ExcelUpload from './components/ExcelUpload';
 import CategoryManager from './components/CategoryManager';
 import SettingsManager from './components/SettingsManager';
 import ProjectSiteManager from './components/ProjectSiteManager';
 import SiteListSidebar from './components/SiteListSidebar';
-import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X, Save, Lock, KeySquare, Sliders, Cloud, CheckCircle2, RefreshCw, Menu, Database, AlertCircle } from 'lucide-react';
+import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X, Save, Lock, KeySquare, Sliders, Cloud, CheckCircle2, RefreshCw, Menu, Database, AlertCircle, Layers } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   saveProjectToFirestore,
@@ -236,7 +237,7 @@ export default function App() {
   const [fontFamily, setFontFamily] = useState<string>('"Gulim", "굴림", Dotum, "돋움", sans-serif');
   const [fontSize, setFontSize] = useState<number>(11);
   const [items, setItems] = useState<SpecItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'list' | 'analysis'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'matrix' | 'analysis'>('list');
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
   const [categoryManagerTab, setCategoryManagerTab] = useState<'categories' | 'rules'>('categories');
   const [customClassificationRules, setCustomClassificationRules] = useState<CustomClassificationRule[]>(() => {
@@ -2342,13 +2343,23 @@ export default function App() {
             <button 
               onClick={() => setActiveTab('list')}
               className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'list' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500'}`}
+              title="기본 공정분리 내역서 목록"
             >
               <FileSpreadsheet size={15} />
               <span>내역서</span>
             </button>
             <button 
+              onClick={() => setActiveTab('matrix')}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'matrix' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500'}`}
+              title="카테고리별 공정·구간별 집계표 (Matrix 서식)"
+            >
+              <Layers size={15} />
+              <span>구간집계표</span>
+            </button>
+            <button 
               onClick={() => setActiveTab('analysis')}
               className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${activeTab === 'analysis' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-500'}`}
+              title="단가 분석"
             >
               <BarChart3 size={15} />
               <span>단가분석</span>
@@ -2393,10 +2404,10 @@ export default function App() {
                   />
                   {isSectionSummaryOpen && (
                     <SectionSummaryCards 
-                      items={items} 
-                      theme={theme} 
-                      onClose={() => setIsSectionSummaryOpen(false)} 
-                    />
+                    items={items} 
+                    theme={theme} 
+                    onClose={() => setIsSectionSummaryOpen(false)} 
+                  />
                   )}
                   <DataTable 
                     items={items} 
@@ -2415,6 +2426,17 @@ export default function App() {
                     onCategoryFilterChange={setCategoryFilter}
                   />
                 </>
+              ) : activeTab === 'matrix' ? (
+                <CategoryMatrixView 
+                  items={items}
+                  theme={theme}
+                  categories={categories}
+                  projectName={currentProjectName}
+                  onOpenCategoryManager={() => {
+                    setCategoryManagerTab('categories');
+                    setIsCategoryManagerOpen(true);
+                  }}
+                />
               ) : (
                 <PriceAnalysis items={items} theme={theme} />
               )}

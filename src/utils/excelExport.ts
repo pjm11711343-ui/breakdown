@@ -661,7 +661,339 @@ export async function exportStyledExcel({
   });
 
   /* ==========================================================================
-     4. Write and Trigger Browser Download
+     4. SHEET 4: 카테고리_구간별_집계표 (Category Matrix Breakdown Sheet - Construction Standard)
+     ========================================================================== */
+  const matrixSheet = workbook.addWorksheet('카테고리_구간별_집계표', {
+    views: [{ state: 'frozen', xSplit: 6, ySplit: 2 }]
+  });
+
+  // 1. Extract all unique sections
+  const matrixSections: string[] = [];
+  const matrixSectionSet = new Set<string>();
+  items.forEach(item => {
+    const sec = (item.section || '기타 공정').trim();
+    if (sec && !matrixSectionSet.has(sec)) {
+      matrixSectionSet.add(sec);
+      matrixSections.push(sec);
+    }
+  });
+
+  if (matrixSections.length === 0) {
+    matrixSections.push('기타 공정');
+  }
+
+  // 2. Setup Headers
+  matrixSheet.getRow(1).height = 24;
+  matrixSheet.getRow(2).height = 24;
+
+  // Merge fixed columns vertically (A1:A2, B1:B2, C1:C2)
+  matrixSheet.mergeCells('A1:A2');
+  const mColA = matrixSheet.getCell('A1');
+  mColA.value = '품 명';
+
+  matrixSheet.mergeCells('B1:B2');
+  const mColB = matrixSheet.getCell('B1');
+  mColB.value = '규 격';
+
+  matrixSheet.mergeCells('C1:C2');
+  const mColC = matrixSheet.getCell('C1');
+  mColC.value = '단위';
+
+  // Merge 내역물량 header horizontally (D1:F1)
+  matrixSheet.mergeCells('D1:F1');
+  const mColBoQ = matrixSheet.getCell('D1');
+  mColBoQ.value = '내역물량';
+
+  matrixSheet.getCell('D2').value = '수량(M)';
+  matrixSheet.getCell('E2').value = '단가';
+  matrixSheet.getCell('F2').value = '금액';
+
+  // Section Headers
+  matrixSections.forEach((sec, idx) => {
+    const colNum = 7 + idx;
+    let mainGroup = '기계설비';
+    let subGroup = sec;
+
+    if (sec.includes('>')) {
+      const parts = sec.split('>');
+      mainGroup = parts[0].trim();
+      subGroup = parts.slice(1).join('>').trim();
+    } else if (/^\d+/.test(sec)) {
+      subGroup = sec.replace(/^\d+[\s._-]*/, '').trim() || sec;
+    }
+
+    const cellTop = matrixSheet.getRow(1).getCell(colNum);
+    cellTop.value = mainGroup;
+
+    const cellBottom = matrixSheet.getRow(2).getCell(colNum);
+    cellBottom.value = subGroup;
+  });
+
+  // Style Header Cells
+  const headerFillGray: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } };
+  const headerFillBoQ: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCBD5E1' } };
+
+  [1, 2].forEach(rIdx => {
+    const row = matrixSheet.getRow(rIdx);
+    row.eachCell({ includeEmpty: true }, (cell, cIdx) => {
+      cell.font = { name: '맑은 고딕', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = headerBorder;
+      cell.fill = cIdx >= 4 && cIdx <= 6 ? headerFillBoQ : headerFillGray;
+    });
+  });
+
+  // 3. Aggregate Data by Category -> Item
+  interface ExportMatrixItem {
+    name: string;
+    spec: string;
+    unit: string;
+    unitPrice: number;
+    totalQty: number;
+    totalAmount: number;
+    sectionQty: Record<string, number>;
+  }
+
+  const exportCategoryMap = new Map<string, Map<string, ExportMatrixItem>>();
+  items.forEach(item => {
+    const cat = (item.category || '미분류').trim() || '미분류';
+    const name = (item.name || '').trim();
+    const spec = (item.specification || '').trim();
+    const unit = (item.unit || 'EA').trim() || 'EA';
+    const unitPrice = item.materialUnitPrice || item.unitPrice || 0;
+    const sec = (item.section || '기타 공정').trim() || '기타 공정';
+    const qty = item.quantity || 0;
+    const amt = item.amount || (qty * unitPrice);
+
+    if (!exportCategoryMap.has(cat)) {
+      exportCategoryMap.set(cat, new Map());
+    }
+
+    const itemMap = exportCategoryMap.get(cat)!;
+    const key = `${name}:::${spec}:::${unit}:::${unitPrice}`;
+
+    if (!itemMap.has(key)) {
+      itemMap.set(key, {
+        name,
+        spec,
+        unit,
+        unitPrice,
+        totalQty: 0,
+        totalAmount: 0,
+        sectionQty: {}
+      });
+    }
+
+    const rowObj = itemMap.get(key)!;
+    rowObj.totalQty += qty;
+    rowObj.totalAmount += amt;
+    rowObj.sectionQty[sec] = (rowObj.sectionQty[sec] || 0) + qty;
+  });
+
+  // 4. Populate Matrix Rows
+  let matrixRowIdx = 3;
+  const goldenSubtotalFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD4C287' } };
+  const grandTotalFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCFE2F3' } };
+
+  const orderedCategories = [
+    ...categories.filter(c => exportCategoryMap.has(c)),
+    ...Array.from(exportCategoryMap.keys()).filter(c => !categories.includes(c))
+  ];
+
+  let allGrandTotalQty = 0;
+  let allGrandTotalAmt = 0;
+  const allGrandSectionQty: Record<string, number> = {};
+
+  orderedCategories.forEach(cat => {
+    const itemMap = exportCategoryMap.get(cat);
+    if (!itemMap || itemMap.size === 0) return;
+
+    let catSubtotalQty = 0;
+    let catSubtotalAmt = 0;
+    const catSectionSubtotals: Record<string, number> = {};
+
+    Array.from(itemMap.values()).forEach(item => {
+      catSubtotalQty += item.totalQty;
+      catSubtotalAmt += item.totalAmount;
+      allGrandTotalQty += item.totalQty;
+      allGrandTotalAmt += item.totalAmount;
+
+      const row = matrixSheet.getRow(matrixRowIdx);
+      row.height = 20;
+
+      // Col A: Name
+      row.getCell(1).value = item.name;
+      row.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+      row.getCell(1).font = { name: '맑은 고딕', size: 9 };
+
+      // Col B: Spec
+      row.getCell(2).value = item.spec;
+      row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(2).font = { name: '맑은 고딕', size: 9 };
+
+      // Col C: Unit
+      row.getCell(3).value = item.unit;
+      row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(3).font = { name: '맑은 고딕', size: 9 };
+
+      // Col D: Total Qty
+      row.getCell(4).value = item.totalQty;
+      row.getCell(4).numFmt = '#,##0';
+      row.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(4).font = { name: '맑은 고딕', size: 9, bold: true };
+
+      // Col E: Unit Price
+      row.getCell(5).value = item.unitPrice;
+      row.getCell(5).numFmt = '#,##0';
+      row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(5).font = { name: '맑은 고딕', size: 9 };
+
+      // Col F: Total Amount
+      row.getCell(6).value = item.totalAmount;
+      row.getCell(6).numFmt = '#,##0';
+      row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(6).font = { name: '맑은 고딕', size: 9, bold: true };
+
+      // Section columns
+      matrixSections.forEach((sec, sIdx) => {
+        const cNum = 7 + sIdx;
+        const q = item.sectionQty[sec] || 0;
+        catSectionSubtotals[sec] = (catSectionSubtotals[sec] || 0) + q;
+        allGrandSectionQty[sec] = (allGrandSectionQty[sec] || 0) + q;
+
+        const cell = row.getCell(cNum);
+        if (q > 0) {
+          cell.value = q;
+          cell.numFmt = '#,##0';
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          cell.font = { name: '맑은 고딕', size: 9, bold: true };
+        } else {
+          cell.value = '';
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        }
+      });
+
+      // Apply thin borders to all columns in data row
+      for (let c = 1; c <= 6 + matrixSections.length; c++) {
+        row.getCell(c).border = thinBorder;
+      }
+
+      matrixRowIdx++;
+    });
+
+    // Category Subtotal Row (소계)
+    const subRow = matrixSheet.getRow(matrixRowIdx);
+    subRow.height = 22;
+
+    subRow.getCell(1).value = cat;
+    subRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+    subRow.getCell(1).font = { name: '맑은 고딕', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+
+    subRow.getCell(2).value = 'EA';
+    subRow.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+    subRow.getCell(2).font = { name: '맑은 고딕', size: 9.5, bold: true };
+
+    subRow.getCell(3).value = '소계';
+    subRow.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+    subRow.getCell(3).font = { name: '맑은 고딕', size: 9.5, bold: true };
+
+    subRow.getCell(4).value = catSubtotalQty;
+    subRow.getCell(4).numFmt = '#,##0';
+    subRow.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+    subRow.getCell(4).font = { name: '맑은 고딕', size: 9.5, bold: true };
+
+    subRow.getCell(5).value = '-';
+    subRow.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
+
+    subRow.getCell(6).value = catSubtotalAmt;
+    subRow.getCell(6).numFmt = '#,##0';
+    subRow.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+    subRow.getCell(6).font = { name: '맑은 고딕', size: 9.5, bold: true };
+
+    matrixSections.forEach((sec, sIdx) => {
+      const cNum = 7 + sIdx;
+      const secQ = catSectionSubtotals[sec] || 0;
+      const cell = subRow.getCell(cNum);
+      if (secQ > 0) {
+        cell.value = secQ;
+        cell.numFmt = '#,##0';
+      } else {
+        cell.value = '';
+      }
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.font = { name: '맑은 고딕', size: 9.5, bold: true };
+    });
+
+    for (let c = 1; c <= 6 + matrixSections.length; c++) {
+      const cell = subRow.getCell(c);
+      cell.fill = goldenSubtotalFill;
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF0F172A' } },
+        bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+      };
+    }
+
+    matrixRowIdx++;
+  });
+
+  // Grand Total Row (합 계)
+  const grandRow = matrixSheet.getRow(matrixRowIdx);
+  grandRow.height = 26;
+
+  matrixSheet.mergeCells(`A${matrixRowIdx}:C${matrixRowIdx}`);
+  const grandLabel = matrixSheet.getCell(`A${matrixRowIdx}`);
+  grandLabel.value = '합  계';
+  grandLabel.alignment = { horizontal: 'center', vertical: 'middle' };
+  grandLabel.font = { name: '맑은 고딕', size: 10.5, bold: true, color: { argb: 'FF0F172A' } };
+
+  grandRow.getCell(4).value = allGrandTotalQty;
+  grandRow.getCell(4).numFmt = '#,##0';
+  grandRow.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+  grandRow.getCell(4).font = { name: '맑은 고딕', size: 10, bold: true };
+
+  grandRow.getCell(5).value = '-';
+  grandRow.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
+
+  grandRow.getCell(6).value = allGrandTotalAmt;
+  grandRow.getCell(6).numFmt = '#,##0';
+  grandRow.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+  grandRow.getCell(6).font = { name: '맑은 고딕', size: 10.5, bold: true, color: { argb: 'FF1E3A8A' } };
+
+  matrixSections.forEach((sec, sIdx) => {
+    const cNum = 7 + sIdx;
+    const gQ = allGrandSectionQty[sec] || 0;
+    const cell = grandRow.getCell(cNum);
+    if (gQ > 0) {
+      cell.value = gQ;
+      cell.numFmt = '#,##0';
+    } else {
+      cell.value = '-';
+    }
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.font = { name: '맑은 고딕', size: 10, bold: true };
+  });
+
+  for (let c = 1; c <= 6 + matrixSections.length; c++) {
+    const cell = grandRow.getCell(c);
+    cell.fill = grandTotalFill;
+    cell.border = totalBorder;
+  }
+
+  // Column Widths for Matrix Sheet
+  matrixSheet.getColumn(1).width = 28; // 품명
+  matrixSheet.getColumn(2).width = 16; // 규격
+  matrixSheet.getColumn(3).width = 8;  // 단위
+  matrixSheet.getColumn(4).width = 12; // 수량
+  matrixSheet.getColumn(5).width = 14; // 단가
+  matrixSheet.getColumn(6).width = 16; // 금액
+  matrixSections.forEach((_, idx) => {
+    matrixSheet.getColumn(7 + idx).width = 13;
+  });
+
+  /* ==========================================================================
+     5. Write and Trigger Browser Download
      ========================================================================== */
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
