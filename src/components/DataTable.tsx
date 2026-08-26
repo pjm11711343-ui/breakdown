@@ -1,7 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { SpecItem, ThemeType } from '../types';
-import { Download, Table, Cpu, Filter, Maximize2, RotateCcw, Zap, Sparkles, AlertTriangle, User } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Download, Table, Cpu, Filter, Maximize2, RotateCcw, Zap, Sparkles, AlertTriangle, User, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import ExcelUpload from './ExcelUpload';
 import * as XLSX from 'xlsx';
 import { exportStyledExcel } from '../utils/excelExport';
@@ -30,6 +29,10 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
+
+  // Pagination & High-speed rendering state (Default 100 rows per page for zero-lag rendering)
+  const [pageSize, setPageSize] = useState<number>(100);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   const startEditing = (id: string, currentCategory: string) => {
     setEditingId(id);
@@ -80,7 +83,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
     });
   }, [items, sectionFilter, categoryFilter, showUnclassifiedOnly, searchQuery]);
 
-  const pageItems = useMemo(() => {
+  const allMatchingItems = useMemo(() => {
     if (viewMode === 'unclassified') {
       return items.filter(item => {
         const isUnclassified = !item.category || item.category === '미분류';
@@ -96,6 +99,22 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
     }
     return filteredItems;
   }, [items, viewMode, filteredItems, sectionFilter, searchQuery]);
+
+  // Reset to page 1 whenever filters or search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [sectionFilter, categoryFilter, showUnclassifiedOnly, searchQuery, viewMode]);
+
+  const totalPages = useMemo(() => {
+    if (pageSize === 0) return 1;
+    return Math.max(1, Math.ceil(allMatchingItems.length / pageSize));
+  }, [allMatchingItems.length, pageSize]);
+
+  const pageItems = useMemo(() => {
+    if (pageSize === 0) return allMatchingItems;
+    const startIndex = (currentPage - 1) * pageSize;
+    return allMatchingItems.slice(startIndex, startIndex + pageSize);
+  }, [allMatchingItems, currentPage, pageSize]);
 
   const unclassifiedCount = useMemo(() => {
     return items.filter(item => !item.category || item.category === '미분류').length;
@@ -372,7 +391,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
       return (
         <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
           <div className="flex flex-wrap gap-2 items-center mb-2">
-            <span className="px-2 py-1 bg-gray-200 text-[11px] font-bold uppercase rounded-sm border border-gray-300">내역 품목 수: {items.length} (필터: {pageItems.length})</span>
+            <span className="px-2 py-1 bg-gray-200 text-[11px] font-bold uppercase rounded-sm border border-gray-300">내역 품목 수: {items.length} (필터: {allMatchingItems.length})</span>
             {selectedIds.size > 0 && (
               <span className="px-2 py-1 bg-indigo-100 text-indigo-800 text-[11px] font-bold uppercase rounded-sm border border-indigo-300">선택된 항목: {selectedIds.size}개</span>
             )}
@@ -411,6 +430,20 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                    {showAggregated ? '전체 내역 보기' : '품목 집계 보기'}
                  </button>
                )}
+               <div className="flex items-center gap-2 px-3 py-1 bg-white border border-gray-300 rounded-sm">
+                 <span className="text-[9px] font-black uppercase opacity-60">페이지당 표시</span>
+                 <select
+                   value={pageSize}
+                   onChange={(e) => setPageSize(Number(e.target.value))}
+                   className="text-[10px] font-bold border border-gray-300 rounded px-1 py-0.5 bg-white text-black outline-none cursor-pointer"
+                 >
+                   <option value={50}>50개씩</option>
+                   <option value={100}>100개씩 (초고속)</option>
+                   <option value={200}>200개씩</option>
+                   <option value={500}>500개씩</option>
+                   <option value={0}>전체 (가상 스크롤 없음)</option>
+                 </select>
+               </div>
                <div className="flex items-center gap-2 px-3 py-1 bg-white border border-gray-300 rounded-sm">
                  <span className="text-[9px] font-black uppercase opacity-60">간격 조정</span>
                  <input 
@@ -494,6 +527,20 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                 {showAggregated ? '전체 내역 보기' : '동일 품목 집계'}
               </button>
             )}
+            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
+              <span className="text-[10px] font-bold text-slate-500 uppercase">표시 개수</span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="text-xs font-bold border border-slate-200 rounded px-2 py-1 bg-white text-slate-700 outline-none cursor-pointer"
+              >
+                <option value={50}>50개</option>
+                <option value={100}>100개 (초고속)</option>
+                <option value={200}>200개</option>
+                <option value={500}>500개</option>
+                <option value={0}>전체</option>
+              </select>
+            </div>
             <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg">
               <Maximize2 className="w-4 h-4 text-slate-400" />
               <div className="flex items-center gap-2">
@@ -886,8 +933,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                                 </td>
                               </tr>
                               {displayItems.map((item, itemIdx) => (
-                                <motion.tr 
-                                  layout
+                                <tr 
                                   key={item.id} 
                                   onMouseDown={() => handleMouseDown(item.id, itemIdx)}
                                   onMouseEnter={() => handleMouseEnter(itemIdx)}
@@ -989,7 +1035,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                                       <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 border border-orange-100 uppercase">집계됨</span>
                                     )}
                                   </td>
-                                </motion.tr>
+                                </tr>
                               ))}
                             </React.Fragment>
                           );
@@ -1049,8 +1095,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
 
                         {/* Items under Section */}
                         {sectionItems.map((item, itemIdx) => (
-                           <motion.tr 
-                             layout
+                           <tr 
                              key={item.id} 
                              onMouseDown={() => handleMouseDown(item.id, itemIdx)}
                              onMouseEnter={() => handleMouseEnter(itemIdx)}
@@ -1119,7 +1164,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                                  )}
                                </div>
                              </td>
-                           </motion.tr>
+                           </tr>
                         ))}
                       </React.Fragment>
                     );
@@ -1131,17 +1176,96 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
               <tfoot className="sticky bottom-0 z-20">
                 <tr className={`${theme === 'high-density' ? 'bg-[#141414] text-white' : 'bg-slate-800 text-white'} border-t-2 border-[#141414]`}>
                   <td colSpan={11} className="px-6 py-4 text-sm font-black uppercase tracking-[0.2em] text-right border-r border-white/10">
-                    Grand Total (합계 금액)
+                    전체 합계 금액 (Total)
                   </td>
                   <td className="px-6 py-4 text-right font-mono text-base font-black border-r border-white/10">
-                    ₩{pageItems.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}
+                    ₩{allMatchingItems.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}
                   </td>
-                  <td colSpan={3} className="px-6 py-4 bg-white/5"></td>
+                  <td colSpan={3} className="px-6 py-4 bg-white/5 text-xs text-slate-300 font-medium">
+                    {pageSize > 0 && totalPages > 1 ? `현재 페이지 합계: ₩${pageItems.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}` : ''}
+                  </td>
                 </tr>
               </tfoot>
             )}
           </table>
         </div>
+
+        {/* Pagination Navigation Bar */}
+        {pageSize > 0 && totalPages > 1 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-white border-t border-slate-200">
+            <div className="text-xs text-slate-600 font-medium">
+              총 <span className="font-bold text-slate-900">{allMatchingItems.length}</span>개 중{' '}
+              <span className="font-bold text-indigo-600">{(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, allMatchingItems.length)}</span>개 표시 중 (페이지 {currentPage} / {totalPages})
+            </div>
+            
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer font-bold"
+                title="첫 페이지"
+              >
+                &laquo;
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer font-bold"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                이전
+              </button>
+
+              {/* Page Number Buttons (Centered window around current page) */}
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter(p => p === 1 || p === totalPages || (p >= currentPage - 2 && p <= currentPage + 2))
+                  .map((p, idx, arr) => {
+                    const prevP = arr[idx - 1];
+                    return (
+                      <React.Fragment key={p}>
+                        {prevP && p - prevP > 1 && (
+                          <span className="px-1 text-slate-400 text-xs font-bold">...</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setCurrentPage(p)}
+                          className={`w-7 h-7 text-xs font-bold rounded flex items-center justify-center cursor-pointer transition-colors ${
+                            currentPage === p
+                              ? 'bg-indigo-600 text-white shadow-sm'
+                              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      </React.Fragment>
+                    );
+                  })}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer font-bold"
+              >
+                다음
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer font-bold"
+                title="마지막 페이지"
+              >
+                &raquo;
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       {selectionSummary && (
         <motion.div 
