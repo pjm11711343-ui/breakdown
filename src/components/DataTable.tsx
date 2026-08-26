@@ -1,9 +1,11 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { motion } from 'motion/react';
 import { SpecItem, ThemeType } from '../types';
-import { Download, Table, Cpu, Filter, Maximize2, RotateCcw, Zap, Sparkles, AlertTriangle, User, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Download, Table, Cpu, Filter, Maximize2, RotateCcw, Zap, Sparkles, AlertTriangle, User, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Layers, X, Search } from 'lucide-react';
 import ExcelUpload from './ExcelUpload';
 import * as XLSX from 'xlsx';
 import { exportStyledExcel } from '../utils/excelExport';
+import { VirtualizedTableBody, VirtualRowData } from './VirtualizedTableBody';
 
 interface Props {
   items: SpecItem[];
@@ -13,6 +15,7 @@ interface Props {
   onClassify: (targetIds?: string[]) => void;
   isClassifying: boolean;
   onUpdateCategory: (id: string, category: string) => void;
+  onAddCategory: (category: string) => void;
   onRevertCategory: (id: string) => void;
   onUpdateCategories: (ids: string[], category: string) => void;
   onUpdateMemo: (id: string, memo: string) => void;
@@ -21,18 +24,197 @@ interface Props {
   onCategoryFilterChange?: (category: string) => void;
 }
 
-export default function DataTable({ items, theme, categories, workbook, onClassify, isClassifying, onUpdateCategory, onRevertCategory, onUpdateCategories, onUpdateMemo, onDataLoaded, categoryFilter = 'all', onCategoryFilterChange }: Props) {
+// Excel-style column filter component
+const ColumnFilterDropdown = ({ 
+  columnId, 
+  value, 
+  onValueChange, 
+  onClose,
+  suggestions = [],
+  filterOperator = 'AND',
+  onOperatorChange
+}: { 
+  columnId: 'name' | 'spec', 
+  value: string, 
+  onValueChange: (val: string) => void,
+  onClose: () => void,
+  suggestions?: string[],
+  filterOperator?: 'AND' | 'OR',
+  onOperatorChange?: (op: 'AND' | 'OR') => void
+}) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [localValue, setLocalValue] = useState(value);
+
+  // Sync with prop value if it changes externally
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  useEffect(() => {
+    // Focus after a short delay to ensure positioning is finalized
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVal = e.target.value;
+    setLocalValue(newVal);
+    onValueChange(newVal); // Keep live filtering
+  };
+
+  const filteredSuggestions = suggestions.filter(s => 
+    !localValue || s.toLowerCase().includes(localValue.toLowerCase())
+  ).slice(0, 50); // Limit to 50 for performance
+
+  return (
+    <div 
+      className="absolute top-full left-0 mt-1 w-64 bg-white border border-slate-300 rounded-xl shadow-2xl z-[1000] p-4 font-sans text-xs ring-1 ring-black/5"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-3 bg-indigo-500 rounded-full" />
+          <span className="font-extrabold text-slate-800 uppercase tracking-tight text-[11px]">
+            {columnId === 'name' ? '품명 필터' : '규격 필터'}
+          </span>
+        </div>
+        <button 
+          onClick={onClose} 
+          className="p-1 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+        >
+          <X size={14} />
+        </button>
+      </div>
+      
+      <div className="relative mb-3">
+        <input
+          ref={inputRef}
+          type="text"
+          value={localValue}
+          onChange={handleChange}
+          placeholder="검색어 입력..."
+          className="w-full p-2.5 pr-9 border-2 border-slate-100 rounded-lg outline-none focus:border-indigo-500 font-bold text-slate-900 bg-slate-50 placeholder:text-slate-400 transition-all text-xs"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onClose();
+            if (e.key === 'Escape') onClose();
+          }}
+        />
+        <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+      </div>
+
+      {onOperatorChange && (
+        <div className="flex items-center gap-2 mb-3 p-1.5 bg-slate-50 rounded-lg border border-slate-100">
+          <span className="text-[10px] font-black text-slate-500 uppercase ml-1">조건:</span>
+          <div className="flex bg-white rounded-md border border-slate-200 p-0.5 overflow-hidden flex-1 shadow-sm">
+            <button
+              onClick={() => onOperatorChange('AND')}
+              className={`flex-1 py-1 px-2 rounded-sm text-[10px] font-bold transition-all ${filterOperator === 'AND' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-indigo-600'}`}
+            >
+              AND (교집합)
+            </button>
+            <button
+              onClick={() => onOperatorChange('OR')}
+              className={`flex-1 py-1 px-2 rounded-sm text-[10px] font-bold transition-all ${filterOperator === 'OR' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-indigo-600'}`}
+            >
+              OR (합집합)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {suggestions.length > 0 && (
+        <div className="mb-3 max-h-40 overflow-y-auto border border-slate-100 rounded-lg bg-slate-50/50 custom-scrollbar">
+          <div className="p-1">
+            {filteredSuggestions.length > 0 ? (
+              filteredSuggestions.map((s, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setLocalValue(s);
+                    onValueChange(s);
+                    onClose(); // Auto-close on selection
+                  }}
+                  className="w-full text-left px-3 py-1.5 hover:bg-indigo-50 hover:text-indigo-700 rounded-md transition-colors font-medium truncate text-slate-600 cursor-pointer"
+                >
+                  {s}
+                </button>
+              ))
+            ) : (
+              <div className="px-3 py-4 text-center text-slate-400 italic">결과 없음</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-between gap-2">
+        <button 
+          onClick={() => { onValueChange(''); setLocalValue(''); onClose(); }}
+          className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-black transition-all cursor-pointer active:scale-95 text-[10px]"
+        >
+          초기화
+        </button>
+        <button 
+          onClick={onClose}
+          className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-black transition-all cursor-pointer shadow-md shadow-indigo-200 active:scale-95 text-[10px]"
+        >
+          필터 적용
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default function DataTable({ items, theme, categories, workbook, onClassify, isClassifying, onUpdateCategory, onAddCategory, onRevertCategory, onUpdateCategories, onUpdateMemo, onDataLoaded, categoryFilter = 'all', onCategoryFilterChange }: Props) {
   const [viewMode, setViewMode] = useState<'process' | 'category' | 'unclassified'>('process');
   const [showAggregated, setShowAggregated] = useState(false);
   const [sectionFilter, setSectionFilter] = useState<string>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectionHelper, setSelectionHelper] = useState<{
+    id: string;
+    name: string;
+    count: number;
+    ids: string[];
+  } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
 
+  const uniqueNames = useMemo(() => {
+    const names = new Set<string>();
+    items.forEach(item => {
+      if (item.name) names.add(item.name);
+    });
+    return Array.from(names).sort();
+  }, [items]);
+
+  const uniqueSpecs = useMemo(() => {
+    const specs = new Set<string>();
+    items.forEach(item => {
+      if (item.specification) specs.add(item.specification);
+    });
+    return Array.from(specs).sort();
+  }, [items]);
+
   // Pagination & High-speed rendering state (Default 100 rows per page for zero-lag rendering)
   const [pageSize, setPageSize] = useState<number>(100);
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [containerHeight, setContainerHeight] = useState<number>(600);
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!tableContainerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.height > 100) {
+          setContainerHeight(entry.contentRect.height);
+        }
+      }
+    });
+    observer.observe(tableContainerRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   const startEditing = (id: string, currentCategory: string) => {
     setEditingId(id);
@@ -57,6 +239,9 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
   const [density, setDensity] = useState<number>(2); // 1 to 5 scale
   const [showUnclassifiedOnly, setShowUnclassifiedOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [columnFilters, setColumnFilters] = useState<{name: string, spec: string}>({ name: '', spec: '' });
+  const [filterOperator, setFilterOperator] = useState<'AND' | 'OR'>('AND');
+  const [activeFilterColumn, setActiveFilterColumn] = useState<'name' | 'spec' | null>(null);
 
   const uniqueSections = useMemo(() => {
     const sections = new Set<string>();
@@ -77,11 +262,27 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
       const query = searchQuery.trim().toLowerCase();
       const matchesSearch = !query || 
         (item.name && item.name.toLowerCase().includes(query)) ||
-        (item.specification && item.specification.toLowerCase().includes(query));
+        (item.specification && item.specification.toLowerCase().includes(query)) ||
+        (item.category && item.category.toLowerCase().includes(query));
 
-      return matchesSection && matchesCategory && matchesUnclassifiedOnly && matchesSearch;
+      // Column Specific Filters (Excel Style) with AND/OR logic
+      const nameQ = columnFilters.name.trim().toLowerCase();
+      const specQ = columnFilters.spec.trim().toLowerCase();
+
+      let matchesColumnGroup = true;
+      if (nameQ && specQ) {
+        const mName = item.name?.toLowerCase().includes(nameQ);
+        const mSpec = item.specification?.toLowerCase().includes(specQ);
+        matchesColumnGroup = filterOperator === 'AND' ? (mName && mSpec) : (mName || mSpec);
+      } else if (nameQ) {
+        matchesColumnGroup = item.name?.toLowerCase().includes(nameQ);
+      } else if (specQ) {
+        matchesColumnGroup = item.specification?.toLowerCase().includes(specQ);
+      }
+
+      return matchesSection && matchesCategory && matchesUnclassifiedOnly && matchesSearch && matchesColumnGroup;
     });
-  }, [items, sectionFilter, categoryFilter, showUnclassifiedOnly, searchQuery]);
+  }, [items, sectionFilter, categoryFilter, showUnclassifiedOnly, searchQuery, columnFilters, filterOperator]);
 
   const allMatchingItems = useMemo(() => {
     if (viewMode === 'unclassified') {
@@ -103,6 +304,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
   // Reset to page 1 whenever filters or search query changes
   useEffect(() => {
     setCurrentPage(1);
+    setSelectionHelper(null);
   }, [sectionFilter, categoryFilter, showUnclassifiedOnly, searchQuery, viewMode]);
 
   const totalPages = useMemo(() => {
@@ -119,6 +321,128 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
   const unclassifiedCount = useMemo(() => {
     return items.filter(item => !item.category || item.category === '미분류').length;
   }, [items]);
+
+  // Transform filtered and paginated/all items into flat VirtualRowData[] for virtualized rendering
+  const virtualRows = useMemo<VirtualRowData[]>(() => {
+    const targetItems = pageItems;
+    if (targetItems.length === 0) return [];
+
+    const rows: VirtualRowData[] = [];
+
+    if (viewMode === 'category') {
+      const itemsByCategory: Record<string, Record<string, SpecItem[]>> = {};
+      targetItems.forEach(item => {
+        const cat = item.category || '기타';
+        const sec = item.section || '기본 내역';
+        if (!itemsByCategory[cat]) itemsByCategory[cat] = {};
+        if (!itemsByCategory[cat][sec]) itemsByCategory[cat][sec] = [];
+        itemsByCategory[cat][sec].push(item);
+      });
+
+      const sortedCategories = Object.entries(itemsByCategory).sort((a, b) => {
+        const idxA = categories.indexOf(a[0]);
+        const idxB = categories.indexOf(b[0]);
+        const getVal = (idx: number) => idx === -1 ? 9999 : idx;
+        return getVal(idxA) - getVal(idxB);
+      });
+
+      sortedCategories.forEach(([catName, sections], catIdx) => {
+        const catItems = Object.values(sections).flat();
+        const catMaterialTotal = catItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0);
+        const catLaborTotal = catItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0);
+        const catTotal = catItems.reduce((sum, i) => sum + i.amount, 0);
+
+        rows.push({
+          type: 'category-header',
+          catName,
+          catIdx,
+          materialTotal: catMaterialTotal,
+          laborTotal: catLaborTotal,
+          total: catTotal,
+          count: catItems.length,
+          items: catItems,
+        });
+
+        if (showAggregated) {
+          const aggregatedMap = new Map<string, SpecItem>();
+          catItems.forEach(item => {
+            const key = `${item.name}|${item.specification || ''}|${item.unit || ''}|${item.unitPrice}`;
+            if (!aggregatedMap.has(key)) {
+              aggregatedMap.set(key, { ...item, id: `agg-${key}`, quantity: item.quantity, amount: item.amount });
+            } else {
+              const existing = aggregatedMap.get(key)!;
+              existing.quantity += item.quantity;
+              existing.amount += item.amount;
+              existing.materialAmount = (existing.materialAmount || 0) + (item.materialAmount || 0);
+              existing.laborAmount = (existing.laborAmount || 0) + (item.laborAmount || 0);
+            }
+          });
+
+          Array.from(aggregatedMap.values()).forEach((aggItem, aggIdx) => {
+            rows.push({
+              type: 'item',
+              item: aggItem,
+              itemIdx: aggIdx,
+              isAggregated: true,
+            });
+          });
+        } else {
+          Object.entries(sections).forEach(([secName, secItems]) => {
+            rows.push({
+              type: 'category-sub-header',
+              secName,
+              count: secItems.length,
+            });
+
+            secItems.forEach((item, itemIdx) => {
+              rows.push({
+                type: 'item',
+                item,
+                itemIdx,
+                isAggregated: false,
+              });
+            });
+          });
+        }
+      });
+    } else {
+      // Process / Unclassified View
+      const itemsBySection: Record<string, SpecItem[]> = {};
+      targetItems.forEach(item => {
+        const sec = item.section || '기본 내역';
+        if (!itemsBySection[sec]) itemsBySection[sec] = [];
+        itemsBySection[sec].push(item);
+      });
+
+      Object.entries(itemsBySection).forEach(([sectionName, sectionItems], index) => {
+        const secMaterialTotal = sectionItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0);
+        const secLaborTotal = sectionItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0);
+        const secTotal = sectionItems.reduce((sum, i) => sum + i.amount, 0);
+
+        rows.push({
+          type: 'section-header',
+          sectionName,
+          index,
+          materialTotal: secMaterialTotal,
+          laborTotal: secLaborTotal,
+          total: secTotal,
+          count: sectionItems.length,
+          items: sectionItems,
+        });
+
+        sectionItems.forEach((item, itemIdx) => {
+          rows.push({
+            type: 'item',
+            item,
+            itemIdx,
+            isAggregated: false,
+          });
+        });
+      });
+    }
+
+    return rows;
+  }, [pageItems, viewMode, categories, showAggregated]);
 
   const themeStyles = {
     industrial: {
@@ -359,7 +683,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
           </button>
         </div>
 
-        {(sectionFilter !== 'all' || categoryFilter !== 'all' || showUnclassifiedOnly || searchQuery !== '') && (
+        {(sectionFilter !== 'all' || categoryFilter !== 'all' || showUnclassifiedOnly || searchQuery !== '' || columnFilters.name !== '' || columnFilters.spec !== '') && (
           <button 
             type="button"
             onClick={() => { 
@@ -367,6 +691,9 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                 onCategoryFilterChange?.('all'); 
                 setShowUnclassifiedOnly(false); 
                 setSearchQuery(''); 
+                setColumnFilters({ name: '', spec: '' });
+                setFilterOperator('AND');
+                setSelectionHelper(null);
             }}
             className={`flex items-center gap-1 shrink-0 ${theme === 'high-density' ? 'text-[10px] font-bold border-b border-black cursor-pointer pb-1' : 'text-xs text-indigo-600 hover:text-indigo-800 font-medium cursor-pointer pb-1'}`}
           >
@@ -379,11 +706,12 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
 
   // For high-density, group items by category
   const renderToolBar = () => {
-    const handleBulkCategoryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const handleBulkCategoryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const newCategory = e.target.value;
       if (newCategory && selectedIds.size > 0) {
         onUpdateCategories(Array.from(selectedIds), newCategory);
         setSelectedIds(new Set());
+        e.target.value = '';
       }
     };
 
@@ -457,14 +785,16 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                  <span className="text-[10px] font-bold w-4">{density}</span>
                </div>
                {selectedIds.size > 0 && (
-                 <select 
-                   onChange={handleBulkCategoryChange}
-                   className="text-[10px] font-bold uppercase p-1 bg-indigo-50 border border-indigo-400 focus:outline-none"
-                   value=""
-                 >
-                   <option value="" disabled>카테고리 일괄 변경</option>
-                   {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                 </select>
+                 <div className="relative">
+                   <input 
+                     type="text"
+                     list="category-suggestions"
+                     onKeyDown={(e) => e.key === 'Enter' && handleBulkCategoryChange(e as any)}
+                     placeholder="일괄 분류 지정..."
+                     className="text-[10px] font-bold uppercase p-1 bg-indigo-50 border border-indigo-400 focus:outline-none w-32"
+                   />
+                   <div className="absolute -top-2 -right-1 bg-indigo-600 text-white text-[7px] px-1 rounded-full font-black animate-bounce">NEW</div>
+                 </div>
                )}
                <ExcelUpload onDataLoaded={onDataLoaded} />
                <button 
@@ -557,14 +887,25 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
             </div>
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-2">
-                <select 
-                  onChange={handleBulkCategoryChange}
-                  className="px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 text-sm rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-medium cursor-pointer"
-                  value=""
-                >
-                  <option value="" disabled>카테고리 일괄 변경</option>
-                  {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    list="category-suggestions"
+                    placeholder="일괄 카테고리 지정..."
+                    className="px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold placeholder:text-indigo-300 w-44"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const val = (e.target as HTMLInputElement).value;
+                        if (val) {
+                          onUpdateCategories(Array.from(selectedIds), val);
+                          (e.target as HTMLInputElement).value = '';
+                          setSelectedIds(new Set());
+                        }
+                      }
+                    }}
+                  />
+                  <div className="absolute -top-2 -right-1 bg-indigo-600 text-white text-[8px] px-1 rounded-full font-black animate-bounce shadow-sm">NEW</div>
+                </div>
                 <button
                   type="button"
                   onClick={() => {
@@ -639,14 +980,41 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
       visibleItems.forEach(item => newSelected.add(item.id));
     }
     setSelectedIds(newSelected);
+    setSelectionHelper(null);
   };
 
   const toggleOne = (id: string, index: number, isShiftKey = false) => {
     const newSelected = new Set(selectedIds);
-    if (newSelected.has(id) && !isDragging) {
+    const wasSelected = newSelected.has(id);
+    
+    if (wasSelected && !isDragging) {
       newSelected.delete(id);
+      if (selectionHelper?.id === id) {
+        setSelectionHelper(null);
+      }
     } else {
       newSelected.add(id);
+      
+      // Smart Selection Helper: Find other items with same name that aren't selected yet
+      const targetItem = items.find(i => i.id === id);
+      if (targetItem && targetItem.name) {
+        const sameNameItems = items.filter(i => 
+          i.name === targetItem.name && 
+          i.id !== id && 
+          !newSelected.has(i.id)
+        );
+        
+        if (sameNameItems.length > 0) {
+          setSelectionHelper({
+            id,
+            name: targetItem.name,
+            count: sameNameItems.length,
+            ids: sameNameItems.map(i => i.id)
+          });
+        } else {
+          setSelectionHelper(null);
+        }
+      }
     }
     setSelectedIds(newSelected);
   };
@@ -729,7 +1097,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
         </div>
       )}
 
-      <div className={`flex-grow overflow-hidden ${theme === 'high-density' ? '' : `rounded-xl border shadow-sm ${themeStyles.table}`}`}>
+      <div ref={tableContainerRef} className={`flex-grow overflow-hidden ${theme === 'high-density' ? '' : `rounded-xl border shadow-sm ${themeStyles.table}`}`}>
         <div className="h-full overflow-auto custom-scrollbar">
           <table className="w-full text-left border-collapse">
             <thead className={`sticky top-0 z-10 ${themeStyles.header}`}>
@@ -745,8 +1113,62 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                       />
                     </th>
                     <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>No.</th>
-                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] bg-[#F2F2F2] text-[11px] min-w-[100px]`}>품 명</th>
-                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] bg-[#F2F2F2] text-[11px] min-w-[100px]`}>규 격</th>
+                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] bg-[#F2F2F2] text-[11px] min-w-[100px] relative`}>
+                      <div className="flex items-center justify-between gap-1 group">
+                        <span>품 명</span>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveFilterColumn(activeFilterColumn === 'name' ? null : 'name');
+                          }}
+                          className={`p-0.5 rounded hover:bg-gray-200 transition-colors ${columnFilters.name ? 'text-indigo-600' : 'text-gray-400 group-hover:text-gray-600'}`}
+                        >
+                          <Filter size={10} fill={columnFilters.name ? 'currentColor' : 'none'} />
+                        </button>
+                      </div>
+                      {activeFilterColumn === 'name' && (
+                        <>
+                          <div className="fixed inset-0 z-[999] cursor-default" onClick={() => setActiveFilterColumn(null)} />
+                          <ColumnFilterDropdown 
+                            columnId="name" 
+                            value={columnFilters.name} 
+                            onValueChange={(val) => setColumnFilters(prev => ({ ...prev, name: val }))}
+                            onClose={() => setActiveFilterColumn(null)}
+                            suggestions={uniqueNames}
+                            filterOperator={filterOperator}
+                            onOperatorChange={setFilterOperator}
+                          />
+                        </>
+                      )}
+                    </th>
+                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] bg-[#F2F2F2] text-[11px] min-w-[100px] relative`}>
+                      <div className="flex items-center justify-between gap-1 group">
+                        <span>규 격</span>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveFilterColumn(activeFilterColumn === 'spec' ? null : 'spec');
+                          }}
+                          className={`p-0.5 rounded hover:bg-gray-200 transition-colors ${columnFilters.spec ? 'text-indigo-600' : 'text-gray-400 group-hover:text-gray-600'}`}
+                        >
+                          <Filter size={10} fill={columnFilters.spec ? 'currentColor' : 'none'} />
+                        </button>
+                      </div>
+                      {activeFilterColumn === 'spec' && (
+                        <>
+                          <div className="fixed inset-0 z-[999] cursor-default" onClick={() => setActiveFilterColumn(null)} />
+                          <ColumnFilterDropdown 
+                            columnId="spec" 
+                            value={columnFilters.spec} 
+                            onValueChange={(val) => setColumnFilters(prev => ({ ...prev, spec: val }))}
+                            onClose={() => setActiveFilterColumn(null)}
+                            suggestions={uniqueSpecs}
+                            filterOperator={filterOperator}
+                            onOperatorChange={setFilterOperator}
+                          />
+                        </>
+                      )}
+                    </th>
                     <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>단위</th>
                     <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>수량</th>
                     <th colSpan={2} className={`${getCellPadding(true)} border-r border-b border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>재 료 비</th>
@@ -777,8 +1199,62 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                       />
                     </th>
                     <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 whitespace-nowrap">번호</th>
-                    <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 min-w-[120px]">품명</th>
-                    <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 min-w-[120px]">규격</th>
+                    <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 min-w-[120px] relative">
+                      <div className="flex items-center justify-between gap-1 group">
+                        <span>품명</span>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveFilterColumn(activeFilterColumn === 'name' ? null : 'name');
+                          }}
+                          className={`p-1 rounded hover:bg-slate-100 transition-colors ${columnFilters.name ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}`}
+                        >
+                          <Filter size={14} fill={columnFilters.name ? 'currentColor' : 'none'} />
+                        </button>
+                      </div>
+                      {activeFilterColumn === 'name' && (
+                        <>
+                          <div className="fixed inset-0 z-[999] cursor-default" onClick={() => setActiveFilterColumn(null)} />
+                          <ColumnFilterDropdown 
+                            columnId="name" 
+                            value={columnFilters.name} 
+                            onValueChange={(val) => setColumnFilters(prev => ({ ...prev, name: val }))}
+                            onClose={() => setActiveFilterColumn(null)}
+                            suggestions={uniqueNames}
+                            filterOperator={filterOperator}
+                            onOperatorChange={setFilterOperator}
+                          />
+                        </>
+                      )}
+                    </th>
+                    <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 min-w-[120px] relative">
+                      <div className="flex items-center justify-between gap-1 group">
+                        <span>규격</span>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveFilterColumn(activeFilterColumn === 'spec' ? null : 'spec');
+                          }}
+                          className={`p-1 rounded hover:bg-slate-100 transition-colors ${columnFilters.spec ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}`}
+                        >
+                          <Filter size={14} fill={columnFilters.spec ? 'currentColor' : 'none'} />
+                        </button>
+                      </div>
+                      {activeFilterColumn === 'spec' && (
+                        <>
+                          <div className="fixed inset-0 z-[999] cursor-default" onClick={() => setActiveFilterColumn(null)} />
+                          <ColumnFilterDropdown 
+                            columnId="spec" 
+                            value={columnFilters.spec} 
+                            onValueChange={(val) => setColumnFilters(prev => ({ ...prev, spec: val }))}
+                            onClose={() => setActiveFilterColumn(null)}
+                            suggestions={uniqueSpecs}
+                            filterOperator={filterOperator}
+                            onOperatorChange={setFilterOperator}
+                          />
+                        </>
+                      )}
+                    </th>
                     <th rowSpan={2} className="px-4 py-4 font-semibold text-center border-r border-slate-200 whitespace-nowrap">단위</th>
                     <th rowSpan={2} className="px-4 py-4 font-semibold text-right border-r border-slate-200 whitespace-nowrap">수량</th>
                     <th colSpan={2} className="px-6 py-2 font-semibold text-center border-r border-b border-slate-200 whitespace-nowrap">재료비</th>
@@ -821,355 +1297,35 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                     </div>
                   </td>
                 </tr>
-              ) : viewMode === 'category' ? (
-                (() => {
-                  const itemsByCategory: Record<string, Record<string, SpecItem[]>> = {};
-                  
-                  filteredItems.forEach(item => {
-                    const cat = item.category || '기타';
-                    const sec = item.section || '기본 내역';
-                    if (!itemsByCategory[cat]) itemsByCategory[cat] = {};
-                    if (!itemsByCategory[cat][sec]) itemsByCategory[cat][sec] = [];
-                    itemsByCategory[cat][sec].push(item);
-                  });
-
-                  return Object.entries(itemsByCategory).sort((a, b) => {
-                    const idxA = categories.indexOf(a[0]);
-                    const idxB = categories.indexOf(b[0]);
-                    const getVal = (idx: number) => idx === -1 ? 9999 : idx;
-                    return getVal(idxA) - getVal(idxB);
-                  }).map(([catName, sections], catIdx) => {
-                    const catItems = Object.values(sections).flat();
-                    const catMaterialTotal = catItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0);
-                    const catLaborTotal = catItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0);
-                    const catTotal = catItems.reduce((sum, i) => sum + i.amount, 0);
-                    
-                    return (
-                      <React.Fragment key={catName}>
-                        {/* Category Header */}
-                        <tr className={`${theme === 'high-density' ? 'bg-indigo-600 text-white' : 'bg-indigo-900 text-white'} border-y-2 border-[#141414] shadow-sm sticky top-[36px] z-20`}>
-                          <td className={`${getCellPadding()} text-center border-r border-white/20 whitespace-nowrap`}>
-                            <input 
-                              type="checkbox" 
-                              checked={catItems.length > 0 && catItems.every(i => selectedIds.has(i.id))}
-                              onChange={() => toggleAll(catItems)}
-                              className="accent-white"
-                            />
-                          </td>
-                          <td className={`${getCellPadding()} font-mono font-black border-r border-white/20 whitespace-nowrap`}>
-                            CAT {catIdx + 1}
-                          </td>
-                          <td colSpan={5} className={`${getCellPadding()} font-black uppercase tracking-widest border-r border-white/20 whitespace-nowrap text-xs`}>
-                            [분류] {catName}
-                          </td>
-                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/10 whitespace-nowrap text-xs border-r border-white/20`}>
-                            ₩{catMaterialTotal.toLocaleString()}
-                          </td>
-                          <td className={`${getCellPadding()} border-r border-white/10 bg-black/5`}></td>
-                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/10 whitespace-nowrap text-xs border-r border-white/20`}>
-                            ₩{catLaborTotal.toLocaleString()}
-                          </td>
-                          <td className={`${getCellPadding()} border-r border-white/10 bg-black/5`}></td>
-                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/20 whitespace-nowrap text-xs`}>
-                            ₩{catTotal.toLocaleString()}
-                          </td>
-                          <td colSpan={3} className={`${getCellPadding()} text-center font-mono font-black bg-black/10 whitespace-nowrap text-[10px]`}>
-                            {catItems.length} ITEMS
-                          </td>
-                        </tr>
-
-                        {/* Sub-grouping by Section within Category */}
-                        {Object.entries(sections).sort().map(([secName, secItems], secIdx) => {
-                          const secMaterialTotal = secItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0);
-                          const secLaborTotal = secItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0);
-                          const secTotal = secItems.reduce((sum, i) => sum + i.amount, 0);
-                          
-                          let displayItems = secItems;
-                          if (showAggregated) {
-                            const aggregated: Record<string, SpecItem> = {};
-                            secItems.forEach(item => {
-                              const key = `${item.name}-${item.specification}-${item.unit}`.replace(/\s+/g, '');
-                              if (!aggregated[key]) {
-                                aggregated[key] = { ...item, id: `agg-${item.id}`, quantity: 0, materialAmount: 0, laborAmount: 0, amount: 0 };
-                              }
-                              aggregated[key].quantity += item.quantity;
-                              aggregated[key].materialAmount += (item.materialAmount || 0);
-                              aggregated[key].laborAmount += (item.laborAmount || 0);
-                              aggregated[key].amount += item.amount;
-                              
-                              // Recalculate unit prices based on totals for accuracy in aggregated row
-                              if (aggregated[key].quantity > 0) {
-                                aggregated[key].materialUnitPrice = aggregated[key].materialAmount / aggregated[key].quantity;
-                                aggregated[key].laborUnitPrice = aggregated[key].laborAmount / aggregated[key].quantity;
-                                aggregated[key].unitPrice = aggregated[key].amount / aggregated[key].quantity;
-                              }
-                            });
-                            displayItems = Object.values(aggregated);
-                          }
-
-                          return (
-                            <React.Fragment key={`${catName}-${secName}`}>
-                              <tr className={`${theme === 'high-density' ? 'bg-amber-50 text-amber-900' : 'bg-slate-100 text-slate-700'} border-b border-[#141414]/10`}>
-                                <td className={`${getCellPadding()} text-center border-r border-[#141414]/10 whitespace-nowrap`}></td>
-                                <td className={`${getCellPadding()} font-mono text-[9px] font-bold border-r border-[#141414]/10 whitespace-nowrap`}>
-                                  {catIdx + 1}-{secIdx + 1}
-                                </td>
-                                <td colSpan={5} className={`${getCellPadding()} font-bold text-[10px] italic border-r border-[#141414]/10 whitespace-nowrap`}>
-                                   └ {secName} {showAggregated ? '(품목 집계됨)' : ''}
-                                </td>
-                                <td className={`${getCellPadding()} text-right font-mono text-[9px] font-bold bg-black/5 whitespace-nowrap border-r border-[#141414]/10`}>
-                                  ₩{secMaterialTotal.toLocaleString()}
-                                </td>
-                                <td className={`${getCellPadding()} border-r border-[#141414]/5`}></td>
-                                <td className={`${getCellPadding()} text-right font-mono text-[9px] font-bold bg-black/5 whitespace-nowrap border-r border-[#141414]/10`}>
-                                  ₩{secLaborTotal.toLocaleString()}
-                                </td>
-                                <td className={`${getCellPadding()} border-r border-[#141414]/5`}></td>
-                                <td className={`${getCellPadding()} text-right font-mono text-[10px] font-bold bg-black/5 whitespace-nowrap`}>
-                                  ₩{secTotal.toLocaleString()}
-                                </td>
-                                <td colSpan={3} className={`${getCellPadding()} text-center font-mono text-[9px] opacity-60`}>
-                                  {showAggregated ? displayItems.length : secItems.length}
-                                </td>
-                              </tr>
-                              {displayItems.map((item, itemIdx) => (
-                                <tr 
-                                  key={item.id} 
-                                  onMouseDown={() => handleMouseDown(item.id, itemIdx)}
-                                  onMouseEnter={() => handleMouseEnter(itemIdx)}
-                                  className={`${
-                                    theme === 'high-density' 
-                                     ? (selectedIds.has(item.id) ? 'bg-[#C5E0B4]' : 'bg-white') 
-                                     : (selectedIds.has(item.id) ? 'bg-indigo-50/50' : 'bg-white')
-                                  } transition-colors border-b border-[#141414]/5 group hover:bg-slate-50 ${showAggregated ? 'bg-orange-50/20' : ''} select-none ${selectedIds.has(item.id) ? 'shadow-[inset_4px_0_0_0_#4f46e5]' : ''}`}
-                                >
-                                  <td className={`${getCellPadding()} text-center border-r border-[#141414]/5 whitespace-nowrap`}>
-                                    {!showAggregated && (
-                                      <input 
-                                        type="checkbox" 
-                                        checked={selectedIds.has(item.id)}
-                                        onChange={() => toggleOne(item.id, itemIdx)}
-                                        className={theme === 'high-density' ? 'accent-[#141414]' : 'accent-indigo-600'}
-                                        onClick={(e) => e.stopPropagation()}
-                                      />
-                                    )}
-                                  </td>
-                                <td className={`${getCellPadding()} font-mono text-slate-500 border-r border-[#141414]/5 whitespace-nowrap text-[11px]`}>
-                                  {showAggregated ? `Σ${itemIdx + 1}` : (itemIdx + 1).toString().padStart(3, '0')}
-                                </td>
-                                <td className={`${getCellPadding()} font-bold border-r border-[#141414]/5 text-slate-900 break-words min-w-[100px] max-w-[200px] text-[11px]`}>{item.name}</td>
-                                <td className={`${getCellPadding()} opacity-80 border-r border-[#141414]/5 break-words min-w-[100px] max-w-[200px] text-[11px]`}>{item.specification}</td>
-                                <td className={`${getCellPadding()} text-center border-r border-[#141414]/5 whitespace-nowrap text-[11px]`}>{item.unit}</td>
-                                <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/5 whitespace-nowrap text-[11px]`}>{item.quantity.toLocaleString()}</td>
-                                <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/10 whitespace-nowrap text-black font-bold bg-[#F9F9F9] text-[11px]`}>₩{(item.materialUnitPrice || 0).toLocaleString()}</td>
-                                <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/10 whitespace-nowrap text-black text-[11px]`}>₩{(item.materialAmount || 0).toLocaleString()}</td>
-                                <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/10 whitespace-nowrap text-black font-bold bg-[#F9F9F9] text-[11px]`}>₩{(item.laborUnitPrice || 0).toLocaleString()}</td>
-                                <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/10 whitespace-nowrap text-black text-[11px]`}>₩{(item.laborAmount || 0).toLocaleString()}</td>
-                                <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/10 whitespace-nowrap text-black font-black bg-indigo-50 border-x border-indigo-200 text-[11px]`}>₩{item.unitPrice.toLocaleString()}</td>
-                                <td className={`${getCellPadding()} text-right font-mono font-bold border-r border-[#141414]/10 whitespace-nowrap text-black font-black bg-yellow-50 text-[11px]`}>₩{item.amount.toLocaleString()}</td>
-                                <td className={`${getCellPadding()} border-r border-[#141414]/5 text-slate-500 italic whitespace-nowrap text-[11px]`}>{item.remark}</td>
-                                <td className={`${getCellPadding()} border-r border-[#141414]/5 min-w-[150px]`}>
-                                  {!showAggregated ? (
-                                    <input 
-                                      type="text" 
-                                      value={item.memo || ''} 
-                                      onChange={(e) => onUpdateMemo(item.id, e.target.value)}
-                                      placeholder="메모 입력..."
-                                      className={`w-full px-2 py-1 text-xs border bg-transparent transition-all outline-none focus:ring-1 ${
-                                        theme === 'industrial' ? 'border-slate-700 focus:border-blue-500 text-slate-100 placeholder-slate-600' :
-                                        theme === 'high-density' ? 'border-gray-300 focus:border-black text-[#141414] placeholder-gray-400 font-mono text-[10px]' :
-                                        'border-slate-200 focus:border-indigo-500 rounded-lg text-slate-800 placeholder-slate-400 focus:bg-white'
-                                      }`}
-                                    />
-                                  ) : (
-                                    <span className="text-slate-400 font-mono text-xs">-</span>
-                                  )}
-                                </td>
-                                  <td className="px-4 py-1 text-center whitespace-nowrap">
-                                    {!showAggregated ? (
-                                      <div 
-                                        className="flex items-center justify-center gap-1 cursor-pointer group"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          startEditing(item.id, item.category || '');
-                                        }}
-                                      >
-                                        {editingId === item.id ? (
-                                          <input
-                                            autoFocus
-                                            type="text"
-                                            list="category-suggestions"
-                                            value={editValue}
-                                            onChange={(e) => setEditValue(e.target.value)}
-                                            onBlur={() => saveEdit(item.id)}
-                                            onKeyDown={(e) => handleKeyDown(e, item.id)}
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="w-[100px] p-1 bg-white border border-indigo-500 rounded text-[10px] text-center font-bold outline-none ring-2 ring-indigo-100"
-                                          />
-                                        ) : (
-                                          <>
-                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
-                                              !item.category || item.category === '미분류' 
-                                                ? 'bg-amber-100 text-amber-700' 
-                                                : 'bg-indigo-100 text-indigo-700'
-                                            }`}>
-                                              {item.category || '미분류'}</span>{renderRuleIndicator(item)}<span className="hidden">
-                                            </span>
-                                            <span className="opacity-0 group-hover:opacity-100 text-indigo-400 text-[10px]">✎</span>
-                                            {item.originalCategory && item.category !== item.originalCategory && (
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  onRevertCategory(item.id);
-                                                }}
-                                                className="p-1 rounded-md bg-white border border-slate-300 text-slate-400 hover:text-indigo-600 hover:border-indigo-300 transition-all shadow-sm shrink-0 opacity-0 group-hover:opacity-100"
-                                                title={`원래 분류(${item.originalCategory})로 복구`}
-                                              >
-                                                <RotateCcw className="w-3 h-3" />
-                                              </button>
-                                            )}
-                                          </>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <span className="text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-0.5 border border-orange-100 uppercase">집계됨</span>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </React.Fragment>
-                          );
-                        })}
-                      </React.Fragment>
-                    );
-                  });
-                })()
               ) : (
-                (() => {
-                  const sections: Record<string, SpecItem[]> = {};
-                  
-                  pageItems.forEach(item => {
-                    const sec = item.section || '기본 내역';
-                    if (!sections[sec]) sections[sec] = [];
-                    sections[sec].push(item);
-                  });
-
-                  return Object.entries(sections).map(([sectionName, sectionItems], sectionIdx) => {
-                    const partMaterialTotal = sectionItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0);
-                    const partLaborTotal = sectionItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0);
-                    const sectionTotal = sectionItems.reduce((sum, i) => sum + i.amount, 0);
-                    
-                    return (
-                      <React.Fragment key={sectionName}>
-                        {/* Section Header - Original Bill of Quantities structure */}
-                        <tr className={`${theme === 'high-density' ? 'bg-[#00B0F0] text-white' : 'bg-slate-800 text-white'} border-y-2 border-[#141414] shadow-sm sticky top-[36px] z-10`}>
-                          <td className={`${getCellPadding()} text-center border-r border-white/20 whitespace-nowrap`}>
-                            <input 
-                              type="checkbox" 
-                              checked={sectionItems.length > 0 && sectionItems.every(i => selectedIds.has(i.id))}
-                              onChange={() => toggleAll(sectionItems)}
-                              className="accent-white"
-                            />
-                          </td>
-                          <td className={`${getCellPadding()} font-mono font-black border-r border-white/20 whitespace-nowrap`}>
-                            PART {sectionIdx + 1}
-                          </td>
-                          <td colSpan={5} className={`${getCellPadding()} font-black uppercase tracking-widest border-r border-white/20 whitespace-nowrap text-xs`}>
-                            {sectionName}
-                          </td>
-                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/10 whitespace-nowrap text-[11px] border-r border-white/20`}>
-                            ₩{partMaterialTotal.toLocaleString()}
-                          </td>
-                          <td className={`${getCellPadding()} border-r border-white/10 bg-black/5`}></td>
-                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/10 whitespace-nowrap text-[11px] border-r border-white/20`}>
-                            ₩{partLaborTotal.toLocaleString()}
-                          </td>
-                          <td className={`${getCellPadding()} border-r border-white/10 bg-black/5`}></td>
-                          <td className={`${getCellPadding()} text-right font-mono font-black bg-black/20 whitespace-nowrap`}>
-                            ₩{sectionTotal.toLocaleString()}
-                          </td>
-                          <td colSpan={3} className={`${getCellPadding()} text-center font-mono font-black bg-black/10 whitespace-nowrap`}>
-                            {sectionItems.length} ITEMS
-                          </td>
-                        </tr>
-
-                        {/* Items under Section */}
-                        {sectionItems.map((item, itemIdx) => (
-                           <tr 
-                             key={item.id} 
-                             onMouseDown={() => handleMouseDown(item.id, itemIdx)}
-                             onMouseEnter={() => handleMouseEnter(itemIdx)}
-                             className={`${
-                               theme === 'high-density' 
-                                ? (selectedIds.has(item.id) ? 'bg-[#C5E0B4]' : 'bg-[#E2F0D9]') 
-                                : (selectedIds.has(item.id) ? 'bg-indigo-50/50' : 'bg-white')
-                             } transition-colors border-b border-[#141414]/10 group hover:opacity-90 select-none ${selectedIds.has(item.id) ? 'shadow-[inset_4px_0_0_0_#4f46e5]' : ''}`}
-                           >
-                             <td className={`${getCellPadding()} text-center border-r border-[#141414]/10 whitespace-nowrap`}>
-                               <input 
-                                 type="checkbox" 
-                                 checked={selectedIds.has(item.id)}
-                                 onChange={() => toggleOne(item.id, itemIdx)}
-                                 className={theme === 'high-density' ? 'accent-[#141414]' : 'accent-indigo-600'}
-                                 onClick={(e) => e.stopPropagation()}
-                               />
-                             </td>
-                           <td className={`${getCellPadding()} font-mono text-slate-900 border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[9px]' : ''}`}>
-                             {(itemIdx + 1).toString().padStart(3, '0')}
-                           </td>
-                           <td className={`${getCellPadding()} font-bold border-r border-[#141414]/10 text-slate-900 break-words min-w-[100px] max-w-[200px] ${theme === 'high-density' ? 'text-[10.5px]' : ''}`}>{item.name}</td>
-                           <td className={`${getCellPadding()} opacity-80 border-r border-[#141414]/10 break-words min-w-[100px] max-w-[200px] ${theme === 'high-density' ? 'text-[9px]' : ''}`}>{item.specification}</td>
-                           <td className={`${getCellPadding()} text-center border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[10px]' : ''}`}>{item.unit}</td>
-                           <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/10 whitespace-nowrap ${theme === 'high-density' ? 'text-[10px]' : ''}`}>{item.quantity.toLocaleString()}</td>
-                           <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-bold bg-[#F9F9F9] text-[10px]' : 'text-slate-600'}`}>₩{(item.materialUnitPrice || 0).toLocaleString()}</td>
-                           <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black text-[10px]' : 'text-slate-500'}`}>₩{(item.materialAmount || 0).toLocaleString()}</td>
-                           <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-bold bg-[#F9F9F9] text-[10px]' : 'text-slate-600'}`}>₩{(item.laborUnitPrice || 0).toLocaleString()}</td>
-                           <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black text-[10px]' : 'text-slate-500'}`}>₩{(item.laborAmount || 0).toLocaleString()}</td>
-                           <td className={`${getCellPadding()} text-right font-mono border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-black bg-indigo-50 border-x border-indigo-200 text-[10.5px]' : 'text-slate-900 font-semibold'}`}>₩{item.unitPrice.toLocaleString()}</td>
-                           <td className={`${getCellPadding()} text-right font-mono font-bold border-r border-[#141414]/20 whitespace-nowrap ${theme === 'high-density' ? 'text-black font-black bg-yellow-50 text-[11px]' : 'text-indigo-600'}`}>₩{item.amount.toLocaleString()}</td>
-                           <td className={`${getCellPadding()} border-r border-[#141414]/10 text-slate-500 italic whitespace-nowrap ${theme === 'high-density' ? 'text-[9px]' : ''}`}>{item.remark}</td>
-                           <td className={`${getCellPadding()} border-r border-[#141414]/10 min-w-[150px]`}>
-                             <input 
-                               type="text" 
-                               value={item.memo || ''} 
-                               onChange={(e) => onUpdateMemo(item.id, e.target.value)}
-                               placeholder="메모 입력..."
-                               className={`w-full px-2 py-1 text-xs border bg-transparent transition-all outline-none focus:ring-1 ${
-                                 theme === 'industrial' ? 'border-slate-700 focus:border-blue-500 text-slate-100 placeholder-slate-600' :
-                                 theme === 'high-density' ? 'border-gray-300 focus:border-black text-[#141414] placeholder-gray-400 font-mono text-[10px]' :
-                                 'border-slate-200 focus:border-indigo-500 rounded-lg text-slate-800 placeholder-slate-400 focus:bg-white'
-                               }`}
-                             />
-                           </td>
-                             <td className="px-4 py-1 text-center whitespace-nowrap">
-                               <div className="flex items-center gap-1.5">{renderRuleIndicator(item)}
-                                 <select 
-                                   value={item.category || ""}
-                                   onChange={(e) => onUpdateCategory(item.id, e.target.value)}
-                                   className="flex-grow p-1 bg-white/80 border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 outline-none transition-all cursor-pointer hover:border-slate-500 font-bold text-xs"
-                                 >
-                                   <option value="" disabled>분류 선택</option>
-                                   {categories.map(cat => (
-                                     <option key={cat} value={cat}>{cat}</option>
-                                   ))}
-                                 </select>
-                                 {item.originalCategory && item.category !== item.originalCategory && (
-                                   <button
-                                     onClick={() => onRevertCategory(item.id)}
-                                     className="p-1 rounded-md bg-white border border-slate-300 text-slate-400 hover:text-indigo-600 hover:border-indigo-300 transition-all shadow-sm shrink-0"
-                                     title={`원래 분류(${item.originalCategory})로 복구`}
-                                   >
-                                     <RotateCcw className="w-3 h-3" />
-                                   </button>
-                                 )}
-                               </div>
-                             </td>
-                           </tr>
-                        ))}
-                      </React.Fragment>
-                    );
-                  });
-                })()
+                <tr>
+                  <td colSpan={15} className="p-0">
+                    <VirtualizedTableBody
+                      rows={virtualRows}
+                      height={Math.max(containerHeight - 140, 400)}
+                      theme={theme}
+                      density={density}
+                      selectedIds={selectedIds}
+                      toggleOne={toggleOne}
+                      toggleAll={toggleAll}
+                      handleMouseDown={handleMouseDown}
+                      handleMouseEnter={handleMouseEnter}
+                      renderRuleIndicator={renderRuleIndicator}
+                      categories={categories}
+                      onUpdateCategory={onUpdateCategory}
+                      onAddCategory={onAddCategory}
+                      onRevertCategory={onRevertCategory}
+                      onUpdateMemo={onUpdateMemo}
+                      editingId={editingId}
+                      editValue={editValue}
+                      startEditing={startEditing}
+                      saveEdit={saveEdit}
+                      handleKeyDown={handleKeyDown}
+                      setEditValue={setEditValue}
+                      getCellPadding={getCellPadding}
+                    />
+                  </td>
+                </tr>
               )}
             </tbody>
             {items.length > 0 && (
@@ -1267,6 +1423,55 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
           </div>
         )}
       </div>
+      {/* Smart Selection Helper Popup */}
+      {selectionHelper && (
+        <motion.div 
+          initial={{ opacity: 0, y: 20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[101] w-[340px] bg-white border border-indigo-200 rounded-2xl shadow-[0_20px_50px_rgba(79,70,229,0.15)] p-4 flex flex-col gap-3 ring-4 ring-indigo-500/10"
+        >
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-indigo-100 rounded-xl text-indigo-600 shrink-0">
+              <Zap size={20} className="animate-pulse text-indigo-600" />
+            </div>
+            <div className="flex-1">
+              <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight mb-0.5">스마트 일괄 선택 제안</h4>
+              <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
+                현재 선택하신 <span className="text-indigo-600 font-bold">'{selectionHelper.name}'</span> 품명과 동일한 항목이 <span className="font-bold text-slate-800">{selectionHelper.count}개</span> 더 있습니다.
+              </p>
+            </div>
+            <button 
+              onClick={() => setSelectionHelper(null)}
+              className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-50 transition-colors"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          
+          <div className="flex gap-2">
+            <button
+              onClick={() => setSelectionHelper(null)}
+              className="flex-1 py-2 text-[11px] font-black text-slate-500 hover:text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-xl transition-all border border-slate-200"
+            >
+              취소
+            </button>
+            <button
+              onClick={() => {
+                const newSelected = new Set(selectedIds);
+                selectionHelper.ids.forEach(id => newSelected.add(id));
+                setSelectedIds(newSelected);
+                setSelectionHelper(null);
+              }}
+              className="flex-[2.5] py-2 text-[11px] font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-md shadow-indigo-100 flex items-center justify-center gap-2"
+            >
+              <span>동일 품명 {selectionHelper.count}개 일괄 선택</span>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        </motion.div>
+      )}
+
       {selectionSummary && (
         <motion.div 
           initial={{ y: 100, opacity: 0 }}

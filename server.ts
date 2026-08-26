@@ -270,25 +270,24 @@ async function startServer() {
       }
 
       // 3. AI Hybrid Classification for remaining items
-      const prompt = `
-        다음 건설 내역 항목들을 분석하여 카테고리로 분류해주세요.
-        
-        사용 가능한 카테고리: ${categories.join(', ')}
-        
-        분류 지침:
-        - 항목 이름과 규격을 보고 가장 적절한 카테고리를 선택하세요.
-        - 난방 공사(section에 '난방' 포함)인 경우 STS 관/부속은 'STS난방관' 또는 'STS난방부속'으로 분류하세요.
-        - 목록에 없는 카테고리는 사용하지 마세요.
-        
-        데이터: ${JSON.stringify(aiItems)}
-      `;
+      const prompt = `Classify construction items: ${categories.join(', ')}
+Guidelines:
+- Best category from list.
+- Return JSON array: [{"id": "...", "category": "..."}]
+Data: ${JSON.stringify(aiItems.map(i => ({ id: i.id, n: i.name, s: i.specification })))}`;
 
       // Helper for exponential backoff retry
-      const callAIWithRetry = async (retries = 3, delay = 2000) => {
+      const callAIWithRetry = async (retries = 3, initialDelay = 3000) => {
+        let delay = initialDelay;
         for (let i = 0; i < retries; i++) {
           try {
+            // Use supported Gemini models according to current standards
+            let modelName = 'gemini-3.7-flash';
+            if (i === 1) modelName = 'gemini-3.1-flash-lite';
+            if (i >= 2) modelName = 'gemini-flash-latest';
+            
             return await ai.models.generateContent({
-              model: 'gemini-3.5-flash',
+              model: modelName,
               contents: [{ parts: [{ text: prompt }] }],
               config: {
                 responseMimeType: 'application/json',
@@ -306,30 +305,57 @@ async function startServer() {
               }
             });
           } catch (err: any) {
-            if (err.message?.includes('429') && i < retries - 1) {
-              console.log(`429 Error, retry ${i+1}/${retries} after ${delay}ms`);
-              await new Promise(resolve => setTimeout(resolve, delay));
-              delay *= 2;
+            const errorStr = JSON.stringify(err) + ' ' + (err.message || '');
+            const isQuotaError = errorStr.includes('429') || errorStr.includes('RESOURCE_EXHAUSTED');
+            const isTransientError = isQuotaError || errorStr.includes('503') || errorStr.includes('500');
+            
+            if (isTransientError && i < retries - 1) {
+              const baseDelay = isQuotaError ? 8000 : delay;
+              const jitter = Math.random() * 2000;
+              const waitTime = baseDelay + jitter;
+              console.log(`AI Error (${isQuotaError ? 'Quota' : 'Transient'}), retry ${i+1}/${retries} after ${Math.round(waitTime)}ms`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
+              delay = delay * 2; 
               continue;
             }
             throw err;
           }
         }
+        return null;
       };
 
-      const response = await callAIWithRetry().catch(err => {
-        console.error('AI fully failed after retries:', err);
-        return null;
-      });
+      let response = null;
+      try {
+        response = await callAIWithRetry();
+      } catch (aiErr: any) {
+        console.warn('AI classification failed, applying heuristic fallback:', aiErr?.message);
+      }
 
       if (response && response.text) {
         try {
           const aiResults = JSON.parse(response.text);
-          results.push(...aiResults);
+          if (Array.isArray(aiResults)) {
+            results.push(...aiResults);
+          }
         } catch (parseErr) {
           console.error('AI JSON parse fail:', parseErr);
         }
       }
+
+      // Ensure every item from original input has a classification result
+      const classifiedIds = new Set(results.map(r => r.id));
+      aiItems.forEach(item => {
+        if (!classifiedIds.has(item.id)) {
+          // Heuristic fallback: match by existing remark, name keywords, or default category
+          let matchedCat = '';
+          if (item.remark && categories.includes(item.remark)) {
+            matchedCat = item.remark;
+          } else {
+            matchedCat = categories.includes('기타') ? '기타' : (categories[0] || '미분류');
+          }
+          results.push({ id: item.id, category: matchedCat });
+        }
+      });
 
       res.json(results);
     } catch (error: any) {

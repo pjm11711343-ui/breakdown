@@ -18,7 +18,7 @@ import CategoryManager from './components/CategoryManager';
 import SettingsManager from './components/SettingsManager';
 import ProjectSiteManager from './components/ProjectSiteManager';
 import SiteListSidebar from './components/SiteListSidebar';
-import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X, Save, Lock, KeySquare, Sliders, Cloud, CheckCircle2, RefreshCw, Menu } from 'lucide-react';
+import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X, Save, Lock, KeySquare, Sliders, Cloud, CheckCircle2, RefreshCw, Menu, Database, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   saveProjectToFirestore,
@@ -28,7 +28,8 @@ import {
   subscribeActiveSessionFromFirestore,
   saveCustomRulesToFirestore,
   subscribeCustomRulesFromFirestore,
-  isCloudQuotaExceeded
+  isCloudQuotaExceeded,
+  onQuotaStateChange
 } from './lib/firebase';
 
 import * as XLSX from 'xlsx';
@@ -321,6 +322,8 @@ export default function App() {
   const [isAutoSaveActive, setIsAutoSaveActive] = useState(true);
   const [isManualSaveNamingOpen, setIsManualSaveNamingOpen] = useState(false);
   const [manualSaveName, setManualSaveName] = useState('');
+  const [isQuotaExceededState, setIsQuotaExceededState] = useState<boolean>(isCloudQuotaExceeded());
+  const [isQuotaModalOpen, setIsQuotaModalOpen] = useState<boolean>(false);
   
   // Completion & Locking States
   const [isProjectLocked, setIsProjectLocked] = useState<boolean>(false);
@@ -332,6 +335,15 @@ export default function App() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
   const [copied, setCopied] = useState(false);
+  const [autoRuleCreation, setAutoRuleCreation] = useState<boolean>(() => {
+    const saved = localStorage.getItem('mechauto_auto_rule_creation');
+    return saved !== 'false'; // Default to true
+  });
+
+  // Persist auto rule creation setting
+  useEffect(() => {
+    localStorage.setItem('mechauto_auto_rule_creation', autoRuleCreation.toString());
+  }, [autoRuleCreation]);
 
   // Session Recovery State
   const [pendingSession, setPendingSession] = useState<{ items: SpecItem[], theme: ThemeType, timestamp: number } | null>(null);
@@ -481,12 +493,17 @@ export default function App() {
       }
     };
 
+    const unsubscribeQuota = onQuotaStateChange(exceeded => {
+      setIsQuotaExceededState(exceeded);
+    });
+
     runInitCheck();
 
     return () => {
       unsubscribeProjects();
       unsubscribeRules();
       if (unsubscribeActiveSession) unsubscribeActiveSession();
+      unsubscribeQuota();
     };
   }, []);
 
@@ -1097,12 +1114,18 @@ export default function App() {
       setIsClassifying(true);
       setClassifyProgress(0);
       try {
-        const BATCH_SIZE = 500; // Increased batch size further to minimize requests
+        const BATCH_SIZE = 500; // Large batch size to stay within the 20-request daily limit
         const allClassifications: any[] = [];
         const totalItems = items.length;
         
         for (let i = 0; i < totalItems; i += BATCH_SIZE) {
           const batch = items.slice(i, i + BATCH_SIZE);
+          
+          // Add a delay between batches to respect rate limits (RPS/RPM)
+          if (i > 0) {
+            await new Promise(resolve => setTimeout(resolve, 8000));
+          }
+          
           const response = await fetch('/api/classify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1111,10 +1134,7 @@ export default function App() {
                 id: bi.id, 
                 name: bi.name, 
                 specification: bi.specification,
-                materialUnitPrice: bi.materialUnitPrice,
-                laborUnitPrice: bi.laborUnitPrice,
-                section: bi.section,
-                remark: bi.remark
+                section: bi.section
               })),
               categories,
               customRules: customClassificationRules
@@ -1122,11 +1142,24 @@ export default function App() {
           });
           
           if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: 'Unknown server error' }));
+            const errorText = await response.text();
+            let errorData;
+            try {
+              errorData = JSON.parse(errorText);
+            } catch (e) {
+              errorData = { error: `Server error (${response.status}): ${errorText.substring(0, 100)}...` };
+            }
             throw new Error(errorData.message || errorData.error || `Server responded with ${response.status}`);
           }
           
-          const classifications = await response.json();
+          const text = await response.text();
+          let classifications;
+          try {
+            classifications = JSON.parse(text);
+          } catch (e) {
+            throw new Error(`Invalid JSON response from server: ${text.substring(0, 100)}...`);
+          }
+          
           allClassifications.push(...classifications);
           setClassifyProgress(Math.min(Math.round(((i + batch.length) / totalItems) * 100), 100));
         }
@@ -1149,11 +1182,66 @@ export default function App() {
     });
   };
 
+  const handleAddCategory = (newCategory: string) => {
+    if (newCategory && !categories.includes(newCategory)) {
+      setCategories(prev => [...prev, newCategory]);
+      showNotification(`신규 카테고리 [${newCategory}]가 추가되었습니다.`, 'success');
+    }
+  };
+
   const handleUpdateCategory = (id: string, newCategory: string) => {
     checkLockAndProceed(() => {
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+
+      const oldCategory = item.category;
+
+      // Auto-add category if it's not in the list
+      if (newCategory && !categories.includes(newCategory)) {
+        handleAddCategory(newCategory);
+      }
+
       setItems(prev => prev.map(item => 
         item.id === id ? { ...item, category: newCategory, remark: newCategory } : item
       ));
+
+      // Handle automatic rule creation/update if enabled
+      if (autoRuleCreation && item.name && newCategory && newCategory !== oldCategory) {
+        const cleanName = item.name.trim();
+        if (cleanName) {
+          updateRuleFromClassification(cleanName, newCategory);
+        }
+      }
+    });
+  };
+
+  const updateRuleFromClassification = (name: string, category: string) => {
+    setCustomClassificationRules(prev => {
+      const existingIdx = prev.findIndex(r => r.pattern.toLowerCase().replace(/\s+/g, '') === name.toLowerCase().replace(/\s+/g, ''));
+      
+      if (existingIdx !== -1) {
+        // Update existing rule
+        const updated = [...prev];
+        updated[existingIdx] = {
+          ...updated[existingIdx],
+          category: category,
+          isEnabled: true // Ensure it's enabled if user manually updated it
+        };
+        showNotification(`품명 '${name}'에 대한 분류 규칙이 '${category}'(으)로 업데이트되었습니다.`, 'info');
+        return updated;
+      } else {
+        // Create new rule
+        const newRule: CustomClassificationRule = {
+          id: `auto-rule-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          pattern: name,
+          category: category,
+          isEnabled: true,
+          priority: 50, // Higher than default 10 to ensure manual overrides stick
+          description: `사용자 분류 시 자동 생성됨 (${new Date().toLocaleDateString()})`
+        };
+        showNotification(`신규 규칙 추가: '${name}' → '${category}' 분류 규칙이 자동 생성되었습니다.`, 'success');
+        return [...prev, newRule];
+      }
     });
   };
 
@@ -1170,9 +1258,28 @@ export default function App() {
 
   const handleUpdateCategories = (ids: string[], newCategory: string) => {
     checkLockAndProceed(() => {
+      const targetItems = items.filter(i => ids.includes(i.id));
+      if (targetItems.length === 0) return;
+
+      // Auto-add category if it's not in the list
+      if (newCategory && !categories.includes(newCategory)) {
+        handleAddCategory(newCategory);
+      }
       setItems(prev => prev.map(item => 
         ids.includes(item.id) ? { ...item, category: newCategory, remark: newCategory } : item
       ));
+
+      // Handle automatic rule creation for multiple items
+      // We only create rules for unique names in the selection
+      if (autoRuleCreation && newCategory) {
+        const uniqueNames = Array.from(new Set(targetItems.map(i => i.name.trim()).filter(Boolean))) as string[];
+        if (uniqueNames.length > 0) {
+          uniqueNames.forEach(name => {
+            updateRuleFromClassification(name, newCategory);
+          });
+        }
+      }
+
       showNotification(`${ids.length}개 항목의 카테고리가 '${newCategory}'(으)로 변경되었습니다.`, 'success');
     });
   };
@@ -1359,13 +1466,26 @@ export default function App() {
                 )}
               </div>
             )}
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-white/10 text-[9px] font-mono border border-white/15" title="모든 PC 및 기기와 실시간 클라우드 동기화 중">
-              <Cloud size={11} className={cloudSyncStatus === 'syncing' ? 'text-amber-400 animate-spin' : 'text-sky-400'} />
-              <span className="text-white/80">클라우드:</span>
-              <span className="text-emerald-400 font-bold">
-                {cloudSyncStatus === 'syncing' ? '동기화 중...' : (lastCloudSyncedTime ? `동기화됨 (${lastCloudSyncedTime})` : '연결됨')}
-              </span>
-            </div>
+            {isQuotaExceededState ? (
+              <button
+                type="button"
+                onClick={() => setIsQuotaModalOpen(true)}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-[9px] font-mono border border-amber-500/40 cursor-pointer text-amber-300 transition-colors"
+                title="Firestore 무료 일일 할당량 도달 - 안전한 로컬 저장소 모드 가동 중 (클릭하여 안내 보기)"
+              >
+                <Cloud size={11} className="text-amber-400" />
+                <span className="text-amber-200/90">저장소:</span>
+                <span className="text-amber-300 font-bold">로컬 모드 (Cloud 한도)</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-white/10 text-[9px] font-mono border border-white/15" title="모든 PC 및 기기와 실시간 클라우드 동기화 중">
+                <Cloud size={11} className={cloudSyncStatus === 'syncing' ? 'text-amber-400 animate-spin' : 'text-sky-400'} />
+                <span className="text-white/80">클라우드:</span>
+                <span className="text-emerald-400 font-bold">
+                  {cloudSyncStatus === 'syncing' ? '동기화 중...' : (lastCloudSyncedTime ? `동기화됨 (${lastCloudSyncedTime})` : '연결됨')}
+                </span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-6">
             <div className="text-[11px] opacity-60 font-mono hidden md:block">가동 상태: 정상</div>
@@ -1432,14 +1552,29 @@ export default function App() {
                 onImportBackup={handleImportBackup}
               />
               {/* 클라우드 동기화 상태 뱃지 (Standard) */}
-              <div className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200/85 px-3 py-1 rounded-full shadow-sm select-none border border-slate-200/50 transition-all font-sans text-xs" id="standard-cloud-sync-panel" title="다른 PC나 브라우저에서 열어도 작업 내역이 동일하게 유지됩니다">
-                <Cloud size={14} className={cloudSyncStatus === 'syncing' ? 'text-amber-500 animate-spin' : 'text-indigo-600'} />
-                <span className="font-bold text-slate-700">클라우드</span>
-                <span className={`w-1.5 h-1.5 rounded-full ${cloudSyncStatus === 'syncing' ? 'bg-amber-400 animate-ping' : (cloudSyncStatus === 'error' ? 'bg-rose-500' : 'bg-emerald-500')}`} />
-                <span className="text-[11px] font-mono text-slate-500">
-                  {cloudSyncStatus === 'syncing' ? '동기화중' : (lastCloudSyncedTime ? `동기화됨 (${lastCloudSyncedTime})` : '실시간 연결')}
-                </span>
-              </div>
+              {isQuotaExceededState ? (
+                <button
+                  type="button"
+                  onClick={() => setIsQuotaModalOpen(true)}
+                  className="flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100/90 px-3 py-1 rounded-full shadow-sm select-none border border-amber-300/80 transition-all font-sans text-xs cursor-pointer"
+                  id="standard-cloud-sync-panel"
+                  title="Firestore 무료 일일 할당량 도달 - 안전한 로컬 저장소 모드 가동 중 (클릭하여 상세 정보 확인)"
+                >
+                  <Cloud size={14} className="text-amber-600" />
+                  <span className="font-bold text-amber-900">로컬 안전모드</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  <span className="text-[11px] font-mono text-amber-700">Cloud 한도 (로컬 보존)</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200/85 px-3 py-1 rounded-full shadow-sm select-none border border-slate-200/50 transition-all font-sans text-xs" id="standard-cloud-sync-panel" title="다른 PC나 브라우저에서 열어도 작업 내역이 동일하게 유지됩니다">
+                  <Cloud size={14} className={cloudSyncStatus === 'syncing' ? 'text-amber-500 animate-spin' : 'text-indigo-600'} />
+                  <span className="font-bold text-slate-700">클라우드</span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${cloudSyncStatus === 'syncing' ? 'bg-amber-400 animate-ping' : (cloudSyncStatus === 'error' ? 'bg-rose-500' : 'bg-emerald-500')}`} />
+                  <span className="text-[11px] font-mono text-slate-500">
+                    {cloudSyncStatus === 'syncing' ? '동기화중' : (lastCloudSyncedTime ? `동기화됨 (${lastCloudSyncedTime})` : '실시간 연결')}
+                  </span>
+                </div>
+              )}
               {/* 실시간 자동 저장 스위치 및 상태 지시등 (Standard) */}
               <div className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200/85 px-3 py-1 rounded-full shadow-sm select-none border border-slate-200/50 transition-all font-sans" id="standard-autosave-panel">
                 <button
@@ -1945,6 +2080,115 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Firestore Cloud Quota Exceeded Modal */}
+      <AnimatePresence>
+        {isQuotaModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[130] flex items-center justify-center p-4 backdrop-blur-sm bg-slate-900/60"
+            onClick={() => setIsQuotaModalOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className={`w-full max-w-lg rounded-2xl shadow-2xl border overflow-hidden relative ${
+                theme === 'industrial' ? 'bg-slate-900 border-slate-800 text-slate-100' :
+                theme === 'high-density' ? 'bg-[#F4F4F2] border-2 border-[#141414] text-[#141414]' :
+                'bg-white border-slate-200 text-slate-800'
+              }`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className={`p-6 pb-4 border-b flex items-center justify-between ${
+                theme === 'industrial' ? 'border-slate-800 bg-slate-950/60' :
+                theme === 'high-density' ? 'border-[#141414] bg-[#EBEAE8]' :
+                'border-slate-100 bg-amber-50/60'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-500 border border-amber-500/30 flex items-center justify-center">
+                    <Database size={22} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base leading-tight">
+                      클라우드 일일 무료 할당량 안내
+                    </h3>
+                    <p className="text-xs text-amber-600 font-medium mt-0.5">
+                      안전한 로컬 저장소 모드 (Local Cache Mode) 활성화됨
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsQuotaModalOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-black/5"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4 text-xs leading-relaxed">
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900">
+                  <p className="font-semibold mb-1">
+                    Firestore 일일 무료 쓰기 한도(Free Daily Write Quota)에 도달하였습니다.
+                  </p>
+                  <p className="opacity-90">
+                    반복적인 네트워크 오류 및 성능 지연을 방지하기 위해 시스템이 자동으로 <strong>로컬 안전 저장 모드</strong>로 전환되었습니다.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <h4 className="font-bold text-slate-800 uppercase tracking-wider text-[11px]">
+                    작업 및 데이터 안전 보장 안내
+                  </h4>
+                  <ul className="space-y-1.5 pl-4 list-disc text-slate-600">
+                    <li>
+                      <strong>데이터 100% 정상 보존</strong>: 엑셀 업로드, 공정 분류, 수식 계산, 현장 보관함 저장, JSON 백업 및 엑셀 다운로드는 브라우저 내부 스토리지(localStorage)에서 제한 없이 정상 작동합니다.
+                    </li>
+                    <li>
+                      <strong>자동 초기화 주기</strong>: Firebase 무료 일일 할당량은 매일 <strong>00:00 (UTC)</strong>에 자동으로 리셋되며, 리셋 시 클라우드 실시간 동기화가 정상 복구됩니다.
+                    </li>
+                    <li>
+                      <strong>기기 간 공유</strong>: 상단의 <strong>[공유하기]</strong> 버튼을 통해 URL 압축 링크를 복사하면 실시간 Firestore 없이도 다른 PC나 사용자에게 동일한 작업 상태를 즉시 전달할 수 있습니다.
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="pt-2">
+                  <a
+                    href="https://console.firebase.google.com/project/gen-lang-client-0383119283/firestore/databases/ai-studio-6e6bb104-f0f9-4ce2-b5cb-69287ff57a67/data?openUpgradeDialog=true"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border border-indigo-200 transition-colors text-xs"
+                  >
+                    <span>Firebase 콘솔 데이터베이스 및 업그레이드 확인</span>
+                    <ChevronRight size={14} />
+                  </a>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className={`p-4 border-t flex justify-end gap-2 ${
+                theme === 'industrial' ? 'border-slate-800' :
+                theme === 'high-density' ? 'border-[#141414] bg-[#EBEAE8]' :
+                'border-slate-100 bg-slate-50'
+              }`}>
+                <button
+                  type="button"
+                  onClick={() => setIsQuotaModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  확인 및 닫기
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Manual Save Naming Modal */}
       <AnimatePresence>
         {isManualSaveNamingOpen && (
@@ -2048,6 +2292,8 @@ export default function App() {
         isProjectLocked={isProjectLocked}
         cloudSyncStatus={cloudSyncStatus}
         lastCloudSyncedTime={lastCloudSyncedTime}
+        isQuotaExceeded={isQuotaExceededState}
+        onOpenQuotaModal={() => setIsQuotaModalOpen(true)}
         isMobileOpen={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
         onLoadProject={(proj) => {
@@ -2160,6 +2406,7 @@ export default function App() {
                     onClassify={handleClassify}
                     isClassifying={isClassifying}
                     onUpdateCategory={handleUpdateCategory}
+                    onAddCategory={handleAddCategory}
                     onRevertCategory={handleRevertCategory}
                     onUpdateCategories={handleUpdateCategories}
                     onUpdateMemo={handleUpdateMemo}
@@ -2181,6 +2428,8 @@ export default function App() {
                 onUpdateRules={setCustomClassificationRules}
                 onApplyRules={handleApplyRules}
                 initialTab={categoryManagerTab}
+                autoRuleCreation={autoRuleCreation}
+                onSetAutoRuleCreation={setAutoRuleCreation}
               />
 
               <SettingsManager 

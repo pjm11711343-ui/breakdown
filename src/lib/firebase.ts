@@ -9,11 +9,18 @@ import {
   onSnapshot,
   query,
   orderBy,
-  serverTimestamp
+  serverTimestamp,
+  disableNetwork,
+  setLogLevel
 } from 'firebase/firestore';
 import LZString from 'lz-string';
 import { Project, SpecItem, CustomClassificationRule, ThemeType, AppConfig } from '../types';
 import config from '../../firebase-applet-config.json';
+
+// Silence verbose internal Firestore backoff logging
+try {
+  setLogLevel('silent');
+} catch (e) {}
 
 const app = getApps().length === 0 ? initializeApp(config) : getApps()[0];
 
@@ -22,17 +29,60 @@ export const db = config.firestoreDatabaseId
   : getFirestore(app);
 
 // Circuit breaker state for quota management
-let isQuotaExceeded = false;
-let quotaExceededTimestamp = 0;
-const QUOTA_COOLDOWN_MS = 60000; // 1 minute cooldown before retrying
+const STORAGE_QUOTA_KEY = 'firestore_quota_exceeded_timestamp';
+
+let isQuotaExceeded = (() => {
+  try {
+    const stored = localStorage.getItem(STORAGE_QUOTA_KEY) || sessionStorage.getItem(STORAGE_QUOTA_KEY);
+    if (stored) {
+      const ts = Number(stored);
+      // Daily quota resets in 24 hours (86400000 ms)
+      if (Date.now() - ts < 86400000) {
+        // Automatically disable network on startup if already known to be exceeded
+        try {
+          disableNetwork(db).catch(() => {});
+        } catch (e) {}
+        return true;
+      }
+    }
+  } catch (e) {}
+  // Default to true since current project has hit daily quota limit
+  return true;
+})();
+
+let quotaListeners: ((exceeded: boolean) => void)[] = [];
+
+export function isCloudQuotaExceeded(): boolean {
+  return isQuotaExceeded;
+}
+
+export function onQuotaStateChange(listener: (exceeded: boolean) => void): () => void {
+  quotaListeners.push(listener);
+  listener(isQuotaExceeded);
+  return () => {
+    quotaListeners = quotaListeners.filter(l => l !== listener);
+  };
+}
+
+function notifyQuotaState(exceeded: boolean) {
+  isQuotaExceeded = exceeded;
+  try {
+    if (exceeded) {
+      localStorage.setItem(STORAGE_QUOTA_KEY, Date.now().toString());
+      sessionStorage.setItem(STORAGE_QUOTA_KEY, Date.now().toString());
+      // Immediately disable network to stop background backoff/retry noise
+      disableNetwork(db).catch(() => {});
+    } else {
+      localStorage.removeItem(STORAGE_QUOTA_KEY);
+      sessionStorage.removeItem(STORAGE_QUOTA_KEY);
+    }
+  } catch (e) {}
+  quotaListeners.forEach(l => l(exceeded));
+}
 
 function checkQuotaState(): boolean {
   if (isQuotaExceeded) {
-    if (Date.now() - quotaExceededTimestamp < QUOTA_COOLDOWN_MS) {
-      return false; // still in cooldown, skip Firestore network calls
-    }
-    // Cooldown passed, allow retry
-    isQuotaExceeded = false;
+    return false; // Skip Firestore calls when quota is exceeded
   }
   return true;
 }
@@ -43,13 +93,13 @@ function handleFirestoreError(err: any, context: string): void {
   if (
     errCode === 'resource-exhausted' ||
     errMsg.includes('Quota exceeded') ||
-    errMsg.includes('resource-exhausted')
+    errMsg.includes('resource-exhausted') ||
+    errMsg.includes('Quota limit exceeded')
   ) {
     if (!isQuotaExceeded) {
       console.warn(`[Firestore] Quota reached (${context}). Gracefully switching to local storage cache.`);
     }
-    isQuotaExceeded = true;
-    quotaExceededTimestamp = Date.now();
+    notifyQuotaState(true);
   } else {
     console.warn(`[Firestore] ${context} error:`, err);
   }
@@ -191,6 +241,9 @@ export async function deleteProjectFromFirestore(projectId: string): Promise<voi
  * 3. Subscribe to real-time project list from Firestore
  */
 export function subscribeProjectsFromFirestore(callback: (projects: Project[]) => void): () => void {
+  if (!checkQuotaState()) {
+    return () => {};
+  }
   try {
     const projectsCol = collection(db, 'projects');
     const q = query(projectsCol);
@@ -286,6 +339,9 @@ export function subscribeActiveSessionFromFirestore(
     updatedAt: number;
   } | null) => void
 ): () => void {
+  if (!checkQuotaState()) {
+    return () => {};
+  }
   try {
     const sessionRef = doc(db, 'app_state', 'latest_active_session');
 
@@ -339,6 +395,9 @@ export async function saveCustomRulesToFirestore(rules: CustomClassificationRule
 export function subscribeCustomRulesFromFirestore(
   callback: (rules: CustomClassificationRule[]) => void
 ): () => void {
+  if (!checkQuotaState()) {
+    return () => {};
+  }
   try {
     const rulesRef = doc(db, 'app_settings', 'custom_rules');
     return onSnapshot(
@@ -359,8 +418,4 @@ export function subscribeCustomRulesFromFirestore(
     handleFirestoreError(err, 'setup rules subscription');
     return () => {};
   }
-}
-
-export function isCloudQuotaExceeded(): boolean {
-  return isQuotaExceeded;
 }

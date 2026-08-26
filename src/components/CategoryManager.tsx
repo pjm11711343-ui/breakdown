@@ -11,6 +11,8 @@ interface Props {
   onUpdateRules: (rules: CustomClassificationRule[]) => void;
   onApplyRules?: (rules: CustomClassificationRule[]) => void;
   initialTab?: 'categories' | 'rules';
+  autoRuleCreation?: boolean;
+  onSetAutoRuleCreation?: (val: boolean) => void;
 }
 
 // Read-only system rules for reference inside the UI
@@ -44,7 +46,9 @@ export default function CategoryManager({
   customRules = [],
   onUpdateRules,
   onApplyRules,
-  initialTab = 'categories'
+  initialTab = 'categories',
+  autoRuleCreation = true,
+  onSetAutoRuleCreation
 }: Props) {
   const [activeTab, setActiveTab] = useState<'categories' | 'rules'>(initialTab);
   
@@ -305,6 +309,32 @@ export default function CategoryManager({
           ) : (
             /* --- RULES TAB (CLASSIFICATION RULES) --- */
             <div className="space-y-6">
+              <div className="flex items-center justify-between p-4 bg-indigo-600 rounded-2xl shadow-md text-white">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-white/20 rounded-lg">
+                    <Sparkles className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black tracking-tight">지능형 자동 규칙 학습</h3>
+                    <p className="text-[10px] text-indigo-100 font-medium">품명 분류 시 해당 규칙을 자동 생성/갱신합니다</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onSetAutoRuleCreation && onSetAutoRuleCreation(!autoRuleCreation)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    autoRuleCreation ? 'bg-emerald-400' : 'bg-white/20'
+                  }`}
+                  title="자재 분류 시 해당 품명에 대한 규칙을 자동으로 저장하거나 업데이트합니다."
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                      autoRuleCreation ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
               <div className="text-xs text-slate-500 p-3 bg-indigo-50 border border-indigo-100/50 rounded-xl space-y-1">
                 <div className="flex items-center gap-1.5 font-semibold text-indigo-800">
                   <Info className="w-4 h-4" />

@@ -35,6 +35,8 @@ interface Props {
   isProjectLocked: boolean;
   cloudSyncStatus: 'synced' | 'syncing' | 'error';
   lastCloudSyncedTime: string;
+  isQuotaExceeded?: boolean;
+  onOpenQuotaModal?: () => void;
   isMobileOpen?: boolean;
   onCloseMobile?: () => void;
   onLoadProject: (project: Project) => void;
@@ -57,6 +59,8 @@ export default function SiteListSidebar({
   isProjectLocked,
   cloudSyncStatus,
   lastCloudSyncedTime,
+  isQuotaExceeded = false,
+  onOpenQuotaModal,
   isMobileOpen = false,
   onCloseMobile,
   onLoadProject,
@@ -194,30 +198,44 @@ export default function SiteListSidebar({
 
           <div className="flex items-center gap-1.5">
             {/* Cloud Sync Mini Status */}
-            <div
-              className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-mono border ${
-                isIndustrial
-                  ? 'bg-slate-800/80 border-slate-700 text-slate-300'
-                  : isHighDensity
-                  ? 'bg-white/10 border-white/20 text-white'
-                  : 'bg-white border-slate-200 text-slate-600 shadow-xs'
-              }`}
-              title="클라우드 실시간 동기화 상태"
-            >
-              <Cloud
-                size={12}
-                className={
-                  cloudSyncStatus === 'syncing'
-                    ? 'text-amber-400 animate-spin'
-                    : cloudSyncStatus === 'error'
-                    ? 'text-rose-500'
-                    : 'text-emerald-500'
-                }
-              />
-              <span className="text-[10px] font-medium hidden sm:inline">
-                {cloudSyncStatus === 'syncing' ? '동기화' : '실시간'}
-              </span>
-            </div>
+            {isQuotaExceeded ? (
+              <button
+                type="button"
+                onClick={onOpenQuotaModal}
+                className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-mono border bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/40 text-amber-300 cursor-pointer transition-colors"
+                title="Firestore 무료 일일 할당량 도달 - 안전한 로컬 저장소 모드 (클릭하여 안내 보기)"
+              >
+                <Cloud size={12} className="text-amber-400" />
+                <span className="text-[10px] font-medium hidden sm:inline text-amber-300">
+                  로컬모드
+                </span>
+              </button>
+            ) : (
+              <div
+                className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-mono border ${
+                  isIndustrial
+                    ? 'bg-slate-800/80 border-slate-700 text-slate-300'
+                    : isHighDensity
+                    ? 'bg-white/10 border-white/20 text-white'
+                    : 'bg-white border-slate-200 text-slate-600 shadow-xs'
+                }`}
+                title="클라우드 실시간 동기화 상태"
+              >
+                <Cloud
+                  size={12}
+                  className={
+                    cloudSyncStatus === 'syncing'
+                      ? 'text-amber-400 animate-spin'
+                      : cloudSyncStatus === 'error'
+                      ? 'text-rose-500'
+                      : 'text-emerald-500'
+                  }
+                />
+                <span className="text-[10px] font-medium hidden sm:inline">
+                  {cloudSyncStatus === 'syncing' ? '동기화' : '실시간'}
+                </span>
+              </div>
+            )}
 
             {/* Close button on mobile */}
             {onCloseMobile && (
