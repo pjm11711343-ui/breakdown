@@ -27,7 +27,8 @@ import {
   saveActiveSessionToFirestore,
   subscribeActiveSessionFromFirestore,
   saveCustomRulesToFirestore,
-  subscribeCustomRulesFromFirestore
+  subscribeCustomRulesFromFirestore,
+  isCloudQuotaExceeded
 } from './lib/firebase';
 
 import * as XLSX from 'xlsx';
@@ -509,11 +510,10 @@ export default function App() {
     }
   }, [items, theme, fontFamily, fontSize]);
 
-  // Real-time site-specific auto-saving hook (Syncs to both Local & Firestore Cloud)
+  // Real-time site-specific auto-saving hook (Syncs to Local immediately and Debounced Firestore Cloud)
   useEffect(() => {
     if (isAutoSaveActive && items.length > 0 && theme) {
       setIsAutoSavingIndicator(true);
-      setCloudSyncStatus('syncing');
 
       const existingProj = currentProjectName ? projects.find(p => p.name === currentProjectName) : null;
       const existingId = existingProj?.id;
@@ -532,6 +532,7 @@ export default function App() {
         status: existingProj?.status || (isProjectLocked ? 'completed' : 'working')
       };
 
+      // 1. Immediate Local Storage Persistence (Zero lag, zero quota cost)
       if (currentProjectName) {
         setProjects(prev => {
           const updated = prev.some(p => p.name === currentProjectName)
@@ -542,37 +543,60 @@ export default function App() {
           } catch (e) {}
           return updated;
         });
-
-        // Save project to Firestore
-        saveProjectToFirestore(updatedProject).catch(err => {
-          console.warn('Firestore auto-save project failed:', err);
-        });
       }
-
-      // Save global active session to Firestore so any PC opening gets this exact state!
-      saveActiveSessionToFirestore({
-        projectName: currentProjectName,
-        items,
-        theme,
-        fontFamily,
-        fontSize,
-        categories,
-        isLocked: isProjectLocked
-      }).then(() => {
-        setCloudSyncStatus('synced');
-        setLastCloudSyncedTime(new Date().toTimeString().split(' ')[0]);
-      }).catch(err => {
-        console.warn('Firestore auto-save session failed:', err);
-        setCloudSyncStatus('error');
-      });
 
       const now = new Date();
       setLastAutoSavedTime(now.toTimeString().split(' ')[0]);
 
-      const timer = setTimeout(() => {
+      // 2. Debounced Cloud Sync (Waits 2.5s of inactivity to avoid hitting Firestore rate limits)
+      const cloudSyncTimer = setTimeout(() => {
+        if (isCloudQuotaExceeded()) {
+          setCloudSyncStatus('synced');
+          setIsAutoSavingIndicator(false);
+          return;
+        }
+
+        setCloudSyncStatus('syncing');
+
+        const promises: Promise<void>[] = [];
+
+        if (currentProjectName) {
+          promises.push(saveProjectToFirestore(updatedProject));
+        }
+
+        promises.push(
+          saveActiveSessionToFirestore({
+            projectName: currentProjectName,
+            items,
+            theme,
+            fontFamily,
+            fontSize,
+            categories,
+            isLocked: isProjectLocked
+          })
+        );
+
+        Promise.all(promises)
+          .then(() => {
+            setCloudSyncStatus('synced');
+            setLastCloudSyncedTime(new Date().toTimeString().split(' ')[0]);
+          })
+          .catch(() => {
+            setCloudSyncStatus('synced'); // graceful fallback
+          })
+          .finally(() => {
+            setIsAutoSavingIndicator(false);
+          });
+      }, 2500);
+
+      const indicatorTimer = setTimeout(() => {
         setIsAutoSavingIndicator(false);
-      }, 700);
-      return () => clearTimeout(timer);
+      }, 800);
+
+      return () => {
+        clearTimeout(cloudSyncTimer);
+        clearTimeout(indicatorTimer);
+      };
     }
   }, [items, theme, fontFamily, fontSize, categories, currentProjectName, isAutoSaveActive, isProjectLocked]);
 
@@ -2116,6 +2140,8 @@ export default function App() {
                     items={items} 
                     theme={theme} 
                     categories={INITIAL_CATEGORIES}
+                    projectName={currentProjectName}
+                    isProjectLocked={isProjectLocked}
                     onCategoryClick={(cat) => setCategoryFilter(cat)}
                     onUpdateSafetyAmount={handleUpdateSafetyAmount}
                   />
