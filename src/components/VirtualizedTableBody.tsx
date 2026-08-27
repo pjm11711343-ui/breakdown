@@ -58,20 +58,9 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
   setEditValue,
   getCellPadding
 }) => {
-  // Row height calculated based on density
-  const getRowHeight = (row: VirtualRowData) => {
-    if (row.type === 'section-header' || row.type === 'category-header') {
-      return 36;
-    }
-    if (row.type === 'category-sub-header') {
-      return 28;
-    }
-    // item row
-    const baseHeight = theme === 'high-density' ? 28 : 38;
-    return baseHeight + (density - 2) * 6;
-  };
-
-  const itemHeight = theme === 'high-density' ? 30 + (density - 2) * 4 : 40 + (density - 2) * 6;
+  const itemHeight = theme === 'high-density' ? 28 + (density - 2) * 4 : 36 + (density - 2) * 5;
+  const isHighDensity = theme === 'high-density';
+  const borderCellClass = isHighDensity ? 'border-r border-[#141414]/15' : 'border-r border-slate-100';
 
   interface RowProps {}
 
@@ -91,11 +80,11 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
       return (
         <div 
           style={style} 
-          className={`flex items-center text-xs font-bold ${
-            theme === 'high-density' ? 'bg-indigo-600 text-white' : 'bg-indigo-900 text-white'
-          } border-b border-[#141414] select-none`}
+          className={`flex items-center min-w-[1616px] w-full text-xs font-bold ${
+            isHighDensity ? 'bg-indigo-700 text-white border-[#141414]' : 'bg-indigo-900 text-white border-slate-800'
+          } border-b select-none`}
         >
-          <div className="w-10 text-center shrink-0">
+          <div className="w-[44px] shrink-0 flex items-center justify-center">
             <input 
               type="checkbox" 
               checked={row.items.length > 0 && row.items.every(i => selectedIds.has(i.id))}
@@ -103,12 +92,24 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
               className="accent-white cursor-pointer"
             />
           </div>
-          <div className="w-16 font-mono font-black shrink-0 px-2">CAT {row.catIdx + 1}</div>
-          <div className="flex-1 font-black uppercase tracking-wider px-2 truncate">[분류] {row.catName}</div>
-          <div className="w-24 text-right font-mono font-bold px-2 shrink-0">재: ₩{row.materialTotal.toLocaleString()}</div>
-          <div className="w-24 text-right font-mono font-bold px-2 shrink-0">노: ₩{row.laborTotal.toLocaleString()}</div>
-          <div className="w-28 text-right font-mono font-black px-2 shrink-0 text-amber-300">합: ₩{row.total.toLocaleString()}</div>
-          <div className="w-20 text-center font-mono text-[10px] px-2 shrink-0">{row.count} ITEMS</div>
+          <div className="w-[50px] shrink-0 font-mono font-black text-center text-[11px] text-indigo-200">
+            C{row.catIdx + 1}
+          </div>
+          <div className="w-[556px] shrink-0 font-black uppercase tracking-wider px-3 truncate text-xs text-white">
+            [분류] {row.catName}
+          </div>
+          <div className="w-[182px] shrink-0 text-right font-mono font-bold px-2 text-indigo-200 text-xs">
+            재: ₩{row.materialTotal.toLocaleString()}
+          </div>
+          <div className="w-[182px] shrink-0 text-right font-mono font-bold px-2 text-indigo-200 text-xs">
+            노: ₩{row.laborTotal.toLocaleString()}
+          </div>
+          <div className="w-[198px] shrink-0 text-right font-mono font-black px-2 text-amber-300 text-xs">
+            합: ₩{row.total.toLocaleString()}
+          </div>
+          <div className="w-[404px] shrink-0 text-right font-mono text-[10px] px-4 text-indigo-200">
+            {row.count} ITEMS
+          </div>
         </div>
       );
     }
@@ -117,14 +118,18 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
       return (
         <div 
           style={style} 
-          className={`flex items-center text-[10px] font-bold ${
-            theme === 'high-density' ? 'bg-gray-100 text-gray-800' : 'bg-slate-100 text-slate-700'
-          } border-b border-slate-200 px-4 select-none`}
+          className={`flex items-center min-w-[1616px] w-full text-[11px] font-bold ${
+            isHighDensity ? 'bg-slate-100 text-slate-800' : 'bg-slate-100/90 text-slate-700'
+          } border-b border-slate-200 px-2 select-none`}
         >
-          <div className="w-10 shrink-0" />
-          <div className="w-16 shrink-0" />
-          <div className="flex-1 truncate font-mono">↳ 공종: {row.secName}</div>
-          <div className="w-20 text-center text-slate-500 font-mono shrink-0">{row.count}건</div>
+          <div className="w-[44px] shrink-0" />
+          <div className="w-[50px] shrink-0" />
+          <div className="w-[1118px] shrink-0 truncate font-mono px-3 text-slate-700">
+            ↳ 공종: <span className="font-bold text-slate-900">{row.secName}</span>
+          </div>
+          <div className="w-[404px] shrink-0 text-right text-slate-500 font-mono px-4 text-[10px]">
+            {row.count}건
+          </div>
         </div>
       );
     }
@@ -133,11 +138,11 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
       return (
         <div 
           style={style} 
-          className={`flex items-center text-xs font-bold ${
-            theme === 'high-density' ? 'bg-[#00B0F0] text-white' : 'bg-slate-800 text-white'
-          } border-b border-[#141414] select-none`}
+          className={`flex items-center min-w-[1616px] w-full text-xs font-bold ${
+            isHighDensity ? 'bg-[#00B0F0] text-white border-[#141414]' : 'bg-sky-600 text-white border-sky-700'
+          } border-b select-none`}
         >
-          <div className="w-10 text-center shrink-0">
+          <div className="w-[44px] shrink-0 flex items-center justify-center">
             <input 
               type="checkbox" 
               checked={row.items.length > 0 && row.items.every(i => selectedIds.has(i.id))}
@@ -145,12 +150,24 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
               className="accent-white cursor-pointer"
             />
           </div>
-          <div className="w-16 font-mono font-black shrink-0 px-2">PART {row.index + 1}</div>
-          <div className="flex-1 font-black uppercase tracking-wider px-2 truncate">{row.sectionName}</div>
-          <div className="w-24 text-right font-mono font-bold px-2 shrink-0">재: ₩{row.materialTotal.toLocaleString()}</div>
-          <div className="w-24 text-right font-mono font-bold px-2 shrink-0">노: ₩{row.laborTotal.toLocaleString()}</div>
-          <div className="w-28 text-right font-mono font-black px-2 shrink-0 text-amber-300">합: ₩{row.total.toLocaleString()}</div>
-          <div className="w-20 text-center font-mono text-[10px] px-2 shrink-0">{row.count} ITEMS</div>
+          <div className="w-[50px] shrink-0 font-mono font-black text-center text-[10px] text-sky-100">
+            P{row.index + 1}
+          </div>
+          <div className="w-[556px] shrink-0 font-black uppercase tracking-wider px-3 truncate text-xs text-white">
+            {row.sectionName}
+          </div>
+          <div className="w-[182px] shrink-0 text-right font-mono font-bold px-2 text-sky-100 text-xs">
+            재: ₩{row.materialTotal.toLocaleString()}
+          </div>
+          <div className="w-[182px] shrink-0 text-right font-mono font-bold px-2 text-sky-100 text-xs">
+            노: ₩{row.laborTotal.toLocaleString()}
+          </div>
+          <div className="w-[198px] shrink-0 text-right font-mono font-black px-2 text-amber-200 text-xs">
+            합: ₩{row.total.toLocaleString()}
+          </div>
+          <div className="w-[404px] shrink-0 text-right font-mono text-[10px] px-4 text-sky-100">
+            {row.count} ITEMS
+          </div>
         </div>
       );
     }
@@ -163,104 +180,104 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
         style={style}
         onMouseDown={() => handleMouseDown(item.id, itemIdx)}
         onMouseEnter={() => handleMouseEnter(itemIdx)}
-        className={`flex items-center border-b text-xs select-none transition-all duration-200 ${
-          theme === 'high-density'
-            ? (isSelected ? 'bg-[#C5E0B4] border-[#2d5a27]/30 ring-1 ring-inset ring-[#2d5a27]/10' : 'bg-white hover:bg-slate-50 border-[#141414]/10')
-            : (isSelected ? 'bg-indigo-50 border-indigo-200 ring-1 ring-inset ring-indigo-500/5' : 'bg-white hover:bg-slate-50 border-slate-100')
-        } ${isSelected ? 'z-10 shadow-[inset_4px_0_0_0_#4f46e5,0_2px_4px_rgba(0,0,0,0.02)]' : ''}`}
+        className={`flex items-center min-w-[1616px] w-full border-b text-xs select-none transition-colors ${
+          isHighDensity
+            ? (isSelected ? 'bg-[#C5E0B4] border-[#2d5a27]/30' : 'bg-white hover:bg-slate-50/80 border-[#141414]/15')
+            : (isSelected ? 'bg-indigo-50/90 border-indigo-200' : 'bg-white hover:bg-slate-50 border-slate-100')
+        } ${isSelected ? 'shadow-[inset_3px_0_0_0_#4f46e5]' : ''}`}
       >
-        {/* Checkbox */}
-        <div className="w-10 text-center shrink-0" onClick={(e) => e.stopPropagation()}>
+        {/* 1. Checkbox: 44px */}
+        <div className={`w-[44px] h-full shrink-0 flex items-center justify-center ${borderCellClass}`} onClick={(e) => e.stopPropagation()}>
           {!isAggregated && (
             <input 
               type="checkbox" 
               checked={isSelected}
               onChange={() => toggleOne(item.id, itemIdx)}
-              className={theme === 'high-density' ? 'accent-[#141414] cursor-pointer' : 'accent-indigo-600 cursor-pointer'}
+              className={isHighDensity ? 'accent-[#141414] cursor-pointer' : 'accent-indigo-600 cursor-pointer'}
             />
           )}
         </div>
 
-        {/* Index */}
-        <div className="w-12 text-center font-mono text-slate-500 shrink-0 text-[10px]">
+        {/* 2. No: 50px */}
+        <div className={`w-[50px] h-full shrink-0 flex items-center justify-center font-mono text-slate-500 text-[10px] ${borderCellClass}`}>
           {isAggregated ? `Σ${itemIdx + 1}` : (itemIdx + 1).toString().padStart(3, '0')}
         </div>
 
-        {/* Name */}
-        <div className="w-44 px-2 font-bold text-slate-900 truncate shrink-0" title={item.name}>
-          {item.name}
+        {/* 3. Name: 230px */}
+        <div className={`w-[230px] h-full shrink-0 flex items-center px-2.5 font-bold text-slate-900 truncate text-[11px] ${borderCellClass}`} title={item.name}>
+          <span className="truncate">{item.name}</span>
         </div>
 
-        {/* Spec */}
-        <div className="w-40 px-2 text-slate-600 opacity-80 truncate shrink-0 text-[11px]" title={item.specification}>
-          {item.specification}
+        {/* 4. Spec: 210px */}
+        <div className={`w-[210px] h-full shrink-0 flex items-center px-2 text-slate-600 truncate text-[11px] ${borderCellClass}`} title={item.specification}>
+          <span className="truncate">{item.specification || '-'}</span>
         </div>
 
-        {/* Unit */}
-        <div className="w-12 text-center text-slate-600 shrink-0 text-[11px]">
-          {item.unit}
+        {/* 5. Unit: 48px */}
+        <div className={`w-[48px] h-full shrink-0 flex items-center justify-center text-slate-600 text-[11px] font-medium ${borderCellClass}`}>
+          {item.unit || '-'}
         </div>
 
-        {/* Quantity */}
-        <div className="w-16 text-right font-mono px-2 text-slate-800 shrink-0 text-[11px]">
+        {/* 6. Quantity: 68px */}
+        <div className={`w-[68px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-800 text-[11px] font-medium ${borderCellClass}`}>
           {item.quantity.toLocaleString()}
         </div>
 
-        {/* Material Unit Price */}
-        <div className="w-20 text-right font-mono px-2 text-slate-600 shrink-0 text-[11px]">
+        {/* 7. Material Unit Price: 84px */}
+        <div className={`w-[84px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-600 text-[11px] ${borderCellClass}`}>
           ₩{(item.materialUnitPrice || 0).toLocaleString()}
         </div>
 
-        {/* Material Amount */}
-        <div className="w-24 text-right font-mono px-2 text-slate-700 shrink-0 text-[11px]">
+        {/* 8. Material Amount: 98px */}
+        <div className={`w-[98px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-700 text-[11px] font-medium ${borderCellClass}`}>
           ₩{(item.materialAmount || 0).toLocaleString()}
         </div>
 
-        {/* Labor Unit Price */}
-        <div className="w-20 text-right font-mono px-2 text-slate-600 shrink-0 text-[11px]">
+        {/* 9. Labor Unit Price: 84px */}
+        <div className={`w-[84px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-600 text-[11px] ${borderCellClass}`}>
           ₩{(item.laborUnitPrice || 0).toLocaleString()}
         </div>
 
-        {/* Labor Amount */}
-        <div className="w-24 text-right font-mono px-2 text-slate-700 shrink-0 text-[11px]">
+        {/* 10. Labor Amount: 98px */}
+        <div className={`w-[98px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-700 text-[11px] font-medium ${borderCellClass}`}>
           ₩{(item.laborAmount || 0).toLocaleString()}
         </div>
 
-        {/* Total Unit Price */}
-        <div className="w-20 text-right font-mono px-2 font-semibold text-slate-900 bg-indigo-50/40 shrink-0 text-[11px]">
+        {/* 11. Total Unit Price: 88px */}
+        <div className={`w-[88px] h-full shrink-0 flex items-center justify-end px-2 font-mono font-semibold text-slate-900 bg-indigo-50/30 text-[11px] ${borderCellClass}`}>
           ₩{item.unitPrice.toLocaleString()}
         </div>
 
-        {/* Total Amount */}
-        <div className="w-28 text-right font-mono px-2 font-bold text-indigo-600 bg-amber-50/40 shrink-0 text-[11px]">
+        {/* 12. Total Amount: 110px */}
+        <div className={`w-[110px] h-full shrink-0 flex items-center justify-end px-2 font-mono font-bold text-indigo-600 bg-amber-50/40 text-[11px] ${borderCellClass}`}>
           ₩{item.amount.toLocaleString()}
         </div>
 
-        {/* Remark */}
-        <div className="w-24 px-2 text-slate-500 italic truncate shrink-0 text-[10px]" title={item.remark}>
-          {item.remark}
+        {/* 13. Remark: 104px */}
+        <div className={`w-[104px] h-full shrink-0 flex items-center px-2 text-slate-500 italic truncate text-[10px] ${borderCellClass}`} title={item.remark}>
+          <span className="truncate">{item.remark || '-'}</span>
         </div>
 
-        {/* Memo */}
-        <div className="w-36 px-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+        {/* 14. Memo: 130px */}
+        <div className={`w-[130px] h-full shrink-0 flex items-center px-2 ${borderCellClass}`} onClick={(e) => e.stopPropagation()}>
           {!isAggregated ? (
             <input 
               type="text" 
               value={item.memo || ''} 
               onChange={(e) => onUpdateMemo(item.id, e.target.value)}
               placeholder="메모..."
-              className="w-full px-1.5 py-0.5 text-[10px] border border-slate-200 rounded bg-white/80 focus:border-indigo-500 outline-none"
+              className="w-full px-1.5 py-0.5 text-[10px] border border-slate-200 rounded bg-white focus:border-indigo-500 outline-none placeholder:text-slate-300"
             />
           ) : (
             <span className="text-slate-400 font-mono text-xs">-</span>
           )}
         </div>
 
-        {/* Category & Actions */}
-        <div className="w-48 px-2 flex items-center gap-1 shrink-0 justify-center" onClick={(e) => e.stopPropagation()}>
+        {/* 15. Category & Actions: 170px */}
+        <div className="w-[170px] h-full shrink-0 px-2 flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
           {renderRuleIndicator(item)}
           {!isAggregated ? (
-            <div className="flex items-center gap-1 flex-1 relative group/category">
+            <div className="flex items-center gap-1 flex-1 min-w-0 relative group/category">
               <input 
                 type="text"
                 list="category-suggestions"
@@ -279,7 +296,7 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
                   }
                 }}
                 placeholder="분류 선택/입력"
-                className="w-full p-0.5 bg-white border border-slate-300 rounded text-[10px] font-bold outline-none cursor-pointer focus:border-indigo-500"
+                className="w-full p-0.5 bg-white border border-slate-300 rounded text-[10px] font-bold outline-none cursor-pointer focus:border-indigo-500 truncate"
               />
               {item.originalCategory && item.category !== item.originalCategory && (
                 <button
@@ -311,3 +328,4 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
     />
   );
 };
+

@@ -1097,253 +1097,234 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
         </div>
       )}
 
-      <div ref={tableContainerRef} className={`flex-grow overflow-hidden ${theme === 'high-density' ? '' : `rounded-xl border shadow-sm ${themeStyles.table}`}`}>
-        <div className="h-full overflow-auto custom-scrollbar">
-          <table className="w-full text-left border-collapse">
-            <thead className={`sticky top-0 z-10 ${themeStyles.header}`}>
-              {theme === 'high-density' ? (
-                <>
-                  <tr>
-                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap`}>
-                      <input 
-                        type="checkbox" 
-                        checked={pageItems.length > 0 && pageItems.every(i => selectedIds.has(i.id))}
-                        onChange={() => toggleAll(pageItems)}
-                        className="accent-[#141414]"
+      <div ref={tableContainerRef} className={`flex-grow overflow-hidden flex flex-col ${theme === 'high-density' ? '' : `rounded-xl border shadow-sm ${themeStyles.table}`}`}>
+        <div className="flex-1 overflow-auto custom-scrollbar">
+          <div className="min-w-[1616px] w-full flex flex-col">
+            {/* Header: Exact matching 1616px columns with 2-tier sub-headers */}
+            <div className={`sticky top-0 z-20 select-none shadow-xs border-b ${
+              theme === 'high-density'
+                ? 'bg-[#F2F2F2] text-[#141414] border-[#141414]'
+                : 'bg-slate-50 text-slate-900 border-slate-200'
+            }`}>
+              <div className="flex items-stretch h-11 text-[11px] font-bold">
+                {/* 1. Checkbox: 44px */}
+                <div className={`w-[44px] shrink-0 flex items-center justify-center border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                  <input 
+                    type="checkbox" 
+                    checked={pageItems.length > 0 && pageItems.every(i => selectedIds.has(i.id))}
+                    onChange={() => toggleAll(pageItems)}
+                    className={theme === 'high-density' ? 'accent-[#141414] cursor-pointer' : 'accent-indigo-600 cursor-pointer'}
+                  />
+                </div>
+
+                {/* 2. No: 50px */}
+                <div className={`w-[50px] shrink-0 flex items-center justify-center border-r uppercase tracking-tight ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                  No.
+                </div>
+
+                {/* 3. Name: 230px */}
+                <div className={`w-[230px] shrink-0 flex items-center justify-between px-2.5 border-r relative group ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                  <span className="truncate font-black">품 명</span>
+                  <button 
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveFilterColumn(activeFilterColumn === 'name' ? null : 'name');
+                    }}
+                    className={`p-1 rounded hover:bg-slate-200/70 transition-colors ${columnFilters.name ? 'text-indigo-600 font-bold' : 'text-slate-400 group-hover:text-slate-600'}`}
+                    title="품명 필터"
+                  >
+                    <Filter size={11} fill={columnFilters.name ? 'currentColor' : 'none'} />
+                  </button>
+
+                  {activeFilterColumn === 'name' && (
+                    <>
+                      <div className="fixed inset-0 z-[999] cursor-default" onClick={() => setActiveFilterColumn(null)} />
+                      <ColumnFilterDropdown 
+                        columnId="name" 
+                        value={columnFilters.name} 
+                        onValueChange={(val) => setColumnFilters(prev => ({ ...prev, name: val }))}
+                        onClose={() => setActiveFilterColumn(null)}
+                        suggestions={uniqueNames}
+                        filterOperator={filterOperator}
+                        onOperatorChange={setFilterOperator}
                       />
-                    </th>
-                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>No.</th>
-                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] bg-[#F2F2F2] text-[11px] min-w-[100px] relative`}>
-                      <div className="flex items-center justify-between gap-1 group">
-                        <span>품 명</span>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveFilterColumn(activeFilterColumn === 'name' ? null : 'name');
-                          }}
-                          className={`p-0.5 rounded hover:bg-gray-200 transition-colors ${columnFilters.name ? 'text-indigo-600' : 'text-gray-400 group-hover:text-gray-600'}`}
-                        >
-                          <Filter size={10} fill={columnFilters.name ? 'currentColor' : 'none'} />
-                        </button>
-                      </div>
-                      {activeFilterColumn === 'name' && (
-                        <>
-                          <div className="fixed inset-0 z-[999] cursor-default" onClick={() => setActiveFilterColumn(null)} />
-                          <ColumnFilterDropdown 
-                            columnId="name" 
-                            value={columnFilters.name} 
-                            onValueChange={(val) => setColumnFilters(prev => ({ ...prev, name: val }))}
-                            onClose={() => setActiveFilterColumn(null)}
-                            suggestions={uniqueNames}
-                            filterOperator={filterOperator}
-                            onOperatorChange={setFilterOperator}
-                          />
-                        </>
-                      )}
-                    </th>
-                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] bg-[#F2F2F2] text-[11px] min-w-[100px] relative`}>
-                      <div className="flex items-center justify-between gap-1 group">
-                        <span>규 격</span>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveFilterColumn(activeFilterColumn === 'spec' ? null : 'spec');
-                          }}
-                          className={`p-0.5 rounded hover:bg-gray-200 transition-colors ${columnFilters.spec ? 'text-indigo-600' : 'text-gray-400 group-hover:text-gray-600'}`}
-                        >
-                          <Filter size={10} fill={columnFilters.spec ? 'currentColor' : 'none'} />
-                        </button>
-                      </div>
-                      {activeFilterColumn === 'spec' && (
-                        <>
-                          <div className="fixed inset-0 z-[999] cursor-default" onClick={() => setActiveFilterColumn(null)} />
-                          <ColumnFilterDropdown 
-                            columnId="spec" 
-                            value={columnFilters.spec} 
-                            onValueChange={(val) => setColumnFilters(prev => ({ ...prev, spec: val }))}
-                            onClose={() => setActiveFilterColumn(null)}
-                            suggestions={uniqueSpecs}
-                            filterOperator={filterOperator}
-                            onOperatorChange={setFilterOperator}
-                          />
-                        </>
-                      )}
-                    </th>
-                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>단위</th>
-                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>수량</th>
-                    <th colSpan={2} className={`${getCellPadding(true)} border-r border-b border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>재 료 비</th>
-                    <th colSpan={2} className={`${getCellPadding(true)} border-r border-b border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>노 무 비</th>
-                    <th colSpan={2} className={`${getCellPadding(true)} border-r border-b border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>합 계</th>
-                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-left bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>비 고</th>
-                    <th rowSpan={2} className={`${getCellPadding(true)} border-r border-[#141414] text-left bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>메 모</th>
-                    <th rowSpan={2} className={`${getCellPadding(true)} text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>자재 분류</th>
-                  </tr>
-                  <tr>
-                    <th className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>단 가</th>
-                    <th className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>금 액</th>
-                    <th className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>단 가</th>
-                    <th className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>금 액</th>
-                    <th className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>단 가</th>
-                    <th className={`${getCellPadding(true)} border-r border-[#141414] text-center bg-[#F2F2F2] whitespace-nowrap text-[11px]`}>금 액</th>
-                  </tr>
-                </>
-              ) : (
-                <>
-                  <tr>
-                    <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 whitespace-nowrap">
-                      <input 
-                        type="checkbox" 
-                        checked={pageItems.length > 0 && pageItems.every(i => selectedIds.has(i.id))}
-                        onChange={() => toggleAll(pageItems)}
-                        className="accent-indigo-600"
+                    </>
+                  )}
+                </div>
+
+                {/* 4. Spec: 210px */}
+                <div className={`w-[210px] shrink-0 flex items-center justify-between px-2 border-r relative group ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                  <span className="truncate font-black">규 격</span>
+                  <button 
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveFilterColumn(activeFilterColumn === 'spec' ? null : 'spec');
+                    }}
+                    className={`p-1 rounded hover:bg-slate-200/70 transition-colors ${columnFilters.spec ? 'text-indigo-600 font-bold' : 'text-slate-400 group-hover:text-slate-600'}`}
+                    title="규격 필터"
+                  >
+                    <Filter size={11} fill={columnFilters.spec ? 'currentColor' : 'none'} />
+                  </button>
+
+                  {activeFilterColumn === 'spec' && (
+                    <>
+                      <div className="fixed inset-0 z-[999] cursor-default" onClick={() => setActiveFilterColumn(null)} />
+                      <ColumnFilterDropdown 
+                        columnId="spec" 
+                        value={columnFilters.spec} 
+                        onValueChange={(val) => setColumnFilters(prev => ({ ...prev, spec: val }))}
+                        onClose={() => setActiveFilterColumn(null)}
+                        suggestions={uniqueSpecs}
+                        filterOperator={filterOperator}
+                        onOperatorChange={setFilterOperator}
                       />
-                    </th>
-                    <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 whitespace-nowrap">번호</th>
-                    <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 min-w-[120px] relative">
-                      <div className="flex items-center justify-between gap-1 group">
-                        <span>품명</span>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveFilterColumn(activeFilterColumn === 'name' ? null : 'name');
-                          }}
-                          className={`p-1 rounded hover:bg-slate-100 transition-colors ${columnFilters.name ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}`}
-                        >
-                          <Filter size={14} fill={columnFilters.name ? 'currentColor' : 'none'} />
-                        </button>
-                      </div>
-                      {activeFilterColumn === 'name' && (
-                        <>
-                          <div className="fixed inset-0 z-[999] cursor-default" onClick={() => setActiveFilterColumn(null)} />
-                          <ColumnFilterDropdown 
-                            columnId="name" 
-                            value={columnFilters.name} 
-                            onValueChange={(val) => setColumnFilters(prev => ({ ...prev, name: val }))}
-                            onClose={() => setActiveFilterColumn(null)}
-                            suggestions={uniqueNames}
-                            filterOperator={filterOperator}
-                            onOperatorChange={setFilterOperator}
-                          />
-                        </>
-                      )}
-                    </th>
-                    <th rowSpan={2} className="px-6 py-4 font-semibold border-r border-slate-200 min-w-[120px] relative">
-                      <div className="flex items-center justify-between gap-1 group">
-                        <span>규격</span>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setActiveFilterColumn(activeFilterColumn === 'spec' ? null : 'spec');
-                          }}
-                          className={`p-1 rounded hover:bg-slate-100 transition-colors ${columnFilters.spec ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}`}
-                        >
-                          <Filter size={14} fill={columnFilters.spec ? 'currentColor' : 'none'} />
-                        </button>
-                      </div>
-                      {activeFilterColumn === 'spec' && (
-                        <>
-                          <div className="fixed inset-0 z-[999] cursor-default" onClick={() => setActiveFilterColumn(null)} />
-                          <ColumnFilterDropdown 
-                            columnId="spec" 
-                            value={columnFilters.spec} 
-                            onValueChange={(val) => setColumnFilters(prev => ({ ...prev, spec: val }))}
-                            onClose={() => setActiveFilterColumn(null)}
-                            suggestions={uniqueSpecs}
-                            filterOperator={filterOperator}
-                            onOperatorChange={setFilterOperator}
-                          />
-                        </>
-                      )}
-                    </th>
-                    <th rowSpan={2} className="px-4 py-4 font-semibold text-center border-r border-slate-200 whitespace-nowrap">단위</th>
-                    <th rowSpan={2} className="px-4 py-4 font-semibold text-right border-r border-slate-200 whitespace-nowrap">수량</th>
-                    <th colSpan={2} className="px-6 py-2 font-semibold text-center border-r border-b border-slate-200 whitespace-nowrap">재료비</th>
-                    <th colSpan={2} className="px-6 py-2 font-semibold text-center border-r border-b border-slate-200 whitespace-nowrap">노무비</th>
-                    <th colSpan={2} className="px-6 py-2 font-semibold text-center border-r border-b border-slate-200 whitespace-nowrap">합계</th>
-                    <th rowSpan={2} className="px-6 py-4 font-semibold text-left border-r border-slate-200 whitespace-nowrap">비고</th>
-                    <th rowSpan={2} className="px-6 py-4 font-semibold text-left border-r border-slate-200 whitespace-nowrap">메모</th>
-                    <th rowSpan={2} className="px-6 py-4 font-semibold text-center whitespace-nowrap">자재 분류</th>
-                  </tr>
-                  <tr>
-                    <th className="px-4 py-2 font-semibold text-right border-r border-slate-200 whitespace-nowrap">단가</th>
-                    <th className="px-4 py-2 font-semibold text-right border-r border-slate-200 whitespace-nowrap">금액</th>
-                    <th className="px-4 py-2 font-semibold text-right border-r border-slate-200 whitespace-nowrap">단가</th>
-                    <th className="px-4 py-2 font-semibold text-right border-r border-slate-200 whitespace-nowrap">금액</th>
-                    <th className="px-4 py-2 font-semibold text-right border-r border-slate-200 whitespace-nowrap">단가</th>
-                    <th className="px-4 py-2 font-semibold text-right border-r border-slate-200 text-indigo-600 whitespace-nowrap">금액</th>
-                  </tr>
-                </>
-              )}
-            </thead>
-            <tbody className={`divide-y divide-inherit ${theme === 'high-density' ? 'font-sans' : ''}`}>
-              {pageItems.length === 0 ? (
-                <tr>
-                  <td colSpan={15} className="px-6 py-24 text-center">
-                    <div className="max-w-md mx-auto">
-                      {items.length === 0 ? (
-                         <ExcelUpload onDataLoaded={onDataLoaded} variant="dropzone" />
-                      ) : (
-                        <div className="flex flex-col items-center gap-2 text-slate-400">
-                          <Filter className="w-12 h-12 opacity-20" />
-                          <p>선택한 필터 조건에 맞는 항목이 없습니다.</p>
-                          <button 
-                            onClick={() => { setSectionFilter('all'); onCategoryFilterChange?.('all'); }}
-                            className="text-indigo-600 font-medium hover:underline mt-2"
-                          >
-                            모든 필터 초기화
-                          </button>
-                        </div>
-                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* 5. Unit: 48px */}
+                <div className={`w-[48px] shrink-0 flex items-center justify-center border-r uppercase tracking-tight ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                  단위
+                </div>
+
+                {/* 6. Quantity: 68px */}
+                <div className={`w-[68px] shrink-0 flex items-center justify-center border-r uppercase tracking-tight ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                  수량
+                </div>
+
+                {/* 7 & 8. Material: 182px (84px + 98px) */}
+                <div className={`w-[182px] shrink-0 flex flex-col border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                  <div className={`h-1/2 flex items-center justify-center border-b font-black ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                    재 료 비
+                  </div>
+                  <div className="h-1/2 flex text-[10px]">
+                    <div className={`w-[84px] shrink-0 flex items-center justify-center border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                      단 가
                     </div>
-                  </td>
-                </tr>
-              ) : (
-                <tr>
-                  <td colSpan={15} className="p-0">
-                    <VirtualizedTableBody
-                      rows={virtualRows}
-                      height={Math.max(containerHeight - 140, 400)}
-                      theme={theme}
-                      density={density}
-                      selectedIds={selectedIds}
-                      toggleOne={toggleOne}
-                      toggleAll={toggleAll}
-                      handleMouseDown={handleMouseDown}
-                      handleMouseEnter={handleMouseEnter}
-                      renderRuleIndicator={renderRuleIndicator}
-                      categories={categories}
-                      onUpdateCategory={onUpdateCategory}
-                      onAddCategory={onAddCategory}
-                      onRevertCategory={onRevertCategory}
-                      onUpdateMemo={onUpdateMemo}
-                      editingId={editingId}
-                      editValue={editValue}
-                      startEditing={startEditing}
-                      saveEdit={saveEdit}
-                      handleKeyDown={handleKeyDown}
-                      setEditValue={setEditValue}
-                      getCellPadding={getCellPadding}
-                    />
-                  </td>
-                </tr>
-              )}
-            </tbody>
-            {items.length > 0 && (
-              <tfoot className="sticky bottom-0 z-20">
-                <tr className={`${theme === 'high-density' ? 'bg-[#141414] text-white' : 'bg-slate-800 text-white'} border-t-2 border-[#141414]`}>
-                  <td colSpan={11} className="px-6 py-4 text-sm font-black uppercase tracking-[0.2em] text-right border-r border-white/10">
-                    전체 합계 금액 (Total)
-                  </td>
-                  <td className="px-6 py-4 text-right font-mono text-base font-black border-r border-white/10">
-                    ₩{allMatchingItems.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}
-                  </td>
-                  <td colSpan={3} className="px-6 py-4 bg-white/5 text-xs text-slate-300 font-medium">
-                    {pageSize > 0 && totalPages > 1 ? `현재 페이지 합계: ₩${pageItems.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}` : ''}
-                  </td>
-                </tr>
-              </tfoot>
+                    <div className="w-[98px] shrink-0 flex items-center justify-center">
+                      금 액
+                    </div>
+                  </div>
+                </div>
+
+                {/* 9 & 10. Labor: 182px (84px + 98px) */}
+                <div className={`w-[182px] shrink-0 flex flex-col border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                  <div className={`h-1/2 flex items-center justify-center border-b font-black ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                    노 무 비
+                  </div>
+                  <div className="h-1/2 flex text-[10px]">
+                    <div className={`w-[84px] shrink-0 flex items-center justify-center border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                      단 가
+                    </div>
+                    <div className="w-[98px] shrink-0 flex items-center justify-center">
+                      금 액
+                    </div>
+                  </div>
+                </div>
+
+                {/* 11 & 12. Total: 198px (88px + 110px) */}
+                <div className={`w-[198px] shrink-0 flex flex-col border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                  <div className={`h-1/2 flex items-center justify-center border-b font-black ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                    합 계
+                  </div>
+                  <div className="h-1/2 flex text-[10px]">
+                    <div className={`w-[88px] shrink-0 flex items-center justify-center border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                      단 가
+                    </div>
+                    <div className="w-[110px] shrink-0 flex items-center justify-center text-indigo-600 font-bold">
+                      금 액
+                    </div>
+                  </div>
+                </div>
+
+                {/* 13. Remark: 104px */}
+                <div className={`w-[104px] shrink-0 flex items-center px-2 border-r font-black ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                  비 고
+                </div>
+
+                {/* 14. Memo: 130px */}
+                <div className={`w-[130px] shrink-0 flex items-center px-2 border-r font-black ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                  메 모
+                </div>
+
+                {/* 15. Category: 170px */}
+                <div className="w-[170px] shrink-0 flex items-center justify-center font-black">
+                  자재 분류
+                </div>
+              </div>
+            </div>
+
+            {/* Virtualized Body */}
+            {pageItems.length === 0 ? (
+              <div className="py-24 text-center">
+                <div className="max-w-md mx-auto">
+                  {items.length === 0 ? (
+                    <ExcelUpload onDataLoaded={onDataLoaded} variant="dropzone" />
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 text-slate-400">
+                      <Filter className="w-12 h-12 opacity-20" />
+                      <p>선택한 필터 조건에 맞는 항목이 없습니다.</p>
+                      <button 
+                        onClick={() => { setSectionFilter('all'); onCategoryFilterChange?.('all'); }}
+                        className="text-indigo-600 font-medium hover:underline mt-2 cursor-pointer"
+                      >
+                        모든 필터 초기화
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <VirtualizedTableBody
+                rows={virtualRows}
+                height={Math.max(containerHeight - 95, 400)}
+                theme={theme}
+                density={density}
+                selectedIds={selectedIds}
+                toggleOne={toggleOne}
+                toggleAll={toggleAll}
+                handleMouseDown={handleMouseDown}
+                handleMouseEnter={handleMouseEnter}
+                renderRuleIndicator={renderRuleIndicator}
+                categories={categories}
+                onUpdateCategory={onUpdateCategory}
+                onAddCategory={onAddCategory}
+                onRevertCategory={onRevertCategory}
+                onUpdateMemo={onUpdateMemo}
+                editingId={editingId}
+                editValue={editValue}
+                startEditing={startEditing}
+                saveEdit={saveEdit}
+                handleKeyDown={handleKeyDown}
+                setEditValue={setEditValue}
+                getCellPadding={getCellPadding}
+              />
             )}
-          </table>
+
+            {/* Sticky Total Footer: 1616px matching columns */}
+            {items.length > 0 && (
+              <div className={`sticky bottom-0 z-20 flex items-center h-11 border-t-2 ${
+                theme === 'high-density' ? 'bg-[#141414] text-white border-[#141414]' : 'bg-slate-800 text-white border-slate-900'
+              }`}>
+                {/* Spans Checkbox to Total Unit Price: 44+50+230+210+48+68+84+98+84+98+88 = 1102px */}
+                <div className="w-[1102px] shrink-0 px-4 text-right text-xs font-black uppercase tracking-[0.15em] border-r border-white/10">
+                  전체 합계 금액 (TOTAL)
+                </div>
+
+                {/* Total Amount: 110px */}
+                <div className="w-[110px] shrink-0 px-2 text-right font-mono text-sm font-black border-r border-white/10 text-amber-300">
+                  ₩{allMatchingItems.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}
+                </div>
+
+                {/* Page Sum info: 404px (104+130+170) */}
+                <div className="w-[404px] shrink-0 px-4 text-xs text-slate-300 font-medium truncate">
+                  {pageSize > 0 && totalPages > 1 ? `현재 페이지 합계: ₩${pageItems.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}` : ''}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Pagination Navigation Bar */}
