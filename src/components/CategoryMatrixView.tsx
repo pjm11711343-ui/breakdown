@@ -612,33 +612,59 @@ export default function CategoryMatrixView({
             : 'bg-white border-slate-300'
         } print:border-none print:shadow-none print:rounded-none`}
       >
-        <table className="w-full border-collapse text-[11px] text-slate-800 leading-tight">
+        <table
+          className="table-fixed border-collapse text-[11px] text-slate-800 leading-tight"
+          style={{
+            width: `${Math.max(200 + 120 + 48 + 76 + 84 + 100 + parsedSections.length * 80, 628)}px`,
+            minWidth: '100%'
+          }}
+        >
+          {/* Explicit Fixed Column Width Definitions */}
+          <colgroup>
+            {/* 1. 품 명: 200px */}
+            <col style={{ width: '200px', minWidth: '200px' }} />
+            {/* 2. 규 격: 120px */}
+            <col style={{ width: '120px', minWidth: '120px' }} />
+            {/* 3. 단위: 48px */}
+            <col style={{ width: '48px', minWidth: '48px' }} />
+            {/* 4. 수량(M): 76px */}
+            <col style={{ width: '76px', minWidth: '76px' }} />
+            {/* 5. 단가: 84px */}
+            <col style={{ width: '84px', minWidth: '84px' }} />
+            {/* 6. 금액: 100px */}
+            <col style={{ width: '100px', minWidth: '100px' }} />
+            {/* 7+. 각 공정/구간 열: 고정 80px */}
+            {parsedSections.map((sec, idx) => (
+              <col key={`col-sec-${idx}`} style={{ width: '80px', minWidth: '80px' }} />
+            ))}
+          </colgroup>
+
           {/* Table Header: 2-Tier Header matching the construction sheet */}
           <thead className="sticky top-0 z-30 bg-slate-100 text-slate-900 select-none shadow-xs">
             {/* Top Tier Header */}
             <tr className="border-b border-slate-400 bg-[#E2E8F0] font-bold text-center">
               <th
                 rowSpan={2}
-                className="border-r border-slate-300 px-3 py-2 text-left min-w-[140px] max-w-[180px]"
+                className="w-[200px] border-r border-slate-300 px-3 py-2 text-left"
               >
                 품 명
               </th>
               <th
                 rowSpan={2}
-                className="border-r border-slate-300 px-2.5 py-2 text-center min-w-[90px]"
+                className="w-[120px] border-r border-slate-300 px-2 py-2 text-center"
               >
                 규 격
               </th>
               <th
                 rowSpan={2}
-                className="border-r border-slate-300 px-2 py-2 text-center min-w-[45px]"
+                className="w-[48px] border-r border-slate-300 px-1 py-2 text-center"
               >
                 단위
               </th>
-              {/* 내역물량 3-Column Spanning Header */}
+              {/* 내역물량 3-Column Spanning Header (76 + 84 + 100 = 260px) */}
               <th
                 colSpan={3}
-                className="border-r-2 border-slate-400 px-3 py-1.5 text-center bg-[#CBD5E1] text-slate-900"
+                className="w-[260px] border-r-2 border-slate-400 px-3 py-1.5 text-center bg-[#CBD5E1] text-slate-900 font-extrabold"
               >
                 내역물량
               </th>
@@ -646,10 +672,10 @@ export default function CategoryMatrixView({
               {parsedSections.map((sec, idx) => (
                 <th
                   key={`top-sec-${idx}`}
-                  className="border-r border-slate-300 px-2 py-1.5 text-center min-w-[72px] bg-[#E2E8F0] text-[10px] truncate"
+                  className="w-[80px] border-r border-slate-300 px-1 py-1.5 text-center bg-[#E2E8F0] text-[10px] truncate"
                   title={sec.raw}
                 >
-                  {sec.mainGroup}
+                  <span className="truncate block">{sec.mainGroup}</span>
                 </th>
               ))}
             </tr>
@@ -657,23 +683,23 @@ export default function CategoryMatrixView({
             {/* Bottom Tier Header */}
             <tr className="border-b-2 border-slate-400 bg-[#F1F5F9] font-bold text-center text-[10px]">
               {/* Sub-headers for 내역물량 */}
-              <th className="border-r border-slate-300 px-2 py-1 text-right min-w-[65px] bg-[#F1F5F9]">
+              <th className="w-[76px] border-r border-slate-300 px-2 py-1 text-right bg-[#F1F5F9] truncate">
                 수량(M)
               </th>
-              <th className="border-r border-slate-300 px-2 py-1 text-right min-w-[75px] bg-[#F1F5F9]">
+              <th className="w-[84px] border-r border-slate-300 px-2 py-1 text-right bg-[#F1F5F9] truncate">
                 단가
               </th>
-              <th className="border-r-2 border-slate-400 px-2 py-1 text-right min-w-[85px] bg-[#E2E8F0] text-indigo-950 font-extrabold">
+              <th className="w-[100px] border-r-2 border-slate-400 px-2 py-1 text-right bg-[#E2E8F0] text-indigo-950 font-extrabold truncate">
                 금액
               </th>
               {/* Sub-headers for sections (e.g. 옥외 위생, 기계실, etc.) */}
               {parsedSections.map((sec, idx) => (
                 <th
                   key={`sub-sec-${idx}`}
-                  className="border-r border-slate-300 px-1.5 py-1 text-center min-w-[72px] font-semibold text-slate-700 whitespace-pre-wrap leading-tight bg-[#F8FAFC]"
+                  className="w-[80px] border-r border-slate-300 px-1 py-1 text-center font-semibold text-slate-700 text-[10px] truncate leading-tight bg-[#F8FAFC]"
                   title={sec.raw}
                 >
-                  {sec.subGroup}
+                  <span className="truncate block">{sec.subGroup}</span>
                 </th>
               ))}
             </tr>
@@ -713,35 +739,36 @@ export default function CategoryMatrixView({
                           >
                             {/* 품 명 */}
                             <td
-                              className={`border-r border-slate-300 px-3 py-1.5 font-medium text-slate-900 ${
+                              className={`w-[200px] border-r border-slate-300 px-3 py-1.5 text-left truncate font-medium text-slate-900 ${
                                 isSameNameAsPrev ? 'text-slate-400 pl-5 text-[10px]' : 'font-bold'
                               }`}
+                              title={item.name}
                             >
-                              {item.name || '-'}
+                              <span className="truncate block">{item.name || '-'}</span>
                             </td>
 
                             {/* 규 격 */}
-                            <td className="border-r border-slate-300 px-2 py-1.5 text-center font-mono text-slate-700">
-                              {item.specification || '-'}
+                            <td className="w-[120px] border-r border-slate-300 px-1.5 py-1.5 text-center font-mono text-slate-700 truncate" title={item.specification}>
+                              <span className="truncate block">{item.specification || '-'}</span>
                             </td>
 
                             {/* 단 위 */}
-                            <td className="border-r border-slate-300 px-1 py-1.5 text-center text-slate-500">
-                              {item.unit || 'EA'}
+                            <td className="w-[48px] border-r border-slate-300 px-1 py-1.5 text-center text-slate-500 truncate">
+                              <span className="truncate block">{item.unit || 'EA'}</span>
                             </td>
 
                             {/* 수량(M) */}
-                            <td className="border-r border-slate-300 px-2 py-1.5 text-right font-mono font-bold text-slate-900">
+                            <td className="w-[76px] border-r border-slate-300 px-2 py-1.5 text-right font-mono font-bold text-slate-900 truncate">
                               {item.totalQuantity > 0 ? item.totalQuantity.toLocaleString() : '-'}
                             </td>
 
                             {/* 단가 */}
-                            <td className="border-r border-slate-300 px-2 py-1.5 text-right font-mono text-slate-600">
+                            <td className="w-[84px] border-r border-slate-300 px-2 py-1.5 text-right font-mono text-slate-600 truncate">
                               {item.unitPrice > 0 ? item.unitPrice.toLocaleString() : '-'}
                             </td>
 
                             {/* 금액 */}
-                            <td className="border-r-2 border-slate-400 px-2 py-1.5 text-right font-mono font-bold text-slate-900 bg-slate-50/60">
+                            <td className="w-[100px] border-r-2 border-slate-400 px-2 py-1.5 text-right font-mono font-bold text-slate-900 bg-slate-50/60 truncate">
                               {item.totalAmount > 0 ? item.totalAmount.toLocaleString() : '-'}
                             </td>
 
@@ -751,7 +778,7 @@ export default function CategoryMatrixView({
                               return (
                                 <td
                                   key={`val-${item.key}-${sIdx}`}
-                                  className={`border-r border-slate-300 px-1.5 py-1.5 text-center font-mono text-xs ${
+                                  className={`w-[80px] border-r border-slate-300 px-1 py-1.5 text-center font-mono text-xs truncate ${
                                     q > 0
                                       ? 'text-slate-900 font-semibold bg-amber-50/20'
                                       : 'text-slate-300'
@@ -772,35 +799,37 @@ export default function CategoryMatrixView({
                       title="클릭하여 이 카테고리 접기/펼치기"
                     >
                       {/* Col 1: Category Name */}
-                      <td className="border-r border-slate-400/80 px-3 py-2 text-left flex items-center justify-between">
-                        <span className="font-extrabold tracking-wide">{group.category}</span>
-                        <span className="text-[10px] opacity-70 ml-1">
-                          {isCollapsed ? `[접힘 - ${group.items.length}개 품목]` : ''}
-                        </span>
+                      <td className="w-[200px] border-r border-slate-400/80 px-3 py-2 text-left truncate">
+                        <div className="flex items-center justify-between truncate">
+                          <span className="font-extrabold tracking-wide truncate">{group.category}</span>
+                          <span className="text-[10px] opacity-70 ml-1 shrink-0">
+                            {isCollapsed ? `[접힘 - ${group.items.length}개]` : ''}
+                          </span>
+                        </div>
                       </td>
 
                       {/* Col 2: Representative Unit (EA) */}
-                      <td className="border-r border-slate-400/80 px-2 py-2 text-center">
+                      <td className="w-[120px] border-r border-slate-400/80 px-1 py-2 text-center truncate">
                         EA
                       </td>
 
                       {/* Col 3: '소계' Label */}
-                      <td className="border-r border-slate-400/80 px-2 py-2 text-center font-extrabold text-[11px]">
+                      <td className="w-[48px] border-r border-slate-400/80 px-1 py-2 text-center font-extrabold text-[11px] truncate">
                         소계
                       </td>
 
                       {/* Col 4: Subtotal Quantity */}
-                      <td className="border-r border-slate-400/80 px-2 py-2 text-right font-mono font-extrabold">
+                      <td className="w-[76px] border-r border-slate-400/80 px-2 py-2 text-right font-mono font-extrabold truncate">
                         {group.subtotalQuantity > 0 ? group.subtotalQuantity.toLocaleString() : '-'}
                       </td>
 
                       {/* Col 5: Unit Price Placeholder */}
-                      <td className="border-r border-slate-400/80 px-2 py-2 text-center text-slate-600">
+                      <td className="w-[84px] border-r border-slate-400/80 px-1 py-2 text-center text-slate-600 truncate">
                         -
                       </td>
 
                       {/* Col 6: Subtotal Total Amount */}
-                      <td className="border-r-2 border-slate-500 px-2 py-2 text-right font-mono font-black text-slate-950">
+                      <td className="w-[100px] border-r-2 border-slate-500 px-2 py-2 text-right font-mono font-black text-slate-950 truncate">
                         {group.subtotalAmount.toLocaleString()}
                       </td>
 
@@ -810,7 +839,7 @@ export default function CategoryMatrixView({
                         return (
                           <td
                             key={`cat-sub-${group.category}-${sIdx}`}
-                            className="border-r border-slate-400/80 px-1.5 py-2 text-center font-mono font-bold text-slate-900"
+                            className="w-[80px] border-r border-slate-400/80 px-1 py-2 text-center font-mono font-bold text-slate-900 truncate"
                           >
                             {secSubtotal > 0 ? secSubtotal.toLocaleString() : ''}
                           </td>
@@ -837,26 +866,26 @@ export default function CategoryMatrixView({
             {/* Grand Total Row (합 계) - Highlighted in distinct light green/blue band */}
             {groupedData.length > 0 && (
               <tr className="border-t-2 border-b-2 border-slate-600 bg-[#CFE2F3] text-slate-950 font-black text-xs select-none">
-                {/* Merged Title: 합 계 */}
+                {/* Merged Title: 합 계 (200 + 120 + 48 = 368px) */}
                 <td
                   colSpan={3}
-                  className="border-r border-slate-400 px-4 py-2.5 text-center tracking-widest text-sm font-black"
+                  className="w-[368px] border-r border-slate-400 px-4 py-2.5 text-center tracking-widest text-sm font-black truncate"
                 >
                   합 계 (GRAND TOTAL)
                 </td>
 
                 {/* Grand Total Quantity */}
-                <td className="border-r border-slate-400 px-2 py-2.5 text-right font-mono font-black text-sm">
+                <td className="w-[76px] border-r border-slate-400 px-2 py-2.5 text-right font-mono font-black text-sm truncate">
                   {grandTotal.totalQty.toLocaleString()}
                 </td>
 
                 {/* Blank Unit Price */}
-                <td className="border-r border-slate-400 px-2 py-2.5 text-center text-slate-500">
+                <td className="w-[84px] border-r border-slate-400 px-1 py-2.5 text-center text-slate-500 truncate">
                   -
                 </td>
 
                 {/* Grand Total Amount */}
-                <td className="border-r-2 border-slate-500 px-3 py-2.5 text-right font-mono font-black text-sm text-indigo-950 bg-[#B8D5E5]">
+                <td className="w-[100px] border-r-2 border-slate-500 px-2 py-2.5 text-right font-mono font-black text-sm text-indigo-950 bg-[#B8D5E5] truncate">
                   ₩{grandTotal.totalAmt.toLocaleString()}
                 </td>
 
@@ -866,7 +895,7 @@ export default function CategoryMatrixView({
                   return (
                     <td
                       key={`grand-sec-${sIdx}`}
-                      className="border-r border-slate-400 px-1.5 py-2.5 text-center font-mono font-black text-slate-950"
+                      className="w-[80px] border-r border-slate-400 px-1 py-2.5 text-center font-mono font-black text-slate-950 truncate"
                     >
                       {totalSecQ > 0 ? totalSecQ.toLocaleString() : '-'}
                     </td>
