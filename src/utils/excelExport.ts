@@ -667,13 +667,19 @@ export async function exportStyledExcel({
     views: [{ state: 'frozen', xSplit: 6, ySplit: 2 }]
   });
 
-  // 1. Extract all unique sections
-  const matrixSections: string[] = [];
-  const matrixSectionSet = new Set<string>();
+  // 1. Extract all unique sections with positive total quantity
+  const matrixSectionQtyMap = new Map<string, number>();
   items.forEach(item => {
     const sec = (item.section || '기타 공정').trim();
-    if (sec && !matrixSectionSet.has(sec)) {
-      matrixSectionSet.add(sec);
+    const qty = item.quantity || 0;
+    if (sec) {
+      matrixSectionQtyMap.set(sec, (matrixSectionQtyMap.get(sec) || 0) + qty);
+    }
+  });
+
+  const matrixSections: string[] = [];
+  Array.from(matrixSectionQtyMap.entries()).forEach(([sec, totalQty]) => {
+    if (totalQty > 0) {
       matrixSections.push(sec);
     }
   });
@@ -808,11 +814,14 @@ export async function exportStyledExcel({
     const itemMap = exportCategoryMap.get(cat);
     if (!itemMap || itemMap.size === 0) return;
 
+    const validItems = Array.from(itemMap.values()).filter(item => item.totalQty > 0);
+    if (validItems.length === 0) return;
+
     let catSubtotalQty = 0;
     let catSubtotalAmt = 0;
     const catSectionSubtotals: Record<string, number> = {};
 
-    Array.from(itemMap.values()).forEach(item => {
+    validItems.forEach(item => {
       catSubtotalQty += item.totalQty;
       catSubtotalAmt += item.totalAmount;
       allGrandTotalQty += item.totalQty;

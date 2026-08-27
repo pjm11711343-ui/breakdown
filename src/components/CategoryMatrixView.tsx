@@ -58,6 +58,8 @@ export default function CategoryMatrixView({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [showPageGuides, setShowPageGuides] = useState(true);
+  const [hideZeroQty, setHideZeroQty] = useState(true);
+  const [autoHideEmptySectionCols, setAutoHideEmptySectionCols] = useState(true);
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   const [hiddenSections, setHiddenSections] = useState<Record<string, boolean>>({});
   const [isSectionPickerOpen, setIsSectionPickerOpen] = useState(false);
@@ -92,38 +94,30 @@ export default function CategoryMatrixView({
     return Array.from(sectionSet);
   }, [items]);
 
-  // Visible sections list based on hidden toggle
-  const visibleSections = useMemo(() => {
-    return allSections.filter(s => !hiddenSections[s]);
-  }, [allSections, hiddenSections]);
-
-  // 2. Parse section headers into 2-tier (대공종 / 세부구간)
-  const parsedSections = useMemo(() => {
-    return visibleSections.map(sec => {
-      // Check if format contains separator like "기계설비 > 옥외 (위생)" or code like "010102 옥외배관공사"
-      let mainGroup = '기계설비';
-      let subGroup = sec;
-
-      if (sec.includes('>')) {
-        const parts = sec.split('>');
-        mainGroup = parts[0].trim();
-        subGroup = parts.slice(1).join('>').trim();
-      } else if (sec.includes(':')) {
-        const parts = sec.split(':');
-        mainGroup = parts[0].trim();
-        subGroup = parts.slice(1).join(':').trim();
-      } else if (/^\d+/.test(sec)) {
-        // Strip leading numbers like "010102 옥외배관공사" -> main: "기계설비", sub: "옥외배관공사"
-        subGroup = sec.replace(/^\d+[\s._-]*/, '').trim() || sec;
-      }
-
-      return {
-        raw: sec,
-        mainGroup,
-        subGroup
-      };
+  // 2. Extract available categories with their item count and total quantity
+  const availableCategories = useMemo(() => {
+    const map = new Map<string, { count: number; totalQty: number }>();
+    items.forEach(item => {
+      const cat = (item.category || '미분류').trim() || '미분류';
+      const qty = item.quantity || 0;
+      const cur = map.get(cat) || { count: 0, totalQty: 0 };
+      cur.count += 1;
+      cur.totalQty += qty;
+      map.set(cat, cur);
     });
-  }, [visibleSections]);
+
+    const allKeys = Array.from(map.keys());
+    const ordered = [
+      ...categories.filter(c => allKeys.includes(c)),
+      ...allKeys.filter(c => !categories.includes(c))
+    ];
+
+    return ordered.map(cat => ({
+      name: cat,
+      count: map.get(cat)?.count || 0,
+      totalQty: map.get(cat)?.totalQty || 0
+    }));
+  }, [items, categories]);
 
   // 3. Aggregate data by (Category -> Name + Spec + Unit + UnitPrice)
   const groupedData = useMemo<MatrixCategoryGroup[]>(() => {
@@ -184,8 +178,11 @@ export default function CategoryMatrixView({
 
       const rawItems = Array.from(itemMap.values());
 
-      // Filter by search term
+      // Filter by search term and zero quantity
       const filteredItems = rawItems.filter(item => {
+        // If hideZeroQty is ON, hide items where totalQuantity <= 0
+        if (hideZeroQty && item.totalQuantity <= 0) return false;
+
         if (!searchTerm.trim()) return true;
         const q = searchTerm.toLowerCase();
         return (
@@ -206,9 +203,12 @@ export default function CategoryMatrixView({
         subtotalQty += item.totalQuantity;
         subtotalAmt += item.totalAmount;
         Object.entries(item.sectionQuantities).forEach(([sec, q]) => {
-          sectionSubtotals[sec] = (sectionSubtotals[sec] || 0) + q;
+          sectionSubtotals[sec] = (sectionSubtotals[sec] || 0) + Number(q || 0);
         });
       });
+
+      // If hideZeroQty is ON, hide category if subtotal quantity <= 0
+      if (hideZeroQty && subtotalQty <= 0) return;
 
       result.push({
         category: cat,
@@ -225,9 +225,9 @@ export default function CategoryMatrixView({
     }
 
     return result;
-  }, [items, categories, searchTerm, selectedCategory]);
+  }, [items, categories, searchTerm, selectedCategory, hideZeroQty]);
 
-  // 4. Calculate Grand Totals
+  // 4. Calculate Grand Totals & Section Totals across current view
   const grandTotal = useMemo(() => {
     let totalQty = 0;
     let totalAmt = 0;
@@ -247,6 +247,48 @@ export default function CategoryMatrixView({
       sectionTotals
     };
   }, [groupedData]);
+
+  // 5. Visible sections list based on hidden toggle & Zero Quantity Column Auto-Hide
+  const visibleSections = useMemo(() => {
+    return allSections.filter(sec => {
+      // If user explicitly hid this section in picker
+      if (hiddenSections[sec]) return false;
+
+      // If auto-hide empty section columns is ON and total sum across active items is 0
+      const totalQtyForSection = grandTotal.sectionTotals[sec] || 0;
+      if (autoHideEmptySectionCols && totalQtyForSection <= 0) return false;
+
+      return true;
+    });
+  }, [allSections, hiddenSections, autoHideEmptySectionCols, grandTotal.sectionTotals]);
+
+  // 6. Parse section headers into 2-tier (대공종 / 세부구간)
+  const parsedSections = useMemo(() => {
+    return visibleSections.map(sec => {
+      // Check if format contains separator like "기계설비 > 옥외 (위생)" or code like "010102 옥외배관공사"
+      let mainGroup = '기계설비';
+      let subGroup = sec;
+
+      if (sec.includes('>')) {
+        const parts = sec.split('>');
+        mainGroup = parts[0].trim();
+        subGroup = parts.slice(1).join('>').trim();
+      } else if (sec.includes(':')) {
+        const parts = sec.split(':');
+        mainGroup = parts[0].trim();
+        subGroup = parts.slice(1).join(':').trim();
+      } else if (/^\d+/.test(sec)) {
+        // Strip leading numbers like "010102 옥외배관공사" -> main: "기계설비", sub: "옥외배관공사"
+        subGroup = sec.replace(/^\d+[\s._-]*/, '').trim() || sec;
+      }
+
+      return {
+        raw: sec,
+        mainGroup,
+        subGroup
+      };
+    });
+  }, [visibleSections]);
 
   // Total items count across groups
   const totalItemCount = useMemo(() => {
@@ -335,6 +377,36 @@ export default function CategoryMatrixView({
 
           {/* Quick Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* Zero Quantity Items Hide/Show Toggle */}
+            <button
+              type="button"
+              onClick={() => setHideZeroQty(prev => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                hideZeroQty
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-700 shadow-xs'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+              }`}
+              title="수량이 0인 품목 및 카테고리를 표에서 숨김/표시"
+            >
+              <Filter size={14} />
+              <span>수량 0 품목 숨김 {hideZeroQty ? 'ON' : 'OFF'}</span>
+            </button>
+
+            {/* Zero Quantity Section Column Auto-Hide Toggle */}
+            <button
+              type="button"
+              onClick={() => setAutoHideEmptySectionCols(prev => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                autoHideEmptySectionCols
+                  ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-xs'
+                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+              }`}
+              title="선택된 카테고리/내역 중 합계 수량이 0인 구간 열을 표에서 자동으로 숨김/표시"
+            >
+              <Columns size={14} />
+              <span>합수량 0 구간열 숨김 {autoHideEmptySectionCols ? 'ON' : 'OFF'}</span>
+            </button>
+
             {/* Page Guide Toggle */}
             <button
               type="button"
@@ -358,41 +430,83 @@ export default function CategoryMatrixView({
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 transition-colors cursor-pointer"
               >
                 <Columns size={14} />
-                <span>구간 열 설정 ({visibleSections.length}/{allSections.length})</span>
+                <span>구간 열 ({visibleSections.length}/{allSections.length})</span>
                 <ChevronDown size={13} />
               </button>
 
               {isSectionPickerOpen && (
-                <div className="absolute right-0 top-full mt-1 w-64 p-3 bg-white rounded-2xl shadow-xl border border-slate-200 z-50 text-xs">
+                <div className="absolute right-0 top-full mt-1 w-72 p-3.5 bg-white rounded-2xl shadow-xl border border-slate-200 z-50 text-xs">
                   <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
-                    <span className="font-bold text-slate-800">구간 열 표시 선택</span>
-                    <button
-                      type="button"
-                      onClick={() => setHiddenSections({})}
-                      className="text-[10px] text-indigo-600 hover:underline font-bold"
-                    >
-                      모두 표시
-                    </button>
+                    <span className="font-bold text-slate-800">구간 열 표시 설정</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHiddenSections({});
+                          setAutoHideEmptySectionCols(false);
+                        }}
+                        className="text-[11px] text-indigo-600 hover:underline font-bold"
+                      >
+                        전체 표시
+                      </button>
+                    </div>
                   </div>
-                  <div className="max-h-60 overflow-y-auto space-y-1 pr-1">
+
+                  <div className="mb-2 p-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-slate-700">합수량 0 구간열 자동 숨김</span>
+                    <input
+                      type="checkbox"
+                      checked={autoHideEmptySectionCols}
+                      onChange={e => setAutoHideEmptySectionCols(e.target.checked)}
+                      className="rounded text-indigo-600 focus:ring-0 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="max-h-64 overflow-y-auto space-y-1 pr-1">
                     {allSections.map(sec => {
-                      const isVisible = !hiddenSections[sec];
+                      const totalQty = grandTotal.sectionTotals[sec] || 0;
+                      const isAutoHidden = autoHideEmptySectionCols && totalQty <= 0;
+                      const isChecked = !hiddenSections[sec] && !isAutoHidden;
+
                       return (
                         <label
                           key={sec}
-                          className="flex items-center justify-between p-1.5 rounded hover:bg-slate-50 cursor-pointer text-slate-700"
+                          className={`flex items-center justify-between p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-slate-700 transition-colors ${
+                            isAutoHidden ? 'opacity-50 bg-slate-50/60' : ''
+                          }`}
                         >
-                          <span className="truncate pr-2">{sec}</span>
+                          <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                            <span className="truncate text-xs">{sec}</span>
+                            {totalQty > 0 ? (
+                              <span className="text-[10px] text-indigo-600 font-bold shrink-0">
+                                ({totalQty.toLocaleString()})
+                              </span>
+                            ) : (
+                              <span className="text-[9px] px-1 py-0.2 bg-slate-200/80 text-slate-600 rounded font-medium shrink-0">
+                                0
+                              </span>
+                            )}
+                          </div>
                           <input
                             type="checkbox"
-                            checked={isVisible}
+                            checked={isChecked}
                             onChange={() => {
-                              setHiddenSections(prev => ({
-                                ...prev,
-                                [sec]: isVisible
-                              }));
+                              if (isAutoHidden) {
+                                // If user manually checks an auto-hidden column, disable autoHide or remove from hidden
+                                setAutoHideEmptySectionCols(false);
+                                setHiddenSections(prev => {
+                                  const next = { ...prev };
+                                  delete next[sec];
+                                  return next;
+                                });
+                              } else {
+                                setHiddenSections(prev => ({
+                                  ...prev,
+                                  [sec]: isChecked
+                                }));
+                              }
                             }}
-                            className="rounded text-indigo-600 focus:ring-0"
+                            className="rounded text-indigo-600 focus:ring-0 cursor-pointer"
                           />
                         </label>
                       );
@@ -457,12 +571,14 @@ export default function CategoryMatrixView({
                 onChange={e => setSelectedCategory(e.target.value)}
                 className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-indigo-500 text-slate-700 cursor-pointer"
               >
-                <option value="all">전체 카테고리 ({groupedData.length}개)</option>
-                {categories.map(cat => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
+                <option value="all">전체 카테고리 ({groupedData.length}개 표시)</option>
+                {availableCategories
+                  .filter(cat => (!hideZeroQty || cat.totalQty > 0))
+                  .map(cat => (
+                    <option key={cat.name} value={cat.name}>
+                      {cat.name} {cat.totalQty > 0 ? `(${cat.totalQty.toLocaleString()} EA)` : '(수량 0)'}
+                    </option>
+                  ))}
               </select>
             </div>
           </div>
