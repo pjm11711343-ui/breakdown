@@ -5,12 +5,14 @@ interface ExportOptions {
   projectName?: string;
   items: SpecItem[];
   categories?: string[];
+  hidePriceAndAmount?: boolean;
 }
 
 export async function exportStyledExcel({
   projectName = '기계설비_공정분리',
   items,
-  categories = []
+  categories = [],
+  hidePriceAndAmount = false
 }: ExportOptions): Promise<void> {
   if (!items || items.length === 0) {
     throw new Error('내보낼 데이터가 없습니다.');
@@ -664,7 +666,7 @@ export async function exportStyledExcel({
      4. SHEET 4: 카테고리_구간별_집계표 (Category Matrix Breakdown Sheet - Construction Standard)
      ========================================================================== */
   const matrixSheet = workbook.addWorksheet('카테고리_구간별_집계표', {
-    views: [{ state: 'frozen', xSplit: 6, ySplit: 2 }]
+    views: [{ state: 'frozen', xSplit: hidePriceAndAmount ? 4 : 6, ySplit: 2 }]
   });
 
   // 1. Extract all unique sections with positive total quantity
@@ -705,18 +707,28 @@ export async function exportStyledExcel({
   const mColC = matrixSheet.getCell('C1');
   mColC.value = '단위';
 
-  // Merge 내역물량 header horizontally (D1:F1)
-  matrixSheet.mergeCells('D1:F1');
-  const mColBoQ = matrixSheet.getCell('D1');
-  mColBoQ.value = '내역물량';
+  if (hidePriceAndAmount) {
+    // Single column for 수량(M)
+    matrixSheet.mergeCells('D1:D2');
+    const mColD = matrixSheet.getCell('D1');
+    mColD.value = '수량(M)';
+  } else {
+    // Merge 내역물량 header horizontally (D1:F1)
+    matrixSheet.mergeCells('D1:F1');
+    const mColBoQ = matrixSheet.getCell('D1');
+    mColBoQ.value = '내역물량';
 
-  matrixSheet.getCell('D2').value = '수량(M)';
-  matrixSheet.getCell('E2').value = '단가';
-  matrixSheet.getCell('F2').value = '금액';
+    matrixSheet.getCell('D2').value = '수량(M)';
+    matrixSheet.getCell('E2').value = '단가';
+    matrixSheet.getCell('F2').value = '금액';
+  }
+
+  const sectionStartCol = hidePriceAndAmount ? 5 : 7;
+  const totalBaseCols = hidePriceAndAmount ? 4 : 6;
 
   // Section Headers
   matrixSections.forEach((sec, idx) => {
-    const colNum = 7 + idx;
+    const colNum = sectionStartCol + idx;
     let mainGroup = '기계설비';
     let subGroup = sec;
 
@@ -745,7 +757,11 @@ export async function exportStyledExcel({
       cell.font = { name: '맑은 고딕', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
       cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
       cell.border = headerBorder;
-      cell.fill = cIdx >= 4 && cIdx <= 6 ? headerFillBoQ : headerFillGray;
+      if (hidePriceAndAmount) {
+        cell.fill = cIdx === 4 ? headerFillBoQ : headerFillGray;
+      } else {
+        cell.fill = cIdx >= 4 && cIdx <= 6 ? headerFillBoQ : headerFillGray;
+      }
     });
   });
 
@@ -851,21 +867,23 @@ export async function exportStyledExcel({
       row.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
       row.getCell(4).font = { name: '맑은 고딕', size: 9, bold: true };
 
-      // Col E: Unit Price
-      row.getCell(5).value = item.unitPrice;
-      row.getCell(5).numFmt = '#,##0';
-      row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
-      row.getCell(5).font = { name: '맑은 고딕', size: 9 };
+      if (!hidePriceAndAmount) {
+        // Col E: Unit Price
+        row.getCell(5).value = item.unitPrice;
+        row.getCell(5).numFmt = '#,##0';
+        row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(5).font = { name: '맑은 고딕', size: 9 };
 
-      // Col F: Total Amount
-      row.getCell(6).value = item.totalAmount;
-      row.getCell(6).numFmt = '#,##0';
-      row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
-      row.getCell(6).font = { name: '맑은 고딕', size: 9, bold: true };
+        // Col F: Total Amount
+        row.getCell(6).value = item.totalAmount;
+        row.getCell(6).numFmt = '#,##0';
+        row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(6).font = { name: '맑은 고딕', size: 9, bold: true };
+      }
 
       // Section columns
       matrixSections.forEach((sec, sIdx) => {
-        const cNum = 7 + sIdx;
+        const cNum = sectionStartCol + sIdx;
         const q = item.sectionQty[sec] || 0;
         catSectionSubtotals[sec] = (catSectionSubtotals[sec] || 0) + q;
         allGrandSectionQty[sec] = (allGrandSectionQty[sec] || 0) + q;
@@ -883,7 +901,7 @@ export async function exportStyledExcel({
       });
 
       // Apply thin borders to all columns in data row
-      for (let c = 1; c <= 6 + matrixSections.length; c++) {
+      for (let c = 1; c <= totalBaseCols + matrixSections.length; c++) {
         row.getCell(c).border = thinBorder;
       }
 
@@ -911,16 +929,18 @@ export async function exportStyledExcel({
     subRow.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
     subRow.getCell(4).font = { name: '맑은 고딕', size: 9.5, bold: true };
 
-    subRow.getCell(5).value = '-';
-    subRow.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
+    if (!hidePriceAndAmount) {
+      subRow.getCell(5).value = '-';
+      subRow.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
 
-    subRow.getCell(6).value = catSubtotalAmt;
-    subRow.getCell(6).numFmt = '#,##0';
-    subRow.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
-    subRow.getCell(6).font = { name: '맑은 고딕', size: 9.5, bold: true };
+      subRow.getCell(6).value = catSubtotalAmt;
+      subRow.getCell(6).numFmt = '#,##0';
+      subRow.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+      subRow.getCell(6).font = { name: '맑은 고딕', size: 9.5, bold: true };
+    }
 
     matrixSections.forEach((sec, sIdx) => {
-      const cNum = 7 + sIdx;
+      const cNum = sectionStartCol + sIdx;
       const secQ = catSectionSubtotals[sec] || 0;
       const cell = subRow.getCell(cNum);
       if (secQ > 0) {
@@ -933,7 +953,7 @@ export async function exportStyledExcel({
       cell.font = { name: '맑은 고딕', size: 9.5, bold: true };
     });
 
-    for (let c = 1; c <= 6 + matrixSections.length; c++) {
+    for (let c = 1; c <= totalBaseCols + matrixSections.length; c++) {
       const cell = subRow.getCell(c);
       cell.fill = goldenSubtotalFill;
       cell.border = {
@@ -962,16 +982,18 @@ export async function exportStyledExcel({
   grandRow.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
   grandRow.getCell(4).font = { name: '맑은 고딕', size: 10, bold: true };
 
-  grandRow.getCell(5).value = '-';
-  grandRow.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
+  if (!hidePriceAndAmount) {
+    grandRow.getCell(5).value = '-';
+    grandRow.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
 
-  grandRow.getCell(6).value = allGrandTotalAmt;
-  grandRow.getCell(6).numFmt = '#,##0';
-  grandRow.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
-  grandRow.getCell(6).font = { name: '맑은 고딕', size: 10.5, bold: true, color: { argb: 'FF1E3A8A' } };
+    grandRow.getCell(6).value = allGrandTotalAmt;
+    grandRow.getCell(6).numFmt = '#,##0';
+    grandRow.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+    grandRow.getCell(6).font = { name: '맑은 고딕', size: 10.5, bold: true, color: { argb: 'FF1E3A8A' } };
+  }
 
   matrixSections.forEach((sec, sIdx) => {
-    const cNum = 7 + sIdx;
+    const cNum = sectionStartCol + sIdx;
     const gQ = allGrandSectionQty[sec] || 0;
     const cell = grandRow.getCell(cNum);
     if (gQ > 0) {
@@ -984,7 +1006,7 @@ export async function exportStyledExcel({
     cell.font = { name: '맑은 고딕', size: 10, bold: true };
   });
 
-  for (let c = 1; c <= 6 + matrixSections.length; c++) {
+  for (let c = 1; c <= totalBaseCols + matrixSections.length; c++) {
     const cell = grandRow.getCell(c);
     cell.fill = grandTotalFill;
     cell.border = totalBorder;
@@ -995,10 +1017,12 @@ export async function exportStyledExcel({
   matrixSheet.getColumn(2).width = 16; // 규격
   matrixSheet.getColumn(3).width = 8;  // 단위
   matrixSheet.getColumn(4).width = 12; // 수량
-  matrixSheet.getColumn(5).width = 14; // 단가
-  matrixSheet.getColumn(6).width = 16; // 금액
+  if (!hidePriceAndAmount) {
+    matrixSheet.getColumn(5).width = 14; // 단가
+    matrixSheet.getColumn(6).width = 16; // 금액
+  }
   matrixSections.forEach((_, idx) => {
-    matrixSheet.getColumn(7 + idx).width = 13;
+    matrixSheet.getColumn(sectionStartCol + idx).width = 13;
   });
 
   /* ==========================================================================

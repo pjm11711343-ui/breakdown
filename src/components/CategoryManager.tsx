@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, Check, X, Tags, Sliders, Info, HelpCircle, ChevronUp, ChevronDown, Sparkles } from 'lucide-react';
-import { CustomClassificationRule } from '../types';
+import { Plus, Trash2, Edit2, Check, X, Tags, Sliders, Info, HelpCircle, ChevronUp, ChevronDown, Sparkles, RotateCcw } from 'lucide-react';
+import { CustomClassificationRule, INITIAL_CATEGORIES } from '../types';
 
 interface Props {
   categories: string[];
@@ -86,6 +86,12 @@ export default function CategoryManager({
     if (newCategory.trim() && !categories.includes(newCategory.trim())) {
       onUpdate([...categories, newCategory.trim()]);
       setNewCategory('');
+    }
+  };
+
+  const handleResetDefaultCategories = () => {
+    if (window.confirm('기본 카테고리 목록(31개)으로 초기화하시겠습니까? 현재 추가된 사용자 지정 카테고리가 기본 목록으로 대체됩니다.')) {
+      onUpdate(INITIAL_CATEGORIES);
     }
   };
 
@@ -250,15 +256,31 @@ export default function CategoryManager({
                   type="text" 
                   value={newCategory}
                   onChange={(e) => setNewCategory(e.target.value)}
-                  placeholder="새 카테고리 이름 입력..."
+                  placeholder="새 카테고리 이름 입력 (예: 소방배관, 위생도기)..."
                   className="flex-grow px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-slate-800 text-sm"
                   onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
                 />
                 <button 
                   onClick={handleAddCategory}
-                  className="p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center"
+                  className="px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center gap-1.5 text-xs font-bold shadow-md shadow-indigo-100 cursor-pointer"
                 >
-                  <Plus className="w-5 h-5" />
+                  <Plus className="w-4 h-4" />
+                  <span>카테고리 추가</span>
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between pt-1 border-b border-slate-100 pb-2">
+                <span className="text-xs font-bold text-slate-700">
+                  현재 등록된 카테고리 ({categories.length}개)
+                </span>
+                <button
+                  type="button"
+                  onClick={handleResetDefaultCategories}
+                  className="text-[11px] font-bold text-slate-500 hover:text-indigo-600 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="31개 기본 카테고리 세트로 복구"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>기본 목록 복구</span>
                 </button>
               </div>
 

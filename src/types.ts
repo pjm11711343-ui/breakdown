@@ -45,3 +45,12 @@ export interface AppConfig {
   fontFamily: string;
   fontSize: number;
 }
+
+export const INITIAL_CATEGORIES = [
+  '백강관', '강관부속', 'STS위생관', 'STS위생부속', 'STS난방관', 'STS난방부속', 
+  '고강도PVC', 'PVC', 'PB', '냉매배관', '난방코일', '난방분배기', 
+  '밸브류', '수도계량기', '감압변', '스리브', '입상고정틀+내화충진재', 
+  '조립식가대', 'SUPPORT류', '마감자재', '통합거치대', '보온재', '소모잡자재', 
+  '공구손료', '안전장비류', '명판', '휀장비류', '기타자재', '지금자재', 
+  '외주', '가설공사'
+];

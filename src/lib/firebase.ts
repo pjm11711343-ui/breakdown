@@ -419,3 +419,48 @@ export function subscribeCustomRulesFromFirestore(
     return () => {};
   }
 }
+
+/**
+ * 7. Custom Categories syncing across sessions and devices
+ */
+export async function saveCategoriesToFirestore(categories: string[]): Promise<void> {
+  if (!checkQuotaState()) return;
+
+  try {
+    const catRef = doc(db, 'app_settings', 'categories');
+    await setDoc(catRef, {
+      categories: categories || [],
+      updatedAt: Date.now()
+    });
+  } catch (err) {
+    handleFirestoreError(err, 'saveCategories');
+  }
+}
+
+export function subscribeCategoriesFromFirestore(
+  callback: (categories: string[]) => void
+): () => void {
+  if (!checkQuotaState()) {
+    return () => {};
+  }
+  try {
+    const catRef = doc(db, 'app_settings', 'categories');
+    return onSnapshot(
+      catRef,
+      docSnap => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (Array.isArray(data.categories) && data.categories.length > 0) {
+            callback(data.categories);
+          }
+        }
+      },
+      error => {
+        handleFirestoreError(error, 'categories subscription');
+      }
+    );
+  } catch (err) {
+    handleFirestoreError(err, 'setup categories subscription');
+    return () => {};
+  }
+}

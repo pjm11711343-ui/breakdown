@@ -22,10 +22,10 @@ export default function CategorySummaryCards({
   onCategoryClick,
   onUpdateSafetyAmount
 }: Props) {
-  if (items.length === 0) return null;
-
   const [isEditingSafety, setIsEditingSafety] = React.useState(false);
   const [safetyInputVal, setSafetyInputVal] = React.useState('');
+
+  if (items.length === 0) return null;
 
   // 1. Precise breakdown of Material Cost vs Labor/Outsourcing Cost for each item
   const getItemMaterialAmount = (item: SpecItem): number => {

@@ -9,6 +9,7 @@ import {
   Layers,
   FileSpreadsheet,
   ChevronDown,
+  ChevronUp,
   ChevronRight,
   Maximize2,
   Minimize2,
@@ -16,7 +17,12 @@ import {
   EyeOff,
   Sparkles,
   Info,
-  Check
+  Check,
+  CheckSquare,
+  Square,
+  RotateCcw,
+  SlidersHorizontal,
+  X
 } from 'lucide-react';
 import { exportStyledExcel } from '../utils/excelExport';
 
@@ -62,7 +68,9 @@ export default function CategoryMatrixView({
   const [autoHideEmptySectionCols, setAutoHideEmptySectionCols] = useState(true);
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   const [hiddenSections, setHiddenSections] = useState<Record<string, boolean>>({});
-  const [isSectionPickerOpen, setIsSectionPickerOpen] = useState(false);
+  const [isSectionFilterExpanded, setIsSectionFilterExpanded] = useState(true);
+  const [sectionFilterSearch, setSectionFilterSearch] = useState('');
+  const [hidePriceAndAmount, setHidePriceAndAmount] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const printContainerRef = useRef<HTMLDivElement>(null);
 
@@ -93,6 +101,28 @@ export default function CategoryMatrixView({
 
     return Array.from(sectionSet);
   }, [items]);
+
+  // Overall Section statistics (Item count & Total quantity across raw items)
+  const sectionStats = useMemo(() => {
+    const map: Record<string, { itemCount: number; totalQty: number; totalAmt: number }> = {};
+    allSections.forEach(s => {
+      map[s] = { itemCount: 0, totalQty: 0, totalAmt: 0 };
+    });
+
+    items.forEach(item => {
+      const sec = (item.section || '기타 공정').trim() || '기타 공정';
+      const q = item.quantity || 0;
+      const p = item.materialUnitPrice || item.unitPrice || 0;
+      if (!map[sec]) {
+        map[sec] = { itemCount: 0, totalQty: 0, totalAmt: 0 };
+      }
+      map[sec].itemCount += 1;
+      map[sec].totalQty += q;
+      map[sec].totalAmt += item.amount || (q * p);
+    });
+
+    return map;
+  }, [items, allSections]);
 
   // 2. Extract available categories with their item count and total quantity
   const availableCategories = useMemo(() => {
@@ -140,7 +170,10 @@ export default function CategoryMatrixView({
       }
 
       const itemMap = categoryMap.get(cat)!;
-      const itemKey = `${name}:::${spec}:::${unit}:::${unitPrice}`;
+      // When price is hidden, group identical items together; when price is shown, keep price tiers
+      const itemKey = hidePriceAndAmount
+        ? `${name}:::${spec}:::${unit}`
+        : `${name}:::${spec}:::${unit}:::${unitPrice}`;
 
       if (!itemMap.has(itemKey)) {
         itemMap.set(itemKey, {
@@ -159,6 +192,9 @@ export default function CategoryMatrixView({
       const row = itemMap.get(itemKey)!;
       row.totalQuantity += quantity;
       row.totalAmount += amount;
+      if (row.unitPrice === 0 && unitPrice > 0) {
+        row.unitPrice = unitPrice;
+      }
       row.sectionQuantities[section] = (row.sectionQuantities[section] || 0) + quantity;
     });
 
@@ -225,7 +261,7 @@ export default function CategoryMatrixView({
     }
 
     return result;
-  }, [items, categories, searchTerm, selectedCategory, hideZeroQty]);
+  }, [items, categories, searchTerm, selectedCategory, hideZeroQty, hidePriceAndAmount]);
 
   // 4. Calculate Grand Totals & Section Totals across current view
   const grandTotal = useMemo(() => {
@@ -290,6 +326,70 @@ export default function CategoryMatrixView({
     });
   }, [visibleSections]);
 
+  // Quick helpers for Section Selection
+  const handleSelectAllSections = () => {
+    setHiddenSections({});
+    setAutoHideEmptySectionCols(false);
+  };
+
+  const handleDeselectAllSections = () => {
+    const next: Record<string, boolean> = {};
+    allSections.forEach(s => {
+      next[s] = true;
+    });
+    setHiddenSections(next);
+  };
+
+  const handleSelectOnlyWithQty = () => {
+    const next: Record<string, boolean> = {};
+    allSections.forEach(s => {
+      const qty = grandTotal.sectionTotals[s] ?? sectionStats[s]?.totalQty ?? 0;
+      if (qty <= 0) {
+        next[s] = true;
+      }
+    });
+    setHiddenSections(next);
+    setAutoHideEmptySectionCols(false);
+  };
+
+  const handleInvertSections = () => {
+    const next: Record<string, boolean> = {};
+    allSections.forEach(s => {
+      const totalQty = grandTotal.sectionTotals[s] || 0;
+      const isAutoHidden = autoHideEmptySectionCols && totalQty <= 0;
+      const isCurrentlyVisible = !hiddenSections[s] && !isAutoHidden;
+      next[s] = isCurrentlyVisible;
+    });
+    setHiddenSections(next);
+    setAutoHideEmptySectionCols(false);
+  };
+
+  const toggleSingleSection = (sec: string) => {
+    const totalQty = grandTotal.sectionTotals[sec] || 0;
+    const isAutoHidden = autoHideEmptySectionCols && totalQty <= 0;
+    const isChecked = !hiddenSections[sec] && !isAutoHidden;
+
+    if (isAutoHidden) {
+      setAutoHideEmptySectionCols(false);
+      setHiddenSections(prev => {
+        const copy = { ...prev };
+        delete copy[sec];
+        return copy;
+      });
+    } else {
+      setHiddenSections(prev => ({
+        ...prev,
+        [sec]: isChecked
+      }));
+    }
+  };
+
+  const filteredSectionsForFilter = useMemo(() => {
+    if (!sectionFilterSearch.trim()) return allSections;
+    const q = sectionFilterSearch.toLowerCase();
+    return allSections.filter(s => s.toLowerCase().includes(q));
+  }, [allSections, sectionFilterSearch]);
+
   // Total items count across groups
   const totalItemCount = useMemo(() => {
     return groupedData.reduce((sum: number, g: MatrixCategoryGroup) => sum + g.items.length, 0);
@@ -322,7 +422,8 @@ export default function CategoryMatrixView({
       await exportStyledExcel({
         projectName: projectName || '기계설비_공정분리',
         items,
-        categories
+        categories,
+        hidePriceAndAmount
       });
     } catch (err) {
       console.error('Export failed', err);
@@ -407,6 +508,21 @@ export default function CategoryMatrixView({
               <span>합수량 0 구간열 숨김 {autoHideEmptySectionCols ? 'ON' : 'OFF'}</span>
             </button>
 
+            {/* Hide Price and Amount Toggle - Highly Visible Accent Button */}
+            <button
+              type="button"
+              onClick={() => setHidePriceAndAmount(prev => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black border transition-all cursor-pointer shadow-xs ${
+                hidePriceAndAmount
+                  ? 'bg-amber-500 border-amber-600 text-white shadow-amber-200 ring-2 ring-amber-300'
+                  : 'bg-amber-50 hover:bg-amber-100 border-amber-300 text-amber-900'
+              }`}
+              title="내역물량 영역의 '단가' 및 '금액' 열을 숨기거나 표시합니다. (클릭하여 전환)"
+            >
+              {hidePriceAndAmount ? <EyeOff size={14} className="text-white" /> : <Eye size={14} className="text-amber-800" />}
+              <span>{hidePriceAndAmount ? '단가·금액 숨김 (적용중)' : '단가·금액 숨기기'}</span>
+            </button>
+
             {/* Page Guide Toggle */}
             <button
               type="button"
@@ -422,99 +538,21 @@ export default function CategoryMatrixView({
               <span>페이지 가이드 {showPageGuides ? 'ON' : 'OFF'}</span>
             </button>
 
-            {/* Section Column Filter */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsSectionPickerOpen(prev => !prev)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 transition-colors cursor-pointer"
-              >
-                <Columns size={14} />
-                <span>구간 열 ({visibleSections.length}/{allSections.length})</span>
-                <ChevronDown size={13} />
-              </button>
-
-              {isSectionPickerOpen && (
-                <div className="absolute right-0 top-full mt-1 w-72 p-3.5 bg-white rounded-2xl shadow-xl border border-slate-200 z-50 text-xs">
-                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
-                    <span className="font-bold text-slate-800">구간 열 표시 설정</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setHiddenSections({});
-                          setAutoHideEmptySectionCols(false);
-                        }}
-                        className="text-[11px] text-indigo-600 hover:underline font-bold"
-                      >
-                        전체 표시
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="mb-2 p-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-slate-700">합수량 0 구간열 자동 숨김</span>
-                    <input
-                      type="checkbox"
-                      checked={autoHideEmptySectionCols}
-                      onChange={e => setAutoHideEmptySectionCols(e.target.checked)}
-                      className="rounded text-indigo-600 focus:ring-0 cursor-pointer"
-                    />
-                  </div>
-
-                  <div className="max-h-64 overflow-y-auto space-y-1 pr-1">
-                    {allSections.map(sec => {
-                      const totalQty = grandTotal.sectionTotals[sec] || 0;
-                      const isAutoHidden = autoHideEmptySectionCols && totalQty <= 0;
-                      const isChecked = !hiddenSections[sec] && !isAutoHidden;
-
-                      return (
-                        <label
-                          key={sec}
-                          className={`flex items-center justify-between p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-slate-700 transition-colors ${
-                            isAutoHidden ? 'opacity-50 bg-slate-50/60' : ''
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5 min-w-0 pr-2">
-                            <span className="truncate text-xs">{sec}</span>
-                            {totalQty > 0 ? (
-                              <span className="text-[10px] text-indigo-600 font-bold shrink-0">
-                                ({totalQty.toLocaleString()})
-                              </span>
-                            ) : (
-                              <span className="text-[9px] px-1 py-0.2 bg-slate-200/80 text-slate-600 rounded font-medium shrink-0">
-                                0
-                              </span>
-                            )}
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => {
-                              if (isAutoHidden) {
-                                // If user manually checks an auto-hidden column, disable autoHide or remove from hidden
-                                setAutoHideEmptySectionCols(false);
-                                setHiddenSections(prev => {
-                                  const next = { ...prev };
-                                  delete next[sec];
-                                  return next;
-                                });
-                              } else {
-                                setHiddenSections(prev => ({
-                                  ...prev,
-                                  [sec]: isChecked
-                                }));
-                              }
-                            }}
-                            className="rounded text-indigo-600 focus:ring-0 cursor-pointer"
-                          />
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* Section Column Filter Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setIsSectionFilterExpanded(prev => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                isSectionFilterExpanded
+                  ? 'bg-indigo-50 border-indigo-300 text-indigo-700 shadow-xs'
+                  : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700'
+              }`}
+              title="상단 공정·구간(Section) 선택 체크박스 그룹 열기/닫기"
+            >
+              <SlidersHorizontal size={14} />
+              <span>구간 필터 ({visibleSections.length}/{allSections.length})</span>
+              {isSectionFilterExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </button>
 
             {/* Print Button */}
             <button
@@ -537,6 +575,195 @@ export default function CategoryMatrixView({
               <span>{isExporting ? '엑셀 생성 중...' : '엑셀 다운로드 (서식 포함)'}</span>
             </button>
           </div>
+        </div>
+
+        {/* Section (공정·구간) Filtering Checkbox Group Panel */}
+        <div className="mt-3 pt-3 border-t border-slate-200/80">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 mb-2.5">
+            {/* Title, Badge & Expand/Collapse Toggle */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsSectionFilterExpanded(prev => !prev)}
+                className="flex items-center gap-1.5 text-xs font-extrabold text-slate-800 hover:text-indigo-600 cursor-pointer transition-colors"
+              >
+                <SlidersHorizontal size={15} className="text-indigo-600" />
+                <span>공정·구간 (Section) 표시 필터</span>
+                {isSectionFilterExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+              <span className={`px-2 py-0.5 text-[11px] font-bold rounded-full border transition-colors ${
+                visibleSections.length > 0
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                  : 'bg-rose-50 text-rose-700 border-rose-200'
+              }`}>
+                선택: {visibleSections.length} / {allSections.length}개 구간
+              </span>
+              {visibleSections.length > 0 && (
+                <span className="text-[10px] text-slate-400 hidden sm:inline">
+                  (구간 가로 폭: {visibleSections.length * 80}px)
+                </span>
+              )}
+            </div>
+
+            {/* Quick Action Buttons & Search */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {/* Section Search in filter */}
+              {allSections.length > 4 && isSectionFilterExpanded && (
+                <div className="relative min-w-[140px] max-w-[190px]">
+                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={sectionFilterSearch}
+                    onChange={e => setSectionFilterSearch(e.target.value)}
+                    placeholder="구간 검색..."
+                    className="w-full pl-7 pr-6 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[11px] outline-none focus:border-indigo-500 focus:bg-white transition-all"
+                  />
+                  {sectionFilterSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setSectionFilterSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-[10px]"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Quick Select All */}
+              <button
+                type="button"
+                onClick={handleSelectAllSections}
+                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors cursor-pointer"
+                title="모든 공정·구간 열 표시"
+              >
+                <CheckSquare size={13} />
+                <span>전체 선택</span>
+              </button>
+
+              {/* Quick Deselect All */}
+              <button
+                type="button"
+                onClick={handleDeselectAllSections}
+                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-colors cursor-pointer"
+                title="모든 공정·구간 열 숨김 (품목 기본 정보만 보기)"
+              >
+                <Square size={13} />
+                <span>전체 해제</span>
+              </button>
+
+              {/* Only Sections With Quantity */}
+              <button
+                type="button"
+                onClick={handleSelectOnlyWithQty}
+                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 transition-colors cursor-pointer"
+                title="물량이 1 이상 집계된 구간만 선택"
+              >
+                <Sparkles size={13} />
+                <span>수량 있는 구간만</span>
+              </button>
+
+              {/* Invert Selection */}
+              <button
+                type="button"
+                onClick={handleInvertSections}
+                className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 transition-colors cursor-pointer"
+                title="선택된 구간과 숨겨진 구간 반전"
+              >
+                <RotateCcw size={12} />
+                <span>반전</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive Checkbox Chips Grid */}
+          {isSectionFilterExpanded && (
+            <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200/90 transition-all">
+              <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-1">
+                {filteredSectionsForFilter.length === 0 ? (
+                  <div className="text-xs text-slate-400 py-2 px-1">
+                    검색어와 일치하는 공정·구간이 없습니다.
+                  </div>
+                ) : (
+                  filteredSectionsForFilter.map(sec => {
+                    const totalQty = grandTotal.sectionTotals[sec] || 0;
+                    const isAutoHidden = autoHideEmptySectionCols && totalQty <= 0;
+                    const isChecked = !hiddenSections[sec] && !isAutoHidden;
+
+                    return (
+                      <button
+                        key={`chip-${sec}`}
+                        type="button"
+                        onClick={() => toggleSingleSection(sec)}
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs border transition-all cursor-pointer select-none text-left ${
+                          isChecked
+                            ? 'bg-white border-indigo-400 text-indigo-950 font-bold shadow-xs ring-2 ring-indigo-400/20'
+                            : 'bg-white/60 border-slate-200 text-slate-400 hover:bg-white hover:text-slate-600 opacity-70'
+                        }`}
+                        title={sec}
+                      >
+                        {/* Custom Styled Checkbox Indicator */}
+                        <div
+                          className={`w-4 h-4 rounded flex items-center justify-center transition-colors shrink-0 ${
+                            isChecked
+                              ? 'bg-indigo-600 text-white'
+                              : 'border border-slate-300 bg-slate-100'
+                          }`}
+                        >
+                          {isChecked && <Check size={12} strokeWidth={3} />}
+                        </div>
+
+                        {/* Section Name */}
+                        <span className="truncate max-w-[180px] leading-tight text-[11px]">
+                          {sec}
+                        </span>
+
+                        {/* Quantity Badge */}
+                        <span
+                          className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono shrink-0 ${
+                            totalQty > 0
+                              ? isChecked
+                                ? 'bg-indigo-100 text-indigo-800 font-extrabold'
+                                : 'bg-slate-200 text-slate-600 font-semibold'
+                              : 'bg-slate-100 text-slate-400'
+                          }`}
+                        >
+                          {totalQty > 0 ? `${totalQty.toLocaleString()}` : '0'}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Sub helper notes */}
+              <div className="flex flex-wrap items-center justify-between gap-2 mt-2 pt-2 border-t border-slate-200/60 text-[11px] text-slate-500">
+                <div className="flex items-center gap-2">
+                  <span>💡 구간 칩을 클릭하여 매트릭스 열을 즉시 켜고 끌 수 있습니다.</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-slate-600 font-semibold hover:text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={autoHideEmptySectionCols}
+                      onChange={e => setAutoHideEmptySectionCols(e.target.checked)}
+                      className="rounded text-indigo-600 focus:ring-0 cursor-pointer"
+                    />
+                    <span>합수량 0 구간열 자동 숨김</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-amber-800 font-bold hover:text-amber-950 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                    <input
+                      type="checkbox"
+                      checked={hidePriceAndAmount}
+                      onChange={e => setHidePriceAndAmount(e.target.checked)}
+                      className="rounded text-amber-600 focus:ring-0 cursor-pointer"
+                    />
+                    <span>내역 단가 및 금액 숨기기</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Filter Controls Row */}
@@ -615,7 +842,7 @@ export default function CategoryMatrixView({
         <table
           className="table-fixed border-collapse text-[11px] text-slate-800 leading-tight"
           style={{
-            width: `${Math.max(200 + 120 + 48 + 76 + 84 + 100 + parsedSections.length * 80, 628)}px`,
+            width: `${Math.max(200 + 120 + 48 + 76 + (hidePriceAndAmount ? 0 : 84 + 100) + parsedSections.length * 80, hidePriceAndAmount ? 444 : 628)}px`,
             minWidth: '100%'
           }}
         >
@@ -630,9 +857,9 @@ export default function CategoryMatrixView({
             {/* 4. 수량(M): 76px */}
             <col style={{ width: '76px', minWidth: '76px' }} />
             {/* 5. 단가: 84px */}
-            <col style={{ width: '84px', minWidth: '84px' }} />
+            {!hidePriceAndAmount && <col style={{ width: '84px', minWidth: '84px' }} />}
             {/* 6. 금액: 100px */}
-            <col style={{ width: '100px', minWidth: '100px' }} />
+            {!hidePriceAndAmount && <col style={{ width: '100px', minWidth: '100px' }} />}
             {/* 7+. 각 공정/구간 열: 고정 80px */}
             {parsedSections.map((sec, idx) => (
               <col key={`col-sec-${idx}`} style={{ width: '80px', minWidth: '80px' }} />
@@ -661,13 +888,32 @@ export default function CategoryMatrixView({
               >
                 단위
               </th>
-              {/* 내역물량 3-Column Spanning Header (76 + 84 + 100 = 260px) */}
-              <th
-                colSpan={3}
-                className="w-[260px] border-r-2 border-slate-400 px-3 py-1.5 text-center bg-[#CBD5E1] text-slate-900 font-extrabold"
-              >
-                내역물량
-              </th>
+              {/* 내역물량 Spanning Header (76px or 260px) */}
+              {hidePriceAndAmount ? (
+                <th
+                  rowSpan={2}
+                  onClick={() => setHidePriceAndAmount(false)}
+                  className="w-[76px] border-r-2 border-slate-400 px-2 py-2 text-right bg-[#CBD5E1] text-slate-900 font-extrabold cursor-pointer hover:bg-slate-300 group"
+                  title="클릭 시 단가/금액 열 다시 표시"
+                >
+                  <div className="flex items-center justify-end gap-1">
+                    <span>수량(M)</span>
+                    <Eye size={12} className="text-slate-500 group-hover:text-slate-900 transition-colors" />
+                  </div>
+                </th>
+              ) : (
+                <th
+                  colSpan={3}
+                  onClick={() => setHidePriceAndAmount(true)}
+                  className="w-[260px] border-r-2 border-slate-400 px-3 py-1.5 text-center bg-[#CBD5E1] text-slate-900 font-extrabold cursor-pointer hover:bg-slate-300 group"
+                  title="클릭 시 단가/금액 열 숨기기"
+                >
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span>내역물량</span>
+                    <EyeOff size={13} className="text-slate-500 group-hover:text-slate-900 transition-colors" />
+                  </div>
+                </th>
+              )}
               {/* Section Matrix 2-Tier Headers */}
               {parsedSections.map((sec, idx) => (
                 <th
@@ -682,16 +928,20 @@ export default function CategoryMatrixView({
 
             {/* Bottom Tier Header */}
             <tr className="border-b-2 border-slate-400 bg-[#F1F5F9] font-bold text-center text-[10px]">
-              {/* Sub-headers for 내역물량 */}
-              <th className="w-[76px] border-r border-slate-300 px-2 py-1 text-right bg-[#F1F5F9] truncate">
-                수량(M)
-              </th>
-              <th className="w-[84px] border-r border-slate-300 px-2 py-1 text-right bg-[#F1F5F9] truncate">
-                단가
-              </th>
-              <th className="w-[100px] border-r-2 border-slate-400 px-2 py-1 text-right bg-[#E2E8F0] text-indigo-950 font-extrabold truncate">
-                금액
-              </th>
+              {/* Sub-headers for 내역물량 only rendered when hidePriceAndAmount is FALSE */}
+              {!hidePriceAndAmount && (
+                <>
+                  <th className="w-[76px] border-r border-slate-300 px-2 py-1 text-right bg-[#F1F5F9] truncate">
+                    수량(M)
+                  </th>
+                  <th className="w-[84px] border-r border-slate-300 px-2 py-1 text-right bg-[#F1F5F9] truncate">
+                    단가
+                  </th>
+                  <th className="w-[100px] border-r-2 border-slate-400 px-2 py-1 text-right bg-[#E2E8F0] text-indigo-950 font-extrabold truncate">
+                    금액
+                  </th>
+                </>
+              )}
               {/* Sub-headers for sections (e.g. 옥외 위생, 기계실, etc.) */}
               {parsedSections.map((sec, idx) => (
                 <th
@@ -710,7 +960,7 @@ export default function CategoryMatrixView({
             {groupedData.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6 + visibleSections.length}
+                  colSpan={(hidePriceAndAmount ? 4 : 6) + visibleSections.length}
                   className="py-16 text-center text-slate-400"
                 >
                   <Info size={32} className="mx-auto mb-2 text-slate-300" />
@@ -758,19 +1008,21 @@ export default function CategoryMatrixView({
                             </td>
 
                             {/* 수량(M) */}
-                            <td className="w-[76px] border-r border-slate-300 px-2 py-1.5 text-right font-mono font-bold text-slate-900 truncate">
+                            <td className={`w-[76px] ${hidePriceAndAmount ? 'border-r-2 border-slate-400 font-black text-indigo-950 bg-slate-50/30' : 'border-r border-slate-300 font-bold text-slate-900'} px-2 py-1.5 text-right font-mono truncate`}>
                               {item.totalQuantity > 0 ? item.totalQuantity.toLocaleString() : '-'}
                             </td>
 
-                            {/* 단가 */}
-                            <td className="w-[84px] border-r border-slate-300 px-2 py-1.5 text-right font-mono text-slate-600 truncate">
-                              {item.unitPrice > 0 ? item.unitPrice.toLocaleString() : '-'}
-                            </td>
-
-                            {/* 금액 */}
-                            <td className="w-[100px] border-r-2 border-slate-400 px-2 py-1.5 text-right font-mono font-bold text-slate-900 bg-slate-50/60 truncate">
-                              {item.totalAmount > 0 ? item.totalAmount.toLocaleString() : '-'}
-                            </td>
+                            {/* 단가 및 금액 */}
+                            {!hidePriceAndAmount && (
+                              <>
+                                <td className="w-[84px] border-r border-slate-300 px-2 py-1.5 text-right font-mono text-slate-600 truncate">
+                                  {item.unitPrice > 0 ? item.unitPrice.toLocaleString() : '-'}
+                                </td>
+                                <td className="w-[100px] border-r-2 border-slate-400 px-2 py-1.5 text-right font-mono font-bold text-slate-900 bg-slate-50/60 truncate">
+                                  {item.totalAmount > 0 ? item.totalAmount.toLocaleString() : '-'}
+                                </td>
+                              </>
+                            )}
 
                             {/* Section Quantities */}
                             {parsedSections.map((sec, sIdx) => {
@@ -819,19 +1071,21 @@ export default function CategoryMatrixView({
                       </td>
 
                       {/* Col 4: Subtotal Quantity */}
-                      <td className="w-[76px] border-r border-slate-400/80 px-2 py-2 text-right font-mono font-extrabold truncate">
+                      <td className={`w-[76px] ${hidePriceAndAmount ? 'border-r-2 border-slate-500' : 'border-r border-slate-400/80'} px-2 py-2 text-right font-mono font-extrabold truncate`}>
                         {group.subtotalQuantity > 0 ? group.subtotalQuantity.toLocaleString() : '-'}
                       </td>
 
-                      {/* Col 5: Unit Price Placeholder */}
-                      <td className="w-[84px] border-r border-slate-400/80 px-1 py-2 text-center text-slate-600 truncate">
-                        -
-                      </td>
-
-                      {/* Col 6: Subtotal Total Amount */}
-                      <td className="w-[100px] border-r-2 border-slate-500 px-2 py-2 text-right font-mono font-black text-slate-950 truncate">
-                        {group.subtotalAmount.toLocaleString()}
-                      </td>
+                      {/* Col 5 & 6: Unit Price Placeholder & Subtotal Total Amount */}
+                      {!hidePriceAndAmount && (
+                        <>
+                          <td className="w-[84px] border-r border-slate-400/80 px-1 py-2 text-center text-slate-600 truncate">
+                            -
+                          </td>
+                          <td className="w-[100px] border-r-2 border-slate-500 px-2 py-2 text-right font-mono font-black text-slate-950 truncate">
+                            {group.subtotalAmount.toLocaleString()}
+                          </td>
+                        </>
+                      )}
 
                       {/* Section Subtotal Quantities */}
                       {parsedSections.map((sec, sIdx) => {
@@ -855,7 +1109,7 @@ export default function CategoryMatrixView({
             {showPageGuides && groupedData.length > 0 && (
               <tr className="bg-slate-100 border-y border-dashed border-indigo-300 print:hidden select-none">
                 <td
-                  colSpan={6 + visibleSections.length}
+                  colSpan={(hidePriceAndAmount ? 4 : 6) + visibleSections.length}
                   className="py-1 text-center font-bold text-[10px] text-indigo-600 tracking-widest bg-indigo-50/70"
                 >
                   --- 인쇄 페이지 구분 기준 영역 (A4 / A3 가로 양식 매트릭스) ---
@@ -875,19 +1129,21 @@ export default function CategoryMatrixView({
                 </td>
 
                 {/* Grand Total Quantity */}
-                <td className="w-[76px] border-r border-slate-400 px-2 py-2.5 text-right font-mono font-black text-sm truncate">
+                <td className={`w-[76px] ${hidePriceAndAmount ? 'border-r-2 border-slate-500 font-black' : 'border-r border-slate-400'} px-2 py-2.5 text-right font-mono font-black text-sm truncate`}>
                   {grandTotal.totalQty.toLocaleString()}
                 </td>
 
-                {/* Blank Unit Price */}
-                <td className="w-[84px] border-r border-slate-400 px-1 py-2.5 text-center text-slate-500 truncate">
-                  -
-                </td>
-
-                {/* Grand Total Amount */}
-                <td className="w-[100px] border-r-2 border-slate-500 px-2 py-2.5 text-right font-mono font-black text-sm text-indigo-950 bg-[#B8D5E5] truncate">
-                  ₩{grandTotal.totalAmt.toLocaleString()}
-                </td>
+                {/* Col 5 & 6: Blank Unit Price & Grand Total Amount */}
+                {!hidePriceAndAmount && (
+                  <>
+                    <td className="w-[84px] border-r border-slate-400 px-1 py-2.5 text-center text-slate-500 truncate">
+                      -
+                    </td>
+                    <td className="w-[100px] border-r-2 border-slate-500 px-2 py-2.5 text-right font-mono font-black text-sm text-indigo-950 bg-[#B8D5E5] truncate">
+                      ₩{grandTotal.totalAmt.toLocaleString()}
+                    </td>
+                  </>
+                )}
 
                 {/* Grand Total Quantities per Section */}
                 {parsedSections.map((sec, sIdx) => {

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { SpecItem, ThemeType, Project, CustomClassificationRule } from './types';
+import { SpecItem, ThemeType, Project, CustomClassificationRule, INITIAL_CATEGORIES } from './types';
 import { autoClassify } from './utils/classifier';
 import { exportStyledExcel } from './utils/excelExport';
 import TemplateSelector from './components/TemplateSelector';
@@ -29,6 +29,8 @@ import {
   subscribeActiveSessionFromFirestore,
   saveCustomRulesToFirestore,
   subscribeCustomRulesFromFirestore,
+  saveCategoriesToFirestore,
+  subscribeCategoriesFromFirestore,
   isCloudQuotaExceeded,
   onQuotaStateChange
 } from './lib/firebase';
@@ -36,15 +38,7 @@ import {
 import * as XLSX from 'xlsx';
 import LZString from 'lz-string';
 
-const INITIAL_CATEGORIES = [
-  '백강관', '강관부속', 'STS위생관', 'STS위생부속', 'STS난방관', 'STS난방부속', 
-  '고강도PVC', 'PVC', 'PB', '냉매배관', '난방코일', '난방분배기', 
-  '밸브류', '수도계량기', '감압변', '스리브', '입상고정틀+내화충진재', 
-  '조립식가대', 'SUPPORT류', '마감자재', '통합거치대', '보온재', '소모잡자재', 
-  '공구손료', '안전장비류', '명판', '휀장비류', '기타자재', '지금자재', 
-  '외주', '가설공사'
-];
-
+const CATEGORIES_KEY = 'mechauto_categories';
 const STORAGE_KEY = 'mechauto_session_data';
 
 const SAMPLE_ITEMS: SpecItem[] = [
@@ -238,8 +232,39 @@ export default function App() {
   const [fontSize, setFontSize] = useState<number>(11);
   const [items, setItems] = useState<SpecItem[]>([]);
   const [activeTab, setActiveTab] = useState<'list' | 'matrix' | 'analysis'>('list');
-  const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
+  const [categories, setCategories] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(CATEGORIES_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const clean = parsed.filter(c => typeof c === 'string' && c.trim().length > 0);
+          if (clean.length > 0) {
+            return clean;
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error loading saved categories:', e);
+    }
+    return INITIAL_CATEGORIES;
+  });
   const [categoryManagerTab, setCategoryManagerTab] = useState<'categories' | 'rules'>('categories');
+
+  // Persist categories to local storage and Firestore
+  useEffect(() => {
+    try {
+      if (categories && categories.length > 0) {
+        localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
+        saveCategoriesToFirestore(categories).catch(err => {
+          console.warn('Failed to sync categories to Firestore:', err);
+        });
+      }
+    } catch (e) {
+      console.error('Error saving categories:', e);
+    }
+  }, [categories]);
+
   const [customClassificationRules, setCustomClassificationRules] = useState<CustomClassificationRule[]>(() => {
     try {
       const saved = localStorage.getItem('mechauto_custom_rules');
@@ -388,6 +413,18 @@ export default function App() {
       }
     });
 
+    // Subscribe to Firestore Categories
+    const unsubscribeCategories = subscribeCategoriesFromFirestore(firestoreCats => {
+      if (firestoreCats && firestoreCats.length > 0) {
+        setCategories(firestoreCats);
+        try {
+          localStorage.setItem(CATEGORIES_KEY, JSON.stringify(firestoreCats));
+        } catch (e) {
+          // ignore
+        }
+      }
+    });
+
     // Check Shared link or Firestore Active Session on Mount
     const checkSharedOrCloudSession = async () => {
       try {
@@ -503,6 +540,7 @@ export default function App() {
     return () => {
       unsubscribeProjects();
       unsubscribeRules();
+      unsubscribeCategories();
       if (unsubscribeActiveSession) unsubscribeActiveSession();
       unsubscribeQuota();
     };
@@ -522,11 +560,12 @@ export default function App() {
         theme,
         fontFamily,
         fontSize,
+        categories,
         timestamp: Date.now()
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
     }
-  }, [items, theme, fontFamily, fontSize]);
+  }, [items, theme, fontFamily, fontSize, categories]);
 
   // Real-time site-specific auto-saving hook (Syncs to Local immediately and Debounced Firestore Cloud)
   useEffect(() => {
@@ -957,6 +996,7 @@ export default function App() {
 
     // Setup new empty project instance
     const newProjId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+    const currentActiveCategories = categories && categories.length > 0 ? categories : INITIAL_CATEGORIES;
     const newProject: Project = {
       id: newProjId,
       name: name.trim(),
@@ -967,7 +1007,7 @@ export default function App() {
         fontFamily,
         fontSize
       },
-      categories: INITIAL_CATEGORIES,
+      categories: currentActiveCategories,
       updatedAt: Date.now(),
       status: 'working'
     };
@@ -991,7 +1031,7 @@ export default function App() {
       theme: theme || 'industrial',
       fontFamily,
       fontSize,
-      categories: INITIAL_CATEGORIES,
+      categories: currentActiveCategories,
       isLocked: false
     });
 
@@ -1092,6 +1132,9 @@ export default function App() {
       setTheme((pendingSession as any).theme);
       if ((pendingSession as any).fontFamily) setFontFamily((pendingSession as any).fontFamily);
       if ((pendingSession as any).fontSize) setFontSize((pendingSession as any).fontSize);
+      if ((pendingSession as any).categories && Array.isArray((pendingSession as any).categories) && (pendingSession as any).categories.length > 0) {
+        setCategories((pendingSession as any).categories);
+      }
       setIsProjectLocked(false);
       setIsRecoveryModalOpen(false);
       setPendingSession(null);
