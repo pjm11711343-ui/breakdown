@@ -28,6 +28,13 @@ export interface Project {
   updatedAt: number;
   status?: 'working' | 'completed';
   categoryEstimates?: Record<string, number>; // Manual input quantity/amount per category
+  // New project metadata fields
+  commencementDate?: string; // 착공일
+  completionDate?: string;   // 준공일
+  buildingCount?: string;    // 동수
+  householdCount?: string;   // 세대수
+  highestFloor?: string;     // 최상층
+  lowestFloor?: string;      // 최하층
 }
 
 export type ThemeType = 'industrial' | 'modern' | 'minimal' | 'high-density';

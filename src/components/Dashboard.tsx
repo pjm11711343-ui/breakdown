@@ -7,10 +7,41 @@ interface Props {
   items: SpecItem[];
   theme: ThemeType;
   onOpenSectionSummary: () => void;
+  // Project metadata
+  metadata?: {
+    commencementDate?: string;
+    completionDate?: string;
+    buildingCount?: string;
+    householdCount?: string;
+    highestFloor?: string;
+    lowestFloor?: string;
+  };
+  onUpdateMetadata?: (key: string, value: string) => void;
 }
 
-export default function Dashboard({ items, theme, onOpenSectionSummary }: Props) {
+export default function Dashboard({ 
+  items, 
+  theme, 
+  onOpenSectionSummary,
+  metadata = {},
+  onUpdateMetadata
+}: Props) {
   if (!items || items.length === 0) return null;
+
+  const MetadataInput = ({ label, value, field, placeholder }: { label: string, value?: string, field: string, placeholder: string }) => (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[9px] font-black uppercase opacity-50">{label}</span>
+      <input
+        type="text"
+        value={value || ''}
+        onChange={(e) => onUpdateMetadata?.(field, e.target.value)}
+        placeholder={placeholder}
+        className={`bg-transparent border-none p-0 text-[11px] font-bold focus:ring-0 outline-none placeholder:text-slate-400 ${
+          theme === 'high-density' ? 'text-black' : 'text-slate-700'
+        }`}
+      />
+    </div>
+  );
   
   // Material vs Labor calculation
   const getItemMaterialAmount = (item: SpecItem): number => {
@@ -69,6 +100,27 @@ export default function Dashboard({ items, theme, onOpenSectionSummary }: Props)
   if (theme === 'high-density') {
     return (
       <div className="border-b border-[#141414] bg-[#F4F4F2]">
+        <div className="grid grid-cols-3 lg:grid-cols-6 gap-0 border-b border-[#141414] bg-white/50">
+          <div className="p-2.5 border-r border-[#141414]">
+            <MetadataInput label="착공일" value={metadata.commencementDate} field="commencementDate" placeholder="202X.XX.XX" />
+          </div>
+          <div className="p-2.5 border-r border-[#141414]">
+            <MetadataInput label="준공일" value={metadata.completionDate} field="completionDate" placeholder="202X.XX.XX" />
+          </div>
+          <div className="p-2.5 border-r border-[#141414]">
+            <MetadataInput label="동수" value={metadata.buildingCount} field="buildingCount" placeholder="00개동" />
+          </div>
+          <div className="p-2.5 border-r border-[#141414]">
+            <MetadataInput label="세대수" value={metadata.householdCount} field="householdCount" placeholder="000세대" />
+          </div>
+          <div className="p-2.5 border-r border-[#141414]">
+            <MetadataInput label="최상층" value={metadata.highestFloor} field="highestFloor" placeholder="B0 / 00F" />
+          </div>
+          <div className="p-2.5">
+            <MetadataInput label="최하층" value={metadata.lowestFloor} field="lowestFloor" placeholder="B0 / 00F" />
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-0 border-b border-[#141414]">
           <div className="p-3.5 border-r border-b lg:border-b-0 border-[#141414] flex flex-col justify-between">
             <span className="text-[10px] uppercase opacity-60 font-black mb-1">총 계약 합계 금액</span>
@@ -134,9 +186,25 @@ export default function Dashboard({ items, theme, onOpenSectionSummary }: Props)
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+      {/* Project Info Card */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col gap-4">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-1.5 h-4 bg-indigo-600 rounded-full" />
+          <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">현장 개요 (Site Spec)</h3>
+        </div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <MetadataInput label="착공일" value={metadata.commencementDate} field="commencementDate" placeholder="202X.XX.XX" />
+          <MetadataInput label="준공일" value={metadata.completionDate} field="completionDate" placeholder="202X.XX.XX" />
+          <MetadataInput label="동수" value={metadata.buildingCount} field="buildingCount" placeholder="0개동" />
+          <MetadataInput label="세대수" value={metadata.householdCount} field="householdCount" placeholder="0세대" />
+          <MetadataInput label="최상층" value={metadata.highestFloor} field="highestFloor" placeholder="지상 00층" />
+          <MetadataInput label="최하층" value={metadata.lowestFloor} field="lowestFloor" placeholder="지하 0층" />
+        </div>
+      </div>
+
       {/* Summary Card with Material / Outsourcing split */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
+      <div className="lg:col-span-1 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
         <div>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2 text-slate-500">

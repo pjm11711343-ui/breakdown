@@ -415,6 +415,38 @@ export default function App() {
   
   const [categoryEstimates, setCategoryEstimates] = useState<Record<string, number>>({});
   
+  const [projectMetadata, setProjectMetadata] = useState<{
+    commencementDate?: string;
+    completionDate?: string;
+    buildingCount?: string;
+    householdCount?: string;
+    highestFloor?: string;
+    lowestFloor?: string;
+  }>({});
+
+  const handleUpdateProjectMetadata = (key: string, value: string) => {
+    setProjectMetadata(prev => {
+      const updated = {
+        ...prev,
+        [key]: value
+      };
+      
+      // Update local storage session
+      const sessionData = safeLocalStorage.getItem(STORAGE_KEY);
+      if (sessionData) {
+        try {
+          const parsed = JSON.parse(sessionData);
+          parsed.projectMetadata = updated;
+          safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+        } catch (e) {
+          console.warn('Failed to update local storage for project metadata', e);
+        }
+      }
+      
+      return updated;
+    });
+  };
+
   // Update manual estimate for a specific category
   const handleUpdateCategoryEstimate = (category: string, amount: number) => {
     setCategoryEstimates(prev => {
@@ -619,6 +651,14 @@ export default function App() {
                 }
                 if (cloudSession.projectName) setCurrentProjectName(cloudSession.projectName);
                 if (cloudSession.categoryEstimates) setCategoryEstimates(cloudSession.categoryEstimates);
+                setProjectMetadata({
+                  commencementDate: cloudSession.commencementDate,
+                  completionDate: cloudSession.completionDate,
+                  buildingCount: cloudSession.buildingCount,
+                  householdCount: cloudSession.householdCount,
+                  highestFloor: cloudSession.highestFloor,
+                  lowestFloor: cloudSession.lowestFloor,
+                });
                 setIsProjectLocked(!!cloudSession.isLocked);
                 return cloudSession.items;
               }
@@ -746,6 +786,7 @@ export default function App() {
             fontSize,
             categories,
             categoryEstimates,
+            ...projectMetadata,
             isLocked: isProjectLocked
           })
         );
@@ -772,7 +813,7 @@ export default function App() {
         clearTimeout(indicatorTimer);
       };
     }
-  }, [items, theme, fontFamily, fontSize, categories, categoryEstimates, currentProjectName, isAutoSaveActive, isProjectLocked]);
+  }, [items, theme, fontFamily, fontSize, categories, categoryEstimates, projectMetadata, currentProjectName, isAutoSaveActive, isProjectLocked]);
 
   const handleManualSave = () => {
     if (!theme) {
@@ -858,7 +899,9 @@ export default function App() {
         },
         categories,
         updatedAt: Date.now(),
-        status: projects.find(p => p.name === name)?.status || 'working'
+        status: projects.find(p => p.name === name)?.status || 'working',
+        categoryEstimates,
+        ...projectMetadata
       };
 
       setProjects(prev => {
@@ -908,6 +951,14 @@ export default function App() {
       setCategories(project.categories || INITIAL_CATEGORIES);
       setCurrentProjectName(project.name);
       setCategoryEstimates(project.categoryEstimates || {});
+      setProjectMetadata({
+        commencementDate: project.commencementDate,
+        completionDate: project.completionDate,
+        buildingCount: project.buildingCount,
+        householdCount: project.householdCount,
+        highestFloor: project.highestFloor,
+        lowestFloor: project.lowestFloor,
+      });
       
       // 세로(새로) 현장 선택 시 기본적으로 완료된 내역(completed) 상태 및 수정 락 활성화
       setIsProjectLocked(true);
@@ -2576,6 +2627,8 @@ export default function App() {
                     items={items} 
                     theme={theme} 
                     onOpenSectionSummary={() => setIsSectionSummaryOpen(true)} 
+                    metadata={projectMetadata}
+                    onUpdateMetadata={handleUpdateProjectMetadata}
                   />
                   <CategorySummaryCards 
                     items={items} 

@@ -263,6 +263,12 @@ export function subscribeProjectsFromFirestore(callback: (projects: Project[]) =
             config: data.config,
             categories: data.categories || [],
             categoryEstimates: data.categoryEstimates || {},
+            commencementDate: data.commencementDate,
+            completionDate: data.completionDate,
+            buildingCount: data.buildingCount,
+            householdCount: data.householdCount,
+            highestFloor: data.highestFloor,
+            lowestFloor: data.lowestFloor,
             updatedAt: data.updatedAt || Date.now(),
             status: data.status || 'working'
           });
@@ -294,6 +300,12 @@ export async function saveActiveSessionToFirestore(session: {
   categories: string[];
   categoryEstimates?: Record<string, number>;
   isLocked?: boolean;
+  commencementDate?: string;
+  completionDate?: string;
+  buildingCount?: string;
+  householdCount?: string;
+  highestFloor?: string;
+  lowestFloor?: string;
 }): Promise<void> {
   if (!checkQuotaState()) return;
 
@@ -308,6 +320,12 @@ export async function saveActiveSessionToFirestore(session: {
       fontSize: session.fontSize || 11,
       categories: session.categories || [],
       categoryEstimates: session.categoryEstimates || {},
+      commencementDate: session.commencementDate || '',
+      completionDate: session.completionDate || '',
+      buildingCount: session.buildingCount || '',
+      householdCount: session.householdCount || '',
+      highestFloor: session.highestFloor || '',
+      lowestFloor: session.lowestFloor || '',
       isLocked: !!session.isLocked,
       itemCount: session.items?.length || 0,
       updatedAt: Date.now(),
@@ -340,6 +358,12 @@ export function subscribeActiveSessionFromFirestore(
     categories: string[];
     categoryEstimates: Record<string, number>;
     isLocked: boolean;
+    commencementDate?: string;
+    completionDate?: string;
+    buildingCount?: string;
+    householdCount?: string;
+    highestFloor?: string;
+    lowestFloor?: string;
     updatedAt: number;
   } | null) => void
 ): () => void {
@@ -364,6 +388,12 @@ export function subscribeActiveSessionFromFirestore(
             categories: data.categories || [],
             categoryEstimates: data.categoryEstimates || {},
             isLocked: !!data.isLocked,
+            commencementDate: data.commencementDate,
+            completionDate: data.completionDate,
+            buildingCount: data.buildingCount,
+            householdCount: data.householdCount,
+            highestFloor: data.highestFloor,
+            lowestFloor: data.lowestFloor,
             updatedAt: data.updatedAt || 0
           });
         } else {
