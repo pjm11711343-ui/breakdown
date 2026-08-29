@@ -14,7 +14,7 @@ import {
   setLogLevel
 } from 'firebase/firestore';
 import LZString from 'lz-string';
-import { Project, SpecItem, CustomClassificationRule, ThemeType, AppConfig } from '../types';
+import { Project, SpecItem, CustomClassificationRule, ThemeType, AppConfig, LearnedMapping } from '../types';
 import config from '../../firebase-applet-config.json';
 
 // Silence verbose internal Firestore backoff logging
@@ -549,6 +549,74 @@ export function subscribeGlobalUIConfigFromFirestore(
     );
   } catch (err) {
     handleFirestoreError(err, 'setup ui config subscription');
+    return () => {};
+  }
+}
+
+/**
+ * 9. Learned classification mappings (Classification Recommendation Service)
+ */
+export async function saveLearnedMappingToFirestore(mapping: {
+  name: string;
+  specification: string;
+  category: string;
+}): Promise<void> {
+  if (!checkQuotaState()) return;
+  if (!mapping.name || !mapping.category) return;
+
+  try {
+    const id = encodeURIComponent(`${mapping.name.trim()}_${mapping.specification.trim()}`);
+    const mappingRef = doc(db, 'learned_mappings', id);
+    const docSnap = await getDoc(mappingRef);
+    
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      await setDoc(mappingRef, {
+        name: mapping.name.trim(),
+        specification: mapping.specification.trim(),
+        category: mapping.category,
+        hitCount: (data.hitCount || 0) + 1,
+        lastUpdatedAt: Date.now()
+      }, { merge: true });
+    } else {
+      await setDoc(mappingRef, {
+        name: mapping.name.trim(),
+        specification: mapping.specification.trim(),
+        category: mapping.category,
+        hitCount: 1,
+        lastUpdatedAt: Date.now()
+      });
+    }
+  } catch (err) {
+    handleFirestoreError(err, 'saveLearnedMapping');
+  }
+}
+
+export function subscribeLearnedMappingsFromFirestore(
+  callback: (mappings: Record<string, string>) => void
+): () => void {
+  if (!checkQuotaState()) {
+    return () => {};
+  }
+  try {
+    const mappingsCol = collection(db, 'learned_mappings');
+    return onSnapshot(
+      mappingsCol,
+      snapshot => {
+        const mappings: Record<string, string> = {};
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data();
+          const key = `${data.name}_${data.specification}`;
+          mappings[key] = data.category;
+        });
+        callback(mappings);
+      },
+      error => {
+        handleFirestoreError(error, 'learned mappings subscription');
+      }
+    );
+  } catch (err) {
+    handleFirestoreError(err, 'setup learned mappings subscription');
     return () => {};
   }
 }

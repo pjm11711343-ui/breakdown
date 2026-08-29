@@ -33,6 +33,8 @@ import {
   subscribeCategoriesFromFirestore,
   saveGlobalUIConfigToFirestore,
   subscribeGlobalUIConfigFromFirestore,
+  saveLearnedMappingToFirestore,
+  subscribeLearnedMappingsFromFirestore,
   isCloudQuotaExceeded,
   onQuotaStateChange
 } from './lib/firebase';
@@ -346,6 +348,8 @@ export default function App() {
     ];
   });
 
+  const [learnedMappings, setLearnedMappings] = useState<Record<string, string>>({});
+
   // Persist classification rules to local
   useEffect(() => {
     safeLocalStorage.setItem('mechauto_custom_rules', JSON.stringify(customClassificationRules));
@@ -568,6 +572,11 @@ export default function App() {
       }
     });
 
+    // Subscribe to Learned Mappings (Classification Recommendation Service)
+    const unsubscribeLearned = subscribeLearnedMappingsFromFirestore(mappings => {
+      setLearnedMappings(mappings);
+    });
+
     // Check Shared link or Firestore Active Session on Mount
     const checkSharedOrCloudSession = async () => {
       try {
@@ -694,6 +703,7 @@ export default function App() {
       unsubscribeRules();
       unsubscribeCategories();
       unsubscribeUIConfig();
+      unsubscribeLearned();
       if (unsubscribeActiveSession) unsubscribeActiveSession();
       unsubscribeQuota();
     };
@@ -1436,10 +1446,19 @@ export default function App() {
       }
 
       setItems(prev => prev.map(item => 
-        item.id === id ? { ...item, category: newCategory, remark: newCategory } : item
+        item.id === id ? { ...item, category: newCategory, remark: newCategory, recommendationSource: 'manual' as const } : item
       ));
 
-      // Handle automatic rule creation/update if enabled
+      // 1. Classification Recommendation Service: Record this mapping
+      if (item.name && newCategory && newCategory !== oldCategory) {
+        saveLearnedMappingToFirestore({
+          name: item.name.trim(),
+          specification: (item.specification || '').trim(),
+          category: newCategory
+        }).catch(err => console.warn('Failed to save learned mapping:', err));
+      }
+
+      // 2. Handle automatic rule creation/update if enabled
       if (autoRuleCreation && item.name && newCategory && newCategory !== oldCategory) {
         const cleanName = item.name.trim();
         if (cleanName) {
@@ -1498,10 +1517,31 @@ export default function App() {
         handleAddCategory(newCategory);
       }
       setItems(prev => prev.map(item => 
-        ids.includes(item.id) ? { ...item, category: newCategory, remark: newCategory } : item
+        ids.includes(item.id) ? { ...item, category: newCategory, remark: newCategory, recommendationSource: 'manual' as const } : item
       ));
 
-      // Handle automatic rule creation for multiple items
+      // 1. Classification Recommendation Service: Record mappings for all unique name+spec combos
+      if (newCategory) {
+        const uniqueCombos = new Map<string, {name: string, spec: string}>();
+        targetItems.forEach(item => {
+          if (item.name) {
+            const key = `${item.name.trim()}_${(item.specification || '').trim()}`;
+            if (!uniqueCombos.has(key)) {
+              uniqueCombos.set(key, { name: item.name.trim(), spec: (item.specification || '').trim() });
+            }
+          }
+        });
+
+        uniqueCombos.forEach(combo => {
+          saveLearnedMappingToFirestore({
+            name: combo.name,
+            specification: combo.spec,
+            category: newCategory
+          }).catch(err => console.warn('Failed to save learned mapping (bulk):', err));
+        });
+      }
+
+      // 2. Handle automatic rule creation for multiple items
       // We only create rules for unique names in the selection
       if (autoRuleCreation && newCategory) {
         const uniqueNames = Array.from(new Set(targetItems.map(i => (i.name || '').trim()).filter(Boolean))) as string[];
@@ -1579,13 +1619,29 @@ export default function App() {
   const handleDataLoaded = (newItems: SpecItem[], wb: XLSX.WorkBook) => {
     // Apply automatic classification based on rules immediately upon upload
     const classifiedItems = newItems.map(item => {
+      // 1. Check History-based Learned Mappings First (Highest confidence)
+      const learnedKey = `${(item.name || '').trim()}_${(item.specification || '').trim()}`;
+      const learnedCategory = learnedMappings[learnedKey];
+      
+      if (learnedCategory) {
+        return {
+          ...item,
+          category: learnedCategory,
+          originalCategory: learnedCategory,
+          remark: learnedCategory,
+          recommendationSource: 'history' as const
+        };
+      }
+
+      // 2. Fallback to Rule-based Classification
       const { category, remark } = autoClassify(item, customClassificationRules);
       const finalCategory = category || item.category;
       return { 
         ...item, 
         category: finalCategory,
         originalCategory: finalCategory, // Store initial rule-based classification
-        remark: remark || item.remark 
+        remark: remark || item.remark,
+        recommendationSource: category ? 'rule' as const : 'ai' as const
       };
     });
     

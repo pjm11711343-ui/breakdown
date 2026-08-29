@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { SpecItem, ThemeType } from '../types';
-import { Download, Table, Cpu, Filter, Maximize2, RotateCcw, Zap, Sparkles, AlertTriangle, User, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Layers, X, Search } from 'lucide-react';
+import { Download, Table, Cpu, Filter, Maximize2, RotateCcw, Zap, Sparkles, AlertTriangle, User, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Layers, X, Search, History } from 'lucide-react';
 import ExcelUpload from './ExcelUpload';
 import * as XLSX from 'xlsx';
 import { exportStyledExcel } from '../utils/excelExport';
@@ -508,11 +508,19 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
     let colorClass = 'text-blue-600 bg-blue-50 border-blue-100';
 
     const isCustom = item.remark && item.remark.includes('사용자 정의 규칙');
-    const isManual = item.originalCategory && item.category !== item.originalCategory;
+    const isManual = item.recommendationSource === 'manual' || (item.originalCategory && item.category !== item.originalCategory);
+    const isHistory = item.recommendationSource === 'history';
     const isUnclassified = !item.category || item.category === '미분류';
     const isSimpleFallback = item.remark === item.category;
 
-    if (isManual) {
+    if (isHistory) {
+      type = 'custom';
+      titleText = '과거 학습 데이터 추천 🧠';
+      IconComponent = History;
+      colorClass = 'text-indigo-700 bg-indigo-50 border-indigo-200';
+      descriptionText = '과거에 동일한 품명/규격에 대해 사용자가 지정했던 분류를 자동으로 추천 적용했습니다.';
+      ruleDetails = `학습 기반 제안: "${item.category}"`;
+    } else if (isManual) {
       type = 'manual';
       titleText = '수동 재지정 처리 완료 👤';
       IconComponent = User;
@@ -556,7 +564,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
         >
           <IconComponent className="w-2.5 h-2.5 shrink-0" />
           <span className="text-[9px] leading-none uppercase">
-            {type === 'manual' ? '수동' : type === 'custom' ? '규칙' : type === 'warning' ? '미지정' : 'AI'}
+            {type === 'manual' ? '수동' : isHistory ? '추천' : type === 'custom' ? '규칙' : type === 'warning' ? '미지정' : 'AI'}
           </span>
         </div>
 

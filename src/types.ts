@@ -17,6 +17,7 @@ export interface SpecItem {
   excelRowIdx?: number; // Original Excel row index
   memo?: string;       // 메모
   executionAmount?: number; // 수기 실행금액
+  recommendationSource?: 'ai' | 'history' | 'rule' | 'manual'; // 분류 근거
 }
 
 export interface Project {
@@ -47,6 +48,15 @@ export interface CustomClassificationRule {
   isEnabled: boolean;
   priority: number; // Higher number = higher priority
   description?: string;
+}
+
+export interface LearnedMapping {
+  id: string;
+  name: string;
+  specification: string;
+  category: string;
+  hitCount: number;
+  lastUpdatedAt: number;
 }
 
 export interface AppConfig {
