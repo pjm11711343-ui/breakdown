@@ -27,6 +27,7 @@ export interface Project {
   categories: string[];
   updatedAt: number;
   status?: 'working' | 'completed';
+  categoryEstimates?: Record<string, number>; // Manual input quantity/amount per category
 }
 
 export type ThemeType = 'industrial' | 'modern' | 'minimal' | 'high-density';

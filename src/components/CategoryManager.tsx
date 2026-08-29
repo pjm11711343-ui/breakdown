@@ -63,12 +63,12 @@ export default function CategoryManager({
   const [rulePriority, setRulePriority] = useState<number>(10);
   const [showSystemRules, setShowSystemRules] = useState(false);
 
-  // Sync tab state when open/initialTab props change
+  // Sync tab state when initialTab prop changes
   useEffect(() => {
-    if (isOpen) {
+    if (initialTab) {
       setActiveTab(initialTab);
     }
-  }, [isOpen, initialTab]);
+  }, [initialTab]);
 
   // Set default rule category once categories load
   useEffect(() => {

@@ -413,6 +413,32 @@ export default function App() {
   const [isQuotaModalOpen, setIsQuotaModalOpen] = useState<boolean>(false);
   const [isLocalStorageQuotaExceeded, setIsLocalStorageQuotaExceeded] = useState<boolean>(false);
   
+  const [categoryEstimates, setCategoryEstimates] = useState<Record<string, number>>({});
+  
+  // Update manual estimate for a specific category
+  const handleUpdateCategoryEstimate = (category: string, amount: number) => {
+    setCategoryEstimates(prev => {
+      const updated = {
+        ...prev,
+        [category]: amount
+      };
+      
+      // Update local storage
+      const sessionData = safeLocalStorage.getItem(STORAGE_KEY);
+      if (sessionData) {
+        try {
+          const parsed = JSON.parse(sessionData);
+          parsed.categoryEstimates = updated;
+          safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+        } catch (e) {
+          console.warn('Failed to update local storage for category estimates', e);
+        }
+      }
+      
+      return updated;
+    });
+  };
+
   // Completion & Locking States
   const [isProjectLocked, setIsProjectLocked] = useState<boolean>(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState<boolean>(false);
@@ -592,6 +618,7 @@ export default function App() {
                   setCategories(prev => JSON.stringify(prev) === JSON.stringify(cloudSession.categories) ? prev : cloudSession.categories);
                 }
                 if (cloudSession.projectName) setCurrentProjectName(cloudSession.projectName);
+                if (cloudSession.categoryEstimates) setCategoryEstimates(cloudSession.categoryEstimates);
                 setIsProjectLocked(!!cloudSession.isLocked);
                 return cloudSession.items;
               }
@@ -647,6 +674,7 @@ export default function App() {
         fontFamily,
         fontSize,
         categories,
+        categoryEstimates,
         timestamp: Date.now()
       };
       safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
@@ -671,6 +699,7 @@ export default function App() {
           fontSize
         },
         categories,
+        categoryEstimates,
         updatedAt: Date.now(),
         status: existingProj?.status || (isProjectLocked ? 'completed' : 'working')
       };
@@ -716,6 +745,7 @@ export default function App() {
             fontFamily,
             fontSize,
             categories,
+            categoryEstimates,
             isLocked: isProjectLocked
           })
         );
@@ -742,7 +772,7 @@ export default function App() {
         clearTimeout(indicatorTimer);
       };
     }
-  }, [items, theme, fontFamily, fontSize, categories, currentProjectName, isAutoSaveActive, isProjectLocked]);
+  }, [items, theme, fontFamily, fontSize, categories, categoryEstimates, currentProjectName, isAutoSaveActive, isProjectLocked]);
 
   const handleManualSave = () => {
     if (!theme) {
@@ -877,6 +907,7 @@ export default function App() {
       */
       setCategories(project.categories || INITIAL_CATEGORIES);
       setCurrentProjectName(project.name);
+      setCategoryEstimates(project.categoryEstimates || {});
       
       // 세로(새로) 현장 선택 시 기본적으로 완료된 내역(completed) 상태 및 수정 락 활성화
       setIsProjectLocked(true);
@@ -1233,6 +1264,9 @@ export default function App() {
       if ((pendingSession as any).fontSize) setFontSize((pendingSession as any).fontSize);
       if ((pendingSession as any).categories && Array.isArray((pendingSession as any).categories) && (pendingSession as any).categories.length > 0) {
         setCategories((pendingSession as any).categories);
+      }
+      if ((pendingSession as any).categoryEstimates) {
+        setCategoryEstimates((pendingSession as any).categoryEstimates);
       }
       setIsProjectLocked(false);
       setIsRecoveryModalOpen(false);
@@ -2549,8 +2583,10 @@ export default function App() {
                     categories={INITIAL_CATEGORIES}
                     projectName={currentProjectName}
                     isProjectLocked={isProjectLocked}
+                    categoryEstimates={categoryEstimates}
                     onCategoryClick={(cat) => setCategoryFilter(cat)}
                     onUpdateSafetyAmount={handleUpdateSafetyAmount}
+                    onUpdateCategoryEstimate={handleUpdateCategoryEstimate}
                   />
                   {isSectionSummaryOpen && (
                     <SectionSummaryCards 

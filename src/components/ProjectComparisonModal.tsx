@@ -18,14 +18,14 @@ export default function ProjectComparisonModal({ onClose, projects, theme }: Omi
   const projectB = projects.find(p => p.id === projectBId);
 
   const calculateStats = (items: SpecItem[]) => {
-    const total = items.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
+    const total = items.reduce((sum, item) => sum + (item.amount || 0), 0);
     const material = items.reduce((sum, item) => sum + (item.materialAmount || 0), 0);
     const labor = items.reduce((sum, item) => sum + (item.laborAmount || 0), 0);
     
     const categoryBreakdown: Record<string, number> = {};
     items.forEach(item => {
       const cat = item.category || '미분류';
-      categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + (item.totalAmount || 0);
+      categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + (item.amount || 0);
     });
 
     return { total, material, labor, categoryBreakdown };

@@ -1,7 +1,7 @@
 import React from 'react';
 import { SpecItem, ThemeType } from '../types';
 import { motion } from 'motion/react';
-import { Tags, TrendingUp, PieChart as PieChartIcon, Building2, Package, Wrench, ShieldCheck, AlertCircle, ArrowUpRight } from 'lucide-react';
+import { Tags, TrendingUp, PieChart as PieChartIcon, Building2, Package, Wrench, ShieldCheck, AlertCircle, ArrowUpRight, Calculator } from 'lucide-react';
 
 interface Props {
   items: SpecItem[];
@@ -9,8 +9,10 @@ interface Props {
   categories: string[];
   projectName?: string;
   isProjectLocked?: boolean;
+  categoryEstimates?: Record<string, number>;
   onCategoryClick?: (category: string) => void;
   onUpdateSafetyAmount?: (amount: number) => void;
+  onUpdateCategoryEstimate?: (category: string, amount: number) => void;
 }
 
 export default function CategorySummaryCards({
@@ -19,11 +21,16 @@ export default function CategorySummaryCards({
   categories,
   projectName,
   isProjectLocked,
+  categoryEstimates = {},
   onCategoryClick,
-  onUpdateSafetyAmount
+  onUpdateSafetyAmount,
+  onUpdateCategoryEstimate
 }: Props) {
   const [isEditingSafety, setIsEditingSafety] = React.useState(false);
   const [safetyInputVal, setSafetyInputVal] = React.useState('');
+  const [showComparison, setShowComparison] = React.useState(false);
+  const [editingEstimate, setEditingEstimate] = React.useState<string | null>(null);
+  const [estimateInput, setEstimateInput] = React.useState('');
 
   if (items.length === 0) return null;
 
@@ -173,11 +180,24 @@ export default function CategorySummaryCards({
 
         {/* Section Header */}
         <div className="bg-[#F2F2F2] border-b border-[#141414] px-4 py-1.5 flex items-center justify-between text-black">
-          <div className="flex items-center gap-2">
-            <Tags size={13} />
-            <span className="text-[11px] font-black uppercase tracking-wider">
-              카테고리별 공정 분리 요약 (자재비 + 외주비 상세)
-            </span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Tags size={13} />
+              <span className="text-[11px] font-black uppercase tracking-wider">
+                카테고리별 공정 분리 요약
+              </span>
+            </div>
+            <button 
+              onClick={() => setShowComparison(!showComparison)}
+              className={`flex items-center gap-1.5 px-2 py-0.5 border text-[10px] font-black uppercase transition-all ${
+                showComparison 
+                ? 'bg-indigo-600 text-white border-indigo-700 shadow-[inset_0_1px_3px_rgba(0,0,0,0.2)]' 
+                : 'bg-white text-slate-700 border-[#141414] hover:bg-[#EBEAE8]'
+              }`}
+            >
+              <Calculator size={10} />
+              수기 물량 비교 {showComparison ? 'OFF' : 'ON'}
+            </button>
           </div>
           <div className="flex items-center gap-3 text-[11px] font-mono">
             <span className="font-bold">총 품목: {items.length}건</span>
@@ -247,15 +267,17 @@ export default function CategorySummaryCards({
                 <div 
                   key={cat.name} 
                   onClick={() => onCategoryClick?.(cat.name)}
-                  className="p-3 flex flex-col justify-between bg-indigo-50/30 hover:bg-indigo-50/50 transition-colors border-[#141414] cursor-pointer border-l-4 border-l-indigo-600"
+                  className={`p-3 flex flex-col justify-between bg-indigo-50/30 hover:bg-indigo-50/50 transition-colors border-[#141414] cursor-pointer border-l-4 border-l-indigo-600 ${showComparison ? 'ring-1 ring-inset ring-indigo-200' : ''}`}
                 >
                   <div className="flex justify-between items-start mb-1">
                     <span className="text-[11px] font-black text-indigo-700 uppercase truncate" title={cat.name}>🛡️ {cat.name}</span>
-                    <span className="text-[11px] font-mono font-bold bg-indigo-100 text-indigo-700 px-1 border border-indigo-200">
-                      {cat.percentage.toFixed(1)}%
-                    </span>
+                    {!showComparison && (
+                      <span className="text-[11px] font-mono font-bold bg-indigo-100 text-indigo-700 px-1 border border-indigo-200">
+                        {cat.percentage.toFixed(1)}%
+                      </span>
+                    )}
                   </div>
-                  <div className="flex flex-col">
+                  <div className="flex flex-col gap-1">
                     {isEditingSafety ? (
                       <div className="flex items-center gap-1 mt-1" onClick={(e) => e.stopPropagation()}>
                         <span className="text-xs font-mono font-bold text-indigo-600">₩</span>
@@ -264,16 +286,18 @@ export default function CategorySummaryCards({
                           value={safetyInputVal}
                           onChange={(e) => {
                             const val = e.target.value.replace(/[^0-9]/g, '');
-                            setSafetyInputVal(val);
+                            setSafetyInputVal(val ? Number(val).toLocaleString() : '');
                           }}
                           onBlur={() => {
                             setIsEditingSafety(false);
-                            onUpdateSafetyAmount?.(Number(safetyInputVal) || 0);
+                            const rawVal = safetyInputVal.replace(/[^0-9]/g, '');
+                            onUpdateSafetyAmount?.(Number(rawVal) || 0);
                           }}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               setIsEditingSafety(false);
-                              onUpdateSafetyAmount?.(Number(safetyInputVal) || 0);
+                              const rawVal = safetyInputVal.replace(/[^0-9]/g, '');
+                              onUpdateSafetyAmount?.(Number(rawVal) || 0);
                             } else if (e.key === 'Escape') {
                               setIsEditingSafety(false);
                             }
@@ -286,19 +310,65 @@ export default function CategorySummaryCards({
                     ) : (
                       <div className="flex items-center justify-between mt-1">
                         <span className="text-sm font-mono font-black italic tracking-tighter text-indigo-900">₩{cat.amount.toLocaleString()}</span>
-                        <span 
-                          className="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold bg-white px-1.5 py-0.5 rounded border border-indigo-200 shadow-xs flex items-center" 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSafetyInputVal(cat.amount ? String(cat.amount) : '');
-                            setIsEditingSafety(true);
-                          }}
-                        >
-                          수동 ✎
-                        </span>
+                        {!showComparison && (
+                          <span 
+                            className="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold bg-white px-1.5 py-0.5 rounded border border-indigo-200 shadow-xs flex items-center" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSafetyInputVal(cat.amount ? String(cat.amount) : '');
+                              setIsEditingSafety(true);
+                            }}
+                          >
+                            수동 ✎
+                          </span>
+                        )}
                       </div>
                     )}
-                    <span className="text-[9px] opacity-50 uppercase font-bold text-indigo-700 mt-1">{cat.count} items (수동입력 가능)</span>
+                    {!showComparison && <span className="text-[9px] opacity-50 uppercase font-bold text-indigo-700">{cat.count} items</span>}
+                    
+                    {showComparison && (
+                      <div className="mt-1 pt-1 border-t border-dashed border-indigo-200/50 space-y-1">
+                        <div className="flex items-center justify-between gap-1" onClick={(e) => e.stopPropagation()}>
+                          <span className="text-[9px] font-black text-indigo-600">수기:</span>
+                          <input
+                            type="text"
+                            value={editingEstimate === cat.name ? estimateInput : (categoryEstimates[cat.name] ? categoryEstimates[cat.name].toLocaleString() : '')}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/[^0-9]/g, '');
+                              setEstimateInput(val ? Number(val).toLocaleString() : '');
+                            }}
+                            onFocus={() => {
+                              setEditingEstimate(cat.name);
+                              setEstimateInput(categoryEstimates[cat.name] ? categoryEstimates[cat.name].toLocaleString() : '');
+                            }}
+                            onBlur={() => {
+                              if (editingEstimate === cat.name) {
+                                const rawVal = estimateInput.replace(/[^0-9]/g, '');
+                                onUpdateCategoryEstimate?.(cat.name, Number(rawVal) || 0);
+                                setEditingEstimate(null);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const rawVal = estimateInput.replace(/[^0-9]/g, '');
+                                onUpdateCategoryEstimate?.(cat.name, Number(rawVal) || 0);
+                                setEditingEstimate(null);
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }}
+                            className="w-full bg-white border border-indigo-200 px-1 py-0.5 text-[9px] font-mono font-bold text-indigo-900"
+                          />
+                        </div>
+                        {categoryEstimates[cat.name] > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-[8px] font-bold text-indigo-400">대비:</span>
+                            <span className={`text-[9px] font-mono font-black ${(categoryEstimates[cat.name] / cat.amount) > 1.0 ? 'text-red-600' : 'text-green-600'}`}>
+                              {cat.amount > 0 ? ((categoryEstimates[cat.name] / cat.amount) * 100).toFixed(1) : '0.0'}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -309,24 +379,72 @@ export default function CategorySummaryCards({
                 <div 
                   key={cat.name} 
                   onClick={() => onCategoryClick?.(cat.name)}
-                  className="p-3 flex flex-col justify-between bg-amber-50/50 hover:bg-amber-100/60 transition-colors border-[#141414] cursor-pointer border-l-4 border-l-amber-500"
+                  className={`p-3 flex flex-col justify-between bg-amber-50/50 hover:bg-amber-100/60 transition-colors border-[#141414] cursor-pointer border-l-4 border-l-amber-500 ${showComparison ? 'ring-1 ring-inset ring-amber-200' : ''}`}
                 >
                   <div className="flex justify-between items-start mb-1">
                     <span className="text-[11px] font-black text-amber-900 uppercase truncate flex items-center gap-1" title={cat.name}>
-                      🛠️ {cat.name} (외주비)
+                      🛠️ {cat.name}
                     </span>
-                    <span className="text-[11px] font-mono font-bold bg-amber-200 text-amber-900 px-1 border border-amber-300">
-                      {cat.percentage.toFixed(1)}%
-                    </span>
+                    {!showComparison && (
+                      <span className="text-[11px] font-mono font-bold bg-amber-200 text-amber-900 px-1 border border-amber-300">
+                        {cat.percentage.toFixed(1)}%
+                      </span>
+                    )}
                   </div>
-                  <div className="flex flex-col">
+                  <div className="flex flex-col gap-1">
                     <span className="text-sm font-mono font-black italic tracking-tighter text-amber-950">
                       ₩{cat.amount.toLocaleString()}
                     </span>
-                    <div className="flex justify-between items-center text-[10px] text-amber-800 mt-1 font-mono">
-                      <span>외주 품목: {cat.count}개</span>
-                      <span className="font-bold">외주 공정</span>
-                    </div>
+                    {!showComparison && (
+                      <div className="flex justify-between items-center text-[10px] text-amber-800 mt-1 font-mono">
+                        <span>{cat.count} items</span>
+                        <span className="font-bold">외주</span>
+                      </div>
+                    )}
+
+                    {showComparison && (
+                      <div className="mt-1 pt-1 border-t border-dashed border-amber-300/50 space-y-1">
+                        <div className="flex items-center justify-between gap-1" onClick={(e) => e.stopPropagation()}>
+                          <span className="text-[9px] font-black text-amber-700">수기:</span>
+                          <input
+                            type="text"
+                            value={editingEstimate === cat.name ? estimateInput : (categoryEstimates[cat.name] ? categoryEstimates[cat.name].toLocaleString() : '')}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/[^0-9]/g, '');
+                              setEstimateInput(val ? Number(val).toLocaleString() : '');
+                            }}
+                            onFocus={() => {
+                              setEditingEstimate(cat.name);
+                              setEstimateInput(categoryEstimates[cat.name] ? categoryEstimates[cat.name].toLocaleString() : '');
+                            }}
+                            onBlur={() => {
+                              if (editingEstimate === cat.name) {
+                                const rawVal = estimateInput.replace(/[^0-9]/g, '');
+                                onUpdateCategoryEstimate?.(cat.name, Number(rawVal) || 0);
+                                setEditingEstimate(null);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const rawVal = estimateInput.replace(/[^0-9]/g, '');
+                                onUpdateCategoryEstimate?.(cat.name, Number(rawVal) || 0);
+                                setEditingEstimate(null);
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }}
+                            className="w-full bg-white border border-amber-200 px-1 py-0.5 text-[9px] font-mono font-bold text-amber-900"
+                          />
+                        </div>
+                        {categoryEstimates[cat.name] > 0 && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-[8px] font-bold text-amber-600">대비:</span>
+                            <span className={`text-[9px] font-mono font-black ${(categoryEstimates[cat.name] / cat.amount) > 1.0 ? 'text-red-600' : 'text-green-600'}`}>
+                              {cat.amount > 0 ? ((categoryEstimates[cat.name] / cat.amount) * 100).toFixed(1) : '0.0'}%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -336,17 +454,72 @@ export default function CategorySummaryCards({
               <div 
                 key={cat.name} 
                 onClick={() => onCategoryClick?.(cat.name)}
-                className="p-3 flex flex-col justify-between hover:bg-[#F9F9F9] transition-colors border-[#141414] cursor-pointer"
+                className={`p-3 flex flex-col justify-between hover:bg-[#F9F9F9] transition-colors border-[#141414] cursor-pointer ${showComparison ? 'ring-1 ring-inset ring-indigo-200' : ''}`}
               >
                 <div className="flex justify-between items-start mb-1">
                   <span className="text-[11px] font-black text-slate-600 uppercase truncate" title={cat.name}>{cat.name}</span>
-                  <span className="text-[11px] font-mono font-bold bg-blue-100 text-blue-700 px-1 border border-blue-200">
-                    {cat.percentage.toFixed(1)}%
-                  </span>
+                  {!showComparison && (
+                    <span className="text-[11px] font-mono font-bold bg-blue-100 text-blue-700 px-1 border border-blue-200">
+                      {cat.percentage.toFixed(1)}%
+                    </span>
+                  )}
                 </div>
-                <div className="flex flex-col">
-                  <span className="text-sm font-mono font-black italic tracking-tighter">₩{cat.amount.toLocaleString()}</span>
-                  <span className="text-[10px] opacity-50 uppercase font-bold">{cat.count} items</span>
+                
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-mono font-black italic tracking-tighter">₩{cat.amount.toLocaleString()}</span>
+                    {!showComparison && <span className="text-[10px] opacity-50 uppercase font-bold">{cat.count} items</span>}
+                  </div>
+
+                  {showComparison && (
+                    <div className="mt-1 pt-1.5 border-t border-dashed border-slate-200 space-y-1.5">
+                      <div className="flex items-center justify-between gap-1" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-[9px] font-black text-indigo-600">수기:</span>
+                        <div className="relative flex-grow">
+                          <input
+                            type="text"
+                            value={editingEstimate === cat.name ? estimateInput : (categoryEstimates[cat.name] ? categoryEstimates[cat.name].toLocaleString() : '')}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/[^0-9]/g, '');
+                              setEstimateInput(val ? Number(val).toLocaleString() : '');
+                            }}
+                            onFocus={() => {
+                              setEditingEstimate(cat.name);
+                              setEstimateInput(categoryEstimates[cat.name] ? categoryEstimates[cat.name].toLocaleString() : '');
+                            }}
+                            onBlur={() => {
+                              if (editingEstimate === cat.name) {
+                                const rawVal = estimateInput.replace(/[^0-9]/g, '');
+                                onUpdateCategoryEstimate?.(cat.name, Number(rawVal) || 0);
+                                setEditingEstimate(null);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const rawVal = estimateInput.replace(/[^0-9]/g, '');
+                                onUpdateCategoryEstimate?.(cat.name, Number(rawVal) || 0);
+                                setEditingEstimate(null);
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }}
+                            placeholder="실행물량..."
+                            className="w-full bg-slate-50 border border-slate-200 px-1 py-0.5 text-[10px] font-mono font-bold text-indigo-900 outline-none focus:border-indigo-500 focus:bg-white"
+                          />
+                        </div>
+                      </div>
+                      
+                      {categoryEstimates[cat.name] && categoryEstimates[cat.name] > 0 ? (
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-black text-slate-400">대비:</span>
+                          <span className={`text-[10px] font-mono font-black ${(categoryEstimates[cat.name] / cat.amount) > 1.0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {cat.amount > 0 ? ((categoryEstimates[cat.name] / cat.amount) * 100).toFixed(1) : '0.0'}%
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-[8px] italic text-slate-400 text-center">수기 금액 입력 시 대비 계산</div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -469,9 +642,22 @@ export default function CategorySummaryCards({
               <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Category-wise Expenditure Summary (자재 + 외주)</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
-            <TrendingUp size={14} />
-            <span>총 {filteredFinalCategories.length}개 카테고리</span>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => setShowComparison(!showComparison)}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold transition-all border ${
+                showComparison 
+                ? 'bg-indigo-600 text-white border-indigo-500 shadow-md' 
+                : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600 shadow-sm'
+              }`}
+            >
+              <Calculator size={14} />
+              {showComparison ? '비교 모드 종료' : '수기 물량 비교'}
+            </button>
+            <div className="hidden sm:flex items-center gap-2 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
+              <TrendingUp size={14} />
+              <span>총 {filteredFinalCategories.length}개 카테고리</span>
+            </div>
           </div>
         </div>
 
@@ -585,16 +771,18 @@ export default function CategorySummaryCards({
                             value={safetyInputVal}
                             onChange={(e) => {
                               const val = e.target.value.replace(/[^0-9]/g, '');
-                              setSafetyInputVal(val);
+                              setSafetyInputVal(val ? Number(val).toLocaleString() : '');
                             }}
                             onBlur={() => {
                               setIsEditingSafety(false);
-                              onUpdateSafetyAmount?.(Number(safetyInputVal) || 0);
+                              const rawVal = safetyInputVal.replace(/[^0-9]/g, '');
+                              onUpdateSafetyAmount?.(Number(rawVal) || 0);
                             }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 setIsEditingSafety(false);
-                                onUpdateSafetyAmount?.(Number(safetyInputVal) || 0);
+                                const rawVal = safetyInputVal.replace(/[^0-9]/g, '');
+                                onUpdateSafetyAmount?.(Number(rawVal) || 0);
                               } else if (e.key === 'Escape') {
                                 setIsEditingSafety(false);
                               }
@@ -684,7 +872,9 @@ export default function CategorySummaryCards({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.02 }}
                 onClick={() => onCategoryClick?.(cat.name)}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:shadow-lg hover:border-indigo-200 hover:-translate-y-0.5 transition-all group relative overflow-hidden cursor-pointer flex flex-col justify-between"
+                className={`bg-white p-5 rounded-2xl border transition-all group relative overflow-hidden cursor-pointer flex flex-col justify-between ${
+                  showComparison ? 'border-indigo-300 shadow-md ring-1 ring-indigo-100' : 'border-slate-200 shadow-2xs hover:shadow-lg hover:border-indigo-200 hover:-translate-y-0.5'
+                }`}
               >
                 <div className="absolute top-0 right-0 w-16 h-16 -mr-4 -mt-4 bg-indigo-50 rounded-full blur-2xl group-hover:bg-indigo-100 transition-colors" />
                 
@@ -693,9 +883,11 @@ export default function CategorySummaryCards({
                     <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest group-hover:text-indigo-600 transition-colors truncate" title={cat.name}>
                       {cat.name}
                     </span>
-                    <span className="text-[11px] font-black text-indigo-700 bg-indigo-100/50 px-2 py-0.5 rounded-md border border-indigo-100">
-                      {cat.percentage.toFixed(1)}%
-                    </span>
+                    {!showComparison && (
+                      <span className="text-[11px] font-black text-indigo-700 bg-indigo-100/50 px-2 py-0.5 rounded-md border border-indigo-100">
+                        {cat.percentage.toFixed(1)}%
+                      </span>
+                    )}
                   </div>
                   
                   <div className="text-xl font-mono font-black text-slate-900 mb-2 group-hover:scale-[1.02] origin-left transition-transform">
@@ -704,18 +896,73 @@ export default function CategorySummaryCards({
                 </div>
                 
                 <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
-                  <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden border border-slate-100">
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.min(100, cat.percentage)}%` }}
-                      transition={{ duration: 0.8, ease: "easeOut", delay: idx * 0.03 }}
-                      className="h-full bg-indigo-500 rounded-full group-hover:bg-indigo-600 transition-colors shadow-[0_0_8px_rgba(79,70,229,0.3)]" 
-                    />
-                  </div>
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-[10px] text-slate-400 font-bold uppercase">포함 품목</span>
-                    <span className="text-[11px] text-slate-600 font-bold font-mono">{cat.count}건</span>
-                  </div>
+                  {showComparison ? (
+                    <div className="space-y-2">
+                      <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
+                        <label className="text-[9px] font-black text-indigo-500 uppercase">수기 실행물량</label>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-mono font-bold text-slate-400">₩</span>
+                          <input
+                            type="text"
+                            value={editingEstimate === cat.name ? estimateInput : (categoryEstimates[cat.name] ? categoryEstimates[cat.name].toLocaleString() : '')}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/[^0-9]/g, '');
+                              setEstimateInput(val ? Number(val).toLocaleString() : '');
+                            }}
+                            onFocus={() => {
+                              setEditingEstimate(cat.name);
+                              setEstimateInput(categoryEstimates[cat.name] ? categoryEstimates[cat.name].toLocaleString() : '');
+                            }}
+                            onBlur={() => {
+                              if (editingEstimate === cat.name) {
+                                const rawVal = estimateInput.replace(/[^0-9]/g, '');
+                                onUpdateCategoryEstimate?.(cat.name, Number(rawVal) || 0);
+                                setEditingEstimate(null);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const rawVal = estimateInput.replace(/[^0-9]/g, '');
+                                onUpdateCategoryEstimate?.(cat.name, Number(rawVal) || 0);
+                                setEditingEstimate(null);
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }}
+                            placeholder="실행 금액 입력"
+                            className="w-full bg-slate-50 border border-slate-200 px-2 py-1 text-xs font-mono font-bold text-indigo-900 rounded-md outline-none focus:border-indigo-500 focus:bg-white"
+                          />
+                        </div>
+                      </div>
+                      
+                      {categoryEstimates[cat.name] && categoryEstimates[cat.name] > 0 ? (
+                        <div className="flex items-center justify-between bg-indigo-50/50 px-2 py-1 rounded-md border border-indigo-100/50">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase">대비(Ratio)</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-xs font-mono font-black ${(categoryEstimates[cat.name] / cat.amount) > 1.0 ? 'text-red-600' : 'text-green-600'}`}>
+                              {cat.amount > 0 ? ((categoryEstimates[cat.name] / cat.amount) * 100).toFixed(1) : '0.0'}%
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] italic text-slate-400 text-center py-1">실행물량 입력 대기</div>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden border border-slate-100">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.min(100, cat.percentage)}%` }}
+                          transition={{ duration: 0.8, ease: "easeOut", delay: idx * 0.03 }}
+                          className="h-full bg-indigo-500 rounded-full group-hover:bg-indigo-600 transition-colors shadow-[0_0_8px_rgba(79,70,229,0.3)]" 
+                        />
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase">포함 품목</span>
+                        <span className="text-[11px] text-slate-600 font-bold font-mono">{cat.count}건</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               </motion.div>
             );

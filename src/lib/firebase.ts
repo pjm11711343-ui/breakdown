@@ -204,6 +204,7 @@ export async function saveProjectToFirestore(project: Project): Promise<void> {
       categories: project.categories || [],
       updatedAt: project.updatedAt || Date.now(),
       status: project.status || 'working',
+      categoryEstimates: project.categoryEstimates || {},
       itemCount: project.items?.length || 0,
       serverSyncedAt: serverTimestamp()
     };
@@ -261,6 +262,7 @@ export function subscribeProjectsFromFirestore(callback: (projects: Project[]) =
             theme: data.theme || 'industrial',
             config: data.config,
             categories: data.categories || [],
+            categoryEstimates: data.categoryEstimates || {},
             updatedAt: data.updatedAt || Date.now(),
             status: data.status || 'working'
           });
@@ -290,6 +292,7 @@ export async function saveActiveSessionToFirestore(session: {
   fontFamily: string;
   fontSize: number;
   categories: string[];
+  categoryEstimates?: Record<string, number>;
   isLocked?: boolean;
 }): Promise<void> {
   if (!checkQuotaState()) return;
@@ -304,6 +307,7 @@ export async function saveActiveSessionToFirestore(session: {
       fontFamily: session.fontFamily || '"Gulim", "굴림", Dotum, "돋움", sans-serif',
       fontSize: session.fontSize || 11,
       categories: session.categories || [],
+      categoryEstimates: session.categoryEstimates || {},
       isLocked: !!session.isLocked,
       itemCount: session.items?.length || 0,
       updatedAt: Date.now(),
@@ -334,6 +338,7 @@ export function subscribeActiveSessionFromFirestore(
     fontFamily: string;
     fontSize: number;
     categories: string[];
+    categoryEstimates: Record<string, number>;
     isLocked: boolean;
     updatedAt: number;
   } | null) => void
@@ -357,6 +362,7 @@ export function subscribeActiveSessionFromFirestore(
             fontFamily: data.fontFamily || '"Gulim", "굴림", Dotum, "돋움", sans-serif',
             fontSize: data.fontSize || 11,
             categories: data.categories || [],
+            categoryEstimates: data.categoryEstimates || {},
             isLocked: !!data.isLocked,
             updatedAt: data.updatedAt || 0
           });
