@@ -16,6 +16,7 @@ export interface SpecItem {
   originalCategory?: string; // Original classification before AI/manual changes
   excelRowIdx?: number; // Original Excel row index
   memo?: string;       // 메모
+  executionAmount?: number; // 수기 실행금액
 }
 
 export interface Project {

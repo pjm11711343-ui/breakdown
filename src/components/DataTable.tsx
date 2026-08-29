@@ -19,6 +19,7 @@ interface Props {
   onRevertCategory: (id: string) => void;
   onUpdateCategories: (ids: string[], category: string) => void;
   onUpdateMemo: (id: string, memo: string) => void;
+  onUpdateExecutionAmount: (id: string, amount: number) => void;
   onDataLoaded: (items: SpecItem[], workbook: XLSX.WorkBook) => void;
   categoryFilter?: string;
   onCategoryFilterChange?: (category: string) => void;
@@ -166,7 +167,7 @@ const ColumnFilterDropdown = ({
   );
 };
 
-export default function DataTable({ items, theme, categories, workbook, onClassify, isClassifying, onUpdateCategory, onAddCategory, onRevertCategory, onUpdateCategories, onUpdateMemo, onDataLoaded, categoryFilter = 'all', onCategoryFilterChange }: Props) {
+export default function DataTable({ items, theme, categories, workbook, onClassify, isClassifying, onUpdateCategory, onAddCategory, onRevertCategory, onUpdateCategories, onUpdateMemo, onUpdateExecutionAmount, onDataLoaded, categoryFilter = 'all', onCategoryFilterChange }: Props) {
   const [viewMode, setViewMode] = useState<'process' | 'category' | 'unclassified'>('process');
   const [showAggregated, setShowAggregated] = useState(false);
   const [sectionFilter, setSectionFilter] = useState<string>('all');
@@ -1115,8 +1116,8 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
 
       <div ref={tableContainerRef} className={`flex-grow overflow-hidden flex flex-col ${theme === 'high-density' ? '' : `rounded-xl border shadow-sm ${themeStyles.table}`}`}>
         <div className="flex-1 overflow-auto custom-scrollbar">
-          <div className="min-w-[1616px] w-full flex flex-col">
-            {/* Header: Exact matching 1616px columns with 2-tier sub-headers */}
+          <div className="min-w-[1816px] w-full flex flex-col">
+            {/* Header: Exact matching 1816px columns with 2-tier sub-headers */}
             <div className={`sticky top-0 z-20 select-none shadow-xs border-b ${
               theme === 'high-density'
                 ? 'bg-[#F2F2F2] text-[#141414] border-[#141414]'
@@ -1265,7 +1266,17 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                   메 모
                 </div>
 
-                {/* 15. Category: 170px */}
+                {/* 15. Execution Amount: 120px */}
+                <div className={`w-[120px] shrink-0 flex items-center px-2 border-r font-black ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                  실행금액
+                </div>
+
+                {/* 16. Comparison: 80px */}
+                <div className={`w-[80px] shrink-0 flex items-center justify-center border-r font-black ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                  대 비
+                </div>
+
+                {/* 17. Category: 170px */}
                 <div className="w-[170px] shrink-0 flex items-center justify-center font-black">
                   자재 분류
                 </div>
@@ -1309,6 +1320,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                 onAddCategory={onAddCategory}
                 onRevertCategory={onRevertCategory}
                 onUpdateMemo={onUpdateMemo}
+                onUpdateExecutionAmount={onUpdateExecutionAmount}
                 editingId={editingId}
                 editValue={editValue}
                 startEditing={startEditing}
@@ -1334,8 +1346,8 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                   ₩{allMatchingItems.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}
                 </div>
 
-                {/* Page Sum info: 404px (104+130+170) */}
-                <div className="w-[404px] shrink-0 px-4 text-xs text-slate-300 font-medium truncate">
+                {/* Page Sum info: 604px (104+130+120+80+170) */}
+                <div className="w-[604px] shrink-0 px-4 text-xs text-slate-300 font-medium truncate">
                   {pageSize > 0 && totalPages > 1 ? `현재 페이지 합계: ₩${pageItems.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}` : ''}
                 </div>
               </div>

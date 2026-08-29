@@ -1524,6 +1524,14 @@ export default function App() {
     });
   };
 
+  const handleUpdateExecutionAmount = (id: string, amount: number) => {
+    checkLockAndProceed(() => {
+      setItems(prev => prev.map(item => 
+        item.id === id ? { ...item, executionAmount: amount } : item
+      ));
+    });
+  };
+
   const handleUpdateSafetyAmount = (amount: number) => {
     checkLockAndProceed(() => {
       setItems(prev => {
@@ -2660,6 +2668,7 @@ export default function App() {
                     onRevertCategory={handleRevertCategory}
                     onUpdateCategories={handleUpdateCategories}
                     onUpdateMemo={handleUpdateMemo}
+                    onUpdateExecutionAmount={handleUpdateExecutionAmount}
                     onDataLoaded={handleDataLoaded}
                     categoryFilter={categoryFilter}
                     onCategoryFilterChange={setCategoryFilter}

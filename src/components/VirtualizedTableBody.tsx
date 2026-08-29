@@ -25,6 +25,7 @@ interface VirtualizedTableBodyProps {
   onAddCategory: (category: string) => void;
   onRevertCategory: (id: string) => void;
   onUpdateMemo: (id: string, memo: string) => void;
+  onUpdateExecutionAmount: (id: string, amount: number) => void;
   editingId: string | null;
   editValue: string;
   startEditing: (id: string, currentCategory: string) => void;
@@ -47,6 +48,7 @@ interface RowExtraProps {
   onUpdateCategory: (id: string, category: string) => void;
   onRevertCategory: (id: string) => void;
   onUpdateMemo: (id: string, memo: string) => void;
+  onUpdateExecutionAmount: (id: string, amount: number) => void;
 }
 
 const TableRowInner = React.memo(({
@@ -64,6 +66,7 @@ const TableRowInner = React.memo(({
   onUpdateCategory,
   onRevertCategory,
   onUpdateMemo,
+  onUpdateExecutionAmount,
   ariaAttributes
 }: {
   ariaAttributes?: {
@@ -84,7 +87,7 @@ const TableRowInner = React.memo(({
       <div 
         style={style} 
         {...ariaProps}
-        className={`flex items-center min-w-[1616px] w-full text-xs font-bold ${
+        className={`flex items-center min-w-[1816px] w-full text-xs font-bold ${
           isHighDensity ? 'bg-indigo-700 text-white border-[#141414]' : 'bg-indigo-900 text-white border-slate-800'
         } border-b select-none`}
       >
@@ -111,7 +114,7 @@ const TableRowInner = React.memo(({
         <div className="w-[198px] shrink-0 text-right font-mono font-black px-2 text-amber-300 text-xs">
           합: ₩{row.total.toLocaleString()}
         </div>
-        <div className="w-[404px] shrink-0 text-right font-mono text-[10px] px-4 text-indigo-200">
+        <div className="w-[604px] shrink-0 text-right font-mono text-[10px] px-4 text-indigo-200">
           {row.count} ITEMS
         </div>
       </div>
@@ -123,7 +126,7 @@ const TableRowInner = React.memo(({
       <div 
         style={style} 
         {...ariaProps}
-        className={`flex items-center min-w-[1616px] w-full text-[11px] font-bold ${
+        className={`flex items-center min-w-[1816px] w-full text-[11px] font-bold ${
           isHighDensity ? 'bg-slate-100 text-slate-800' : 'bg-slate-100/90 text-slate-700'
         } border-b border-slate-200 px-2 select-none`}
       >
@@ -132,7 +135,7 @@ const TableRowInner = React.memo(({
         <div className="w-[1118px] shrink-0 truncate font-mono px-3 text-slate-700">
           ↳ 공종: <span className="font-bold text-slate-900">{row.secName}</span>
         </div>
-        <div className="w-[404px] shrink-0 text-right text-slate-500 font-mono px-4 text-[10px]">
+        <div className="w-[604px] shrink-0 text-right text-slate-500 font-mono px-4 text-[10px]">
           {row.count}건
         </div>
       </div>
@@ -144,7 +147,7 @@ const TableRowInner = React.memo(({
       <div 
         style={style} 
         {...ariaProps}
-        className={`flex items-center min-w-[1616px] w-full text-xs font-bold ${
+        className={`flex items-center min-w-[1816px] w-full text-xs font-bold ${
           isHighDensity ? 'bg-[#00B0F0] text-white border-[#141414]' : 'bg-sky-600 text-white border-sky-700'
         } border-b select-none`}
       >
@@ -171,7 +174,7 @@ const TableRowInner = React.memo(({
         <div className="w-[198px] shrink-0 text-right font-mono font-black px-2 text-amber-200 text-xs">
           합: ₩{row.total.toLocaleString()}
         </div>
-        <div className="w-[404px] shrink-0 text-right font-mono text-[10px] px-4 text-sky-100">
+        <div className="w-[604px] shrink-0 text-right font-mono text-[10px] px-4 text-sky-100">
           {row.count} ITEMS
         </div>
       </div>
@@ -181,13 +184,16 @@ const TableRowInner = React.memo(({
   const { item, itemIdx, isAggregated } = row;
   const isSelected = selectedIds.has(item.id);
 
+  const ratio = item.amount > 0 ? ((item.executionAmount || 0) / item.amount) * 100 : 0;
+  const ratioColorClass = ratio > 100 ? 'text-red-600' : 'text-green-600';
+
   return (
     <div 
       style={style}
       {...ariaProps}
       onMouseDown={() => handleMouseDown(item.id, index)}
       onMouseEnter={() => handleMouseEnter(index)}
-      className={`flex items-center min-w-[1616px] w-full border-b text-xs select-none transition-colors ${
+      className={`flex items-center min-w-[1816px] w-full border-b text-xs select-none transition-colors ${
         isHighDensity
           ? (isSelected ? 'bg-[#C5E0B4] border-[#2d5a27]/30' : 'bg-white hover:bg-slate-50/80 border-[#141414]/15')
           : (isSelected ? 'bg-indigo-50/90 border-indigo-200' : 'bg-white hover:bg-slate-50 border-slate-100')
@@ -280,7 +286,30 @@ const TableRowInner = React.memo(({
         )}
       </div>
 
-      {/* 15. Category & Actions: 170px */}
+      {/* 15. Execution Amount: 120px */}
+      <div className={`w-[120px] h-full shrink-0 flex items-center px-2 ${borderCellClass}`} onClick={(e) => e.stopPropagation()}>
+        {!isAggregated ? (
+          <input 
+            type="text" 
+            value={item.executionAmount ? item.executionAmount.toLocaleString() : ''} 
+            onChange={(e) => {
+              const val = e.target.value.replace(/[^0-9]/g, '');
+              onUpdateExecutionAmount(item.id, Number(val) || 0);
+            }}
+            placeholder="실행금액..."
+            className="w-full px-1.5 py-0.5 text-[10px] font-mono border border-slate-200 rounded bg-white focus:border-indigo-500 outline-none placeholder:text-slate-300 text-right"
+          />
+        ) : (
+          <span className="text-slate-400 font-mono text-xs">-</span>
+        )}
+      </div>
+
+      {/* 16. Comparison: 80px */}
+      <div className={`w-[80px] h-full shrink-0 flex items-center justify-center font-mono font-bold text-[10px] ${borderCellClass} ${ratioColorClass}`}>
+        {ratio > 0 ? `${ratio.toFixed(1)}%` : '-'}
+      </div>
+
+      {/* 17. Category & Actions: 170px */}
       <div className="w-[170px] h-full shrink-0 px-2 flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
         {renderRuleIndicator(item)}
         {!isAggregated ? (
@@ -340,6 +369,7 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
   onAddCategory,
   onRevertCategory,
   onUpdateMemo,
+  onUpdateExecutionAmount,
   editingId,
   editValue,
   startEditing,
@@ -372,7 +402,8 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
     renderRuleIndicator,
     onUpdateCategory,
     onRevertCategory,
-    onUpdateMemo
+    onUpdateMemo,
+    onUpdateExecutionAmount
   }), [
     rows,
     isHighDensity,
@@ -385,7 +416,8 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
     renderRuleIndicator,
     onUpdateCategory,
     onRevertCategory,
-    onUpdateMemo
+    onUpdateMemo,
+    onUpdateExecutionAmount
   ]);
 
   return (
