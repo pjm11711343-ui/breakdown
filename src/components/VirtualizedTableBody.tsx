@@ -49,15 +49,7 @@ interface RowExtraProps {
   onUpdateMemo: (id: string, memo: string) => void;
 }
 
-const TableRowComponent: React.FC<{
-  ariaAttributes: {
-    "aria-posinset": number;
-    "aria-setsize": number;
-    role: "listitem";
-  };
-  index: number;
-  style: CSSProperties;
-} & RowExtraProps> = ({
+const TableRowComponent = React.memo(({
   index,
   style,
   rows,
@@ -71,8 +63,17 @@ const TableRowComponent: React.FC<{
   renderRuleIndicator,
   onUpdateCategory,
   onRevertCategory,
-  onUpdateMemo
-}) => {
+  onUpdateMemo,
+  ariaAttributes
+}: {
+  ariaAttributes: {
+    "aria-posinset": number;
+    "aria-setsize": number;
+    role: "listitem";
+  };
+  index: number;
+  style: CSSProperties;
+} & RowExtraProps) => {
   const row = rows[index];
   if (!row) return null;
 
@@ -80,6 +81,7 @@ const TableRowComponent: React.FC<{
     return (
       <div 
         style={style} 
+        {...ariaAttributes}
         className={`flex items-center min-w-[1616px] w-full text-xs font-bold ${
           isHighDensity ? 'bg-indigo-700 text-white border-[#141414]' : 'bg-indigo-900 text-white border-slate-800'
         } border-b select-none`}
@@ -118,6 +120,7 @@ const TableRowComponent: React.FC<{
     return (
       <div 
         style={style} 
+        {...ariaAttributes}
         className={`flex items-center min-w-[1616px] w-full text-[11px] font-bold ${
           isHighDensity ? 'bg-slate-100 text-slate-800' : 'bg-slate-100/90 text-slate-700'
         } border-b border-slate-200 px-2 select-none`}
@@ -138,6 +141,7 @@ const TableRowComponent: React.FC<{
     return (
       <div 
         style={style} 
+        {...ariaAttributes}
         className={`flex items-center min-w-[1616px] w-full text-xs font-bold ${
           isHighDensity ? 'bg-[#00B0F0] text-white border-[#141414]' : 'bg-sky-600 text-white border-sky-700'
         } border-b select-none`}
@@ -178,8 +182,9 @@ const TableRowComponent: React.FC<{
   return (
     <div 
       style={style}
-      onMouseDown={() => handleMouseDown(item.id, itemIdx)}
-      onMouseEnter={() => handleMouseEnter(itemIdx)}
+      {...ariaAttributes}
+      onMouseDown={() => handleMouseDown(item.id, index)}
+      onMouseEnter={() => handleMouseEnter(index)}
       className={`flex items-center min-w-[1616px] w-full border-b text-xs select-none transition-colors ${
         isHighDensity
           ? (isSelected ? 'bg-[#C5E0B4] border-[#2d5a27]/30' : 'bg-white hover:bg-slate-50/80 border-[#141414]/15')
@@ -192,7 +197,7 @@ const TableRowComponent: React.FC<{
           <input 
             type="checkbox" 
             checked={isSelected}
-            onChange={() => toggleOne(item.id, itemIdx)}
+            onChange={() => toggleOne(item.id, index)}
             className={isHighDensity ? 'accent-[#141414] cursor-pointer' : 'accent-indigo-600 cursor-pointer'}
           />
         )}
@@ -315,7 +320,7 @@ const TableRowComponent: React.FC<{
       </div>
     </div>
   );
-};
+});
 
 export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
   rows,
@@ -341,11 +346,19 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
   setEditValue,
   getCellPadding
 }) => {
-  const itemHeight = theme === 'high-density' ? 28 + (density - 2) * 4 : 36 + (density - 2) * 5;
+  const itemHeight = React.useMemo(() => 
+    theme === 'high-density' ? 28 + (density - 2) * 4 : 36 + (density - 2) * 5,
+    [theme, density]
+  );
+  
   const isHighDensity = theme === 'high-density';
-  const borderCellClass = isHighDensity ? 'border-r border-[#141414]/15' : 'border-r border-slate-100';
+  
+  const borderCellClass = React.useMemo(() => 
+    isHighDensity ? 'border-r border-[#141414]/15' : 'border-r border-slate-100',
+    [isHighDensity]
+  );
 
-  const rowProps: RowExtraProps = {
+  const rowProps: RowExtraProps = React.useMemo(() => ({
     rows,
     isHighDensity,
     borderCellClass,
@@ -358,7 +371,20 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
     onUpdateCategory,
     onRevertCategory,
     onUpdateMemo
-  };
+  }), [
+    rows,
+    isHighDensity,
+    borderCellClass,
+    selectedIds,
+    toggleOne,
+    toggleAll,
+    handleMouseDown,
+    handleMouseEnter,
+    renderRuleIndicator,
+    onUpdateCategory,
+    onRevertCategory,
+    onUpdateMemo
+  ]);
 
   return (
     <List

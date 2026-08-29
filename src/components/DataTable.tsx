@@ -350,7 +350,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
         const catItems = Object.values(sections).flat();
         const catMaterialTotal = catItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0);
         const catLaborTotal = catItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0);
-        const catTotal = catItems.reduce((sum, i) => sum + i.amount, 0);
+        const catTotal = catItems.reduce((sum, i) => sum + (i.amount || 0), 0);
 
         rows.push({
           type: 'category-header',
@@ -417,7 +417,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
       Object.entries(itemsBySection).forEach(([sectionName, sectionItems], index) => {
         const secMaterialTotal = sectionItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0);
         const secLaborTotal = sectionItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0);
-        const secTotal = sectionItems.reduce((sum, i) => sum + i.amount, 0);
+        const secTotal = sectionItems.reduce((sum, i) => sum + (i.amount || 0), 0);
 
         rows.push({
           type: 'section-header',
@@ -471,7 +471,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
     }
   }[theme];
 
-  const getCellPadding = (isHeader = false) => {
+  const getCellPadding = React.useCallback((isHeader = false) => {
     // Map density (1-5) to tailwind padding classes
     const pyMap = theme === 'high-density'
       ? ['py-0.5', 'py-0.5', 'py-1', 'py-1.5', 'py-2.5'] // Even tighter for high-density
@@ -488,9 +488,9 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
       : ['px-2', 'px-4', 'px-6', 'px-8', 'px-10'];
       
     return `${pyValue} ${pxMap[density - 1]}`;
-  };
+  }, [theme, density]);
 
-  const renderRuleIndicator = (item: SpecItem) => {
+  const renderRuleIndicator = React.useCallback((item: SpecItem) => {
     if (showAggregated) return null;
 
     let type: 'custom' | 'system' | 'manual' | 'warning' | 'auto' = 'auto';
@@ -568,7 +568,8 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
         </div>
       </div>
     );
-  };
+  }, [showAggregated]);
+
 
   const handleDownload = async () => {
     if (items.length === 0) {
@@ -971,7 +972,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
     );
   };
 
-  const toggleAll = (visibleItems: SpecItem[]) => {
+  const toggleAll = React.useCallback((visibleItems: SpecItem[]) => {
     const allVisibleSelected = visibleItems.every(item => selectedIds.has(item.id));
     const newSelected = new Set(selectedIds);
     if (allVisibleSelected) {
@@ -981,9 +982,9 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
     }
     setSelectedIds(newSelected);
     setSelectionHelper(null);
-  };
+  }, [selectedIds]);
 
-  const toggleOne = (id: string, index: number, isShiftKey = false) => {
+  const toggleOne = React.useCallback((id: string, index: number, isShiftKey = false) => {
     const newSelected = new Set(selectedIds);
     const wasSelected = newSelected.has(id);
     
@@ -1017,9 +1018,9 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
       }
     }
     setSelectedIds(newSelected);
-  };
+  }, [selectedIds, isDragging, items, selectionHelper]);
 
-  const handleMouseDown = (id: string, index: number) => {
+  const handleMouseDown = React.useCallback((id: string, index: number) => {
     setIsDragging(true);
     setDragStartIdx(index);
     const newSelected = new Set(selectedIds);
@@ -1029,24 +1030,25 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
       newSelected.add(id);
     }
     setSelectedIds(newSelected);
-  };
+  }, [selectedIds]);
 
-  const handleMouseEnter = (index: number) => {
+  const handleMouseEnter = React.useCallback((index: number) => {
     if (isDragging && dragStartIdx !== null) {
       const start = Math.min(dragStartIdx, index);
       const end = Math.max(dragStartIdx, index);
       const newSelected = new Set(selectedIds);
       
-      // Get the items in the current view to know which ones are in range
-      const visibleItems = pageItems;
+      // Use virtualRows to determine which items to select in the range
       for (let i = start; i <= end; i++) {
-        if (visibleItems[i]) {
-          newSelected.add(visibleItems[i].id);
+        const row = virtualRows[i];
+        if (row && row.type === 'item') {
+          newSelected.add(row.item.id);
         }
       }
       setSelectedIds(newSelected);
     }
-  };
+  }, [isDragging, dragStartIdx, selectedIds, virtualRows]);
+
 
   const handleMouseUp = () => {
     setIsDragging(false);

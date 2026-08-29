@@ -46,8 +46,7 @@ let isQuotaExceeded = (() => {
       }
     }
   } catch (e) {}
-  // Default to true since current project has hit daily quota limit
-  return true;
+  return false;
 })();
 
 let quotaListeners: ((exceeded: boolean) => void)[] = [];

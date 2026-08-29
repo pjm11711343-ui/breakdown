@@ -3,6 +3,8 @@ import { SpecItem, ThemeType } from '../types';
 import {
   Download,
   Printer,
+  FileDown,
+  Loader2,
   Search,
   Filter,
   Columns,
@@ -25,6 +27,7 @@ import {
   X
 } from 'lucide-react';
 import { exportStyledExcel } from '../utils/excelExport';
+import { exportMatrixToPDF } from '../utils/pdfExport';
 
 interface Props {
   items: SpecItem[];
@@ -72,6 +75,8 @@ export default function CategoryMatrixView({
   const [sectionFilterSearch, setSectionFilterSearch] = useState('');
   const [hidePriceAndAmount, setHidePriceAndAmount] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [pdfProgressText, setPdfProgressText] = useState('');
   const printContainerRef = useRef<HTMLDivElement>(null);
 
   // 1. Extract and normalize all unique sections (공종/구간)
@@ -432,6 +437,31 @@ export default function CategoryMatrixView({
     }
   };
 
+  // PDF Export handler
+  const handleExportPDF = async () => {
+    if (!printContainerRef.current) return;
+    try {
+      setIsExportingPDF(true);
+      setPdfProgressText('PDF 서식 구성 중...');
+      await exportMatrixToPDF({
+        element: printContainerRef.current,
+        filename: `${projectName || '기계설비'}_공정구간별_집계표`,
+        projectName: projectName || '기계설비 공정분리 현장',
+        categoryCount: groupedData.length,
+        itemCount: totalItemCount,
+        totalQty: grandTotal.totalQty,
+        totalAmt: grandTotal.totalAmt,
+        hidePriceAndAmount,
+        onProgress: (status) => setPdfProgressText(status)
+      });
+    } catch (err) {
+      console.error('PDF Export failed', err);
+    } finally {
+      setIsExportingPDF(false);
+      setPdfProgressText('');
+    }
+  };
+
   // Print handler
   const handlePrint = () => {
     window.print();
@@ -554,6 +584,27 @@ export default function CategoryMatrixView({
               {isSectionFilterExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
 
+            {/* PDF Export Button */}
+            <button
+              type="button"
+              onClick={handleExportPDF}
+              disabled={isExportingPDF}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white shadow-sm transition-all cursor-pointer disabled:opacity-50"
+              title="현재 대시보드 상태의 집계표를 서식과 요약 정보가 포함된 고화질 PDF 보고서 파일로 즉시 저장합니다."
+            >
+              {isExportingPDF ? (
+                <>
+                  <Loader2 size={14} className="animate-spin text-white" />
+                  <span>{pdfProgressText || 'PDF 생성 중...'}</span>
+                </>
+              ) : (
+                <>
+                  <FileDown size={14} />
+                  <span>PDF로 저장하기</span>
+                </>
+              )}
+            </button>
+
             {/* Print Button */}
             <button
               type="button"
@@ -561,7 +612,7 @@ export default function CategoryMatrixView({
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-900 text-white shadow-sm transition-all cursor-pointer"
             >
               <Printer size={14} />
-              <span>인쇄 / PDF 출력</span>
+              <span>인쇄 / 인쇄미리보기</span>
             </button>
 
             {/* Excel Download Button */}
@@ -833,12 +884,46 @@ export default function CategoryMatrixView({
       {/* Main Matrix Table Container */}
       <div
         ref={printContainerRef}
+        data-pdf-container="true"
         className={`relative overflow-x-auto rounded-2xl border shadow-md ${
           isHighDensity
             ? 'bg-white border-[#141414]'
             : 'bg-white border-slate-300'
         } print:border-none print:shadow-none print:rounded-none`}
       >
+        {/* Printable Report Header for Browser Print / PDF */}
+        <div className="hidden print:block p-4 mb-3 border-b-2 border-slate-900 bg-white">
+          <div className="flex justify-between items-end mb-2">
+            <div>
+              <h1 className="text-xl font-black text-slate-900 tracking-tight">
+                [ {projectName} ] 카테고리별 공정·구간별 집계표 (Matrix 보고서)
+              </h1>
+              <p className="text-xs font-bold text-slate-600 mt-1">도면 내역 표준 서식 (Category & Section Breakdown)</p>
+            </div>
+            <div className="text-right text-[10px] text-slate-500 font-mono">
+              <div>출력 일시: {new Date().toLocaleDateString('ko-KR')} {new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</div>
+              <div className="font-bold text-slate-700 mt-0.5">기계설비 공정분리 자동화 시스템</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-4 text-xs font-semibold text-slate-800 bg-slate-100 p-2.5 rounded border border-slate-300">
+            <div>집계: <strong>{groupedData.length}개 카테고리 / {totalItemCount.toLocaleString()}개 규격</strong></div>
+            <span className="text-slate-400">|</span>
+            <div>총 내역수량: <strong className="text-indigo-800 font-mono">{grandTotal.totalQty.toLocaleString()}</strong></div>
+            {!hidePriceAndAmount && (
+              <>
+                <span className="text-slate-400">|</span>
+                <div>총 공사비(금액): <strong className="text-indigo-950 font-mono">₩{grandTotal.totalAmt.toLocaleString()}</strong></div>
+              </>
+            )}
+            {hidePriceAndAmount && (
+              <>
+                <span className="text-slate-400">|</span>
+                <span className="text-amber-800 font-bold bg-amber-100 px-2 py-0.5 rounded border border-amber-200">[단가 및 금액 열 숨김 모드]</span>
+              </>
+            )}
+          </div>
+        </div>
+
         <table
           className="table-fixed border-collapse text-[11px] text-slate-800 leading-tight"
           style={{
