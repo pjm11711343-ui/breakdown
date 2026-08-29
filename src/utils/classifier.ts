@@ -144,12 +144,14 @@ export function autoClassify(
   item: SpecItem, 
   customRules?: CustomClassificationRule[]
 ): { category: string; remark: string } {
+  if (!item) return { category: '미분류', remark: '데이터 없음' };
+  
   // Rule: If material price is 0 but labor price/amount is greater than 0, classify as "미분류"
   if ((!item.materialUnitPrice || item.materialUnitPrice === 0) && (item.laborUnitPrice > 0 || item.laborAmount > 0)) {
     return { category: '미분류', remark: '노무비 단독 항목 (공정분리 미분류)' };
   }
 
-  const name = item.name.replace(/\s+/g, '');
+  const name = (item.name || '').replace(/\s+/g, '');
   const spec = (item.specification || '').replace(/\s+/g, '');
   let category = item.category || '';
 

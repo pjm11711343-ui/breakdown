@@ -22,7 +22,8 @@ import {
   Download,
   Upload,
   Calendar,
-  Package
+  Package,
+  ArrowLeftRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -44,6 +45,7 @@ interface Props {
   onAddNewProject: (name: string) => void;
   onNewProject: () => void;
   onOpenCategoryManager: (tab: 'categories' | 'rules') => void;
+  onOpenComparison: () => void;
   onOpenSettings: () => void;
   onResetTheme: () => void;
   onExportBackup: () => void;
@@ -68,6 +70,7 @@ export default function SiteListSidebar({
   onAddNewProject,
   onNewProject,
   onOpenCategoryManager,
+  onOpenComparison,
   onOpenSettings,
   onResetTheme,
   onExportBackup,
@@ -646,6 +649,20 @@ export default function SiteListSidebar({
         }`}
       >
         <div className="grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            onClick={onOpenComparison}
+            className={`col-span-2 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-[11px] font-black border transition-all cursor-pointer ${
+              isIndustrial
+                ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-300'
+                : isHighDensity
+                ? 'bg-white hover:bg-black/5 border-[#141414] text-black'
+                : 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-700 shadow-sm'
+            }`}
+          >
+            <ArrowLeftRight size={13} />
+            <span>현장 데이터 비교분석</span>
+          </button>
           <button
             type="button"
             onClick={() => onOpenCategoryManager('categories')}

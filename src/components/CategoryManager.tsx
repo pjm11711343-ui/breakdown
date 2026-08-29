@@ -5,7 +5,6 @@ import { CustomClassificationRule, INITIAL_CATEGORIES } from '../types';
 interface Props {
   categories: string[];
   onUpdate: (categories: string[]) => void;
-  isOpen: boolean;
   onClose: () => void;
   customRules: CustomClassificationRule[];
   onUpdateRules: (rules: CustomClassificationRule[]) => void;
@@ -41,7 +40,6 @@ const SYSTEM_MAPPING_RULES: Record<string, string> = {
 export default function CategoryManager({ 
   categories, 
   onUpdate, 
-  isOpen, 
   onClose,
   customRules = [],
   onUpdateRules,
@@ -78,8 +76,6 @@ export default function CategoryManager({
       setRuleCategory(categories[0]);
     }
   }, [categories, ruleCategory]);
-
-  if (!isOpen) return null;
 
   // Category Handlers
   const handleAddCategory = () => {

@@ -42,6 +42,64 @@ import LZString from 'lz-string';
 
 const CATEGORIES_KEY = 'mechauto_categories';
 const STORAGE_KEY = 'mechauto_session_data';
+const PROJECTS_KEY = 'mechauto_projects';
+
+// Improved safe storage with automatic compression for large payloads
+const safeLocalStorage = {
+  setItem: (key: string, value: string) => {
+    try {
+      let dataToStore = value;
+      // Compress if larger than 50KB
+      if (value.length > 50000) {
+        try {
+          const compressed = LZString.compressToEncodedURIComponent(value);
+          if (compressed) {
+            dataToStore = 'lz:' + compressed;
+          }
+        } catch (e) {
+          console.warn(`Compression failed for ${key}, storing raw`, e);
+        }
+      }
+      localStorage.setItem(key, dataToStore);
+      return true;
+    } catch (e) {
+      if (e instanceof Error && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+        console.warn(`LocalStorage quota exceeded for ${key}. Data not saved locally.`);
+        // Try a last-ditch effort: if it's the projects list, maybe clear the session data first
+        if (key === PROJECTS_KEY) {
+          try { localStorage.removeItem(STORAGE_KEY); } catch (err) {}
+        }
+      } else {
+        console.error(`LocalStorage error for ${key}:`, e);
+      }
+      return false;
+    }
+  },
+  getItem: (key: string): string | null => {
+    try {
+      const saved = localStorage.getItem(key);
+      if (!saved) return null;
+      if (saved.startsWith('lz:')) {
+        try {
+          const decompressed = LZString.decompressFromEncodedURIComponent(saved.slice(3));
+          return decompressed || null;
+        } catch (e) {
+          console.error(`Failed to decompress ${key}:`, e);
+          return null;
+        }
+      }
+      return saved;
+    } catch (e) {
+      console.error(`Error reading ${key} from localStorage:`, e);
+      return null;
+    }
+  },
+  removeItem: (key: string) => {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {}
+  }
+};
 
 const SAMPLE_ITEMS: SpecItem[] = [
   // 옥외배관공사
@@ -226,7 +284,7 @@ async function decompressState(encoded: string): Promise<any> {
   return JSON.parse(text);
 }
 
-const PROJECTS_KEY = 'mechauto_projects';
+import ProjectComparisonModal from './components/ProjectComparisonModal.tsx';
 
 export default function App() {
   const [theme, setTheme] = useState<ThemeType | null>(null);
@@ -236,7 +294,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'list' | 'matrix' | 'analysis'>('list');
   const [categories, setCategories] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem(CATEGORIES_KEY);
+      const saved = safeLocalStorage.getItem(CATEGORIES_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -255,12 +313,8 @@ export default function App() {
 
   // Persist categories to local storage
   useEffect(() => {
-    try {
-      if (categories && categories.length > 0) {
-        localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
-      }
-    } catch (e) {
-      console.error('Error saving categories:', e);
+    if (categories && categories.length > 0) {
+      safeLocalStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
     }
   }, [categories]);
 
@@ -273,7 +327,7 @@ export default function App() {
 
   const [customClassificationRules, setCustomClassificationRules] = useState<CustomClassificationRule[]>(() => {
     try {
-      const saved = localStorage.getItem('mechauto_custom_rules');
+      const saved = safeLocalStorage.getItem('mechauto_custom_rules');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
@@ -294,11 +348,7 @@ export default function App() {
 
   // Persist classification rules to local
   useEffect(() => {
-    try {
-      localStorage.setItem('mechauto_custom_rules', JSON.stringify(customClassificationRules));
-    } catch (e) {
-      console.error('Error saving custom rules:', e);
-    }
+    safeLocalStorage.setItem('mechauto_custom_rules', JSON.stringify(customClassificationRules));
   }, [customClassificationRules]);
 
   const handleUpdateRules = (newRules: CustomClassificationRule[]) => {
@@ -342,6 +392,7 @@ export default function App() {
   const [classifyProgress, setClassifyProgress] = useState(0);
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isComparisonOpen, setIsComparisonOpen] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   
@@ -360,6 +411,7 @@ export default function App() {
   const [manualSaveName, setManualSaveName] = useState('');
   const [isQuotaExceededState, setIsQuotaExceededState] = useState<boolean>(isCloudQuotaExceeded());
   const [isQuotaModalOpen, setIsQuotaModalOpen] = useState<boolean>(false);
+  const [isLocalStorageQuotaExceeded, setIsLocalStorageQuotaExceeded] = useState<boolean>(false);
   
   // Completion & Locking States
   const [isProjectLocked, setIsProjectLocked] = useState<boolean>(false);
@@ -383,13 +435,13 @@ export default function App() {
   const [shareUrl, setShareUrl] = useState('');
   const [copied, setCopied] = useState(false);
   const [autoRuleCreation, setAutoRuleCreation] = useState<boolean>(() => {
-    const saved = localStorage.getItem('mechauto_auto_rule_creation');
+    const saved = safeLocalStorage.getItem('mechauto_auto_rule_creation');
     return saved !== 'false'; // Default to true
   });
 
   // Persist auto rule creation setting
   useEffect(() => {
-    localStorage.setItem('mechauto_auto_rule_creation', autoRuleCreation.toString());
+    safeLocalStorage.setItem('mechauto_auto_rule_creation', autoRuleCreation.toString());
   }, [autoRuleCreation]);
 
   // Session Recovery State
@@ -399,7 +451,7 @@ export default function App() {
   // 1. Setup real-time Firestore listeners & Cloud Hydration
   useEffect(() => {
     // Load local projects cache first
-    const savedProjects = localStorage.getItem(PROJECTS_KEY);
+    const savedProjects = safeLocalStorage.getItem(PROJECTS_KEY);
     if (savedProjects) {
       try {
         setProjects(JSON.parse(savedProjects));
@@ -408,22 +460,21 @@ export default function App() {
       }
     }
 
-      // Subscribe to Firestore Projects for real-time multi-PC synchronization
-      const unsubscribeProjects = subscribeProjectsFromFirestore(firestoreProjects => {
-        if (firestoreProjects && firestoreProjects.length >= 0) {
-          setProjects(prev => {
-            if (JSON.stringify(prev) === JSON.stringify(firestoreProjects)) return prev;
-            return firestoreProjects;
-          });
-          try {
-            localStorage.setItem(PROJECTS_KEY, JSON.stringify(firestoreProjects));
-          } catch (e) {
-            // ignore
-          }
-          setCloudSyncStatus('synced');
-          setLastCloudSyncedTime(new Date().toTimeString().split(' ')[0]);
-        }
-      });
+    // Subscribe to Firestore Projects for real-time multi-PC synchronization
+    const unsubscribeProjects = subscribeProjectsFromFirestore(firestoreProjects => {
+      if (firestoreProjects && firestoreProjects.length >= 0) {
+        setProjects(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(firestoreProjects)) return prev;
+          return firestoreProjects;
+        });
+        
+        const success = safeLocalStorage.setItem(PROJECTS_KEY, JSON.stringify(firestoreProjects));
+        if (!success) setIsLocalStorageQuotaExceeded(true);
+        
+        setCloudSyncStatus('synced');
+        setLastCloudSyncedTime(new Date().toTimeString().split(' ')[0]);
+      }
+    });
 
     // Subscribe to Firestore Custom Rules
     const unsubscribeRules = subscribeCustomRulesFromFirestore(firestoreRules => {
@@ -433,11 +484,7 @@ export default function App() {
           if (JSON.stringify(prev) === JSON.stringify(firestoreRules)) return prev;
           return firestoreRules;
         });
-        try {
-          localStorage.setItem('mechauto_custom_rules', JSON.stringify(firestoreRules));
-        } catch (e) {
-          // ignore
-        }
+        safeLocalStorage.setItem('mechauto_custom_rules', JSON.stringify(firestoreRules));
       }
     });
 
@@ -449,11 +496,7 @@ export default function App() {
           if (JSON.stringify(prev) === JSON.stringify(firestoreCats)) return prev;
           return firestoreCats;
         });
-        try {
-          localStorage.setItem(CATEGORIES_KEY, JSON.stringify(firestoreCats));
-        } catch (e) {
-          // ignore
-        }
+        safeLocalStorage.setItem(CATEGORIES_KEY, JSON.stringify(firestoreCats));
       }
     });
 
@@ -556,7 +599,7 @@ export default function App() {
             });
           } else {
             // Fallback to local session recovery if cloud is empty
-            const saved = localStorage.getItem(STORAGE_KEY);
+            const saved = safeLocalStorage.getItem(STORAGE_KEY);
             if (saved) {
               try {
                 const parsed = JSON.parse(saved);
@@ -606,7 +649,7 @@ export default function App() {
         categories,
         timestamp: Date.now()
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
+      safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
     }
   }, [items, theme, fontFamily, fontSize, categories]);
 
@@ -638,9 +681,10 @@ export default function App() {
           const updated = prev.some(p => p.name === currentProjectName)
             ? prev.map(p => p.name === currentProjectName ? updatedProject : p)
             : [...prev, updatedProject];
-          try {
-            localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
-          } catch (e) {}
+          
+          const success = safeLocalStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+          if (!success) setIsLocalStorageQuotaExceeded(true);
+          
           return updated;
         });
       }
@@ -791,7 +835,8 @@ export default function App() {
         const updated = prev.some(p => p.name === name)
           ? prev.map(p => p.name === name ? newProject : p)
           : [...prev, newProject];
-        localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        const success = safeLocalStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        if (!success) setIsLocalStorageQuotaExceeded(true);
         return updated;
       });
 
@@ -843,7 +888,8 @@ export default function App() {
 
       setProjects(prev => {
         const updated = prev.map(p => p.id === project.id ? updatedProject : p);
-        localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        const success = safeLocalStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        if (!success) setIsLocalStorageQuotaExceeded(true);
         return updated;
       });
 
@@ -886,7 +932,8 @@ export default function App() {
 
       setProjects(prev => {
         const updated = prev.map(p => p.name === currentProjectName ? targetProject : p);
-        localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        const success = safeLocalStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        if (!success) setIsLocalStorageQuotaExceeded(true);
         return updated;
       });
     } else {
@@ -903,7 +950,8 @@ export default function App() {
       };
       setProjects(prev => {
         const updated = [...prev, targetProject];
-        localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        const success = safeLocalStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        if (!success) setIsLocalStorageQuotaExceeded(true);
         return updated;
       });
     }
@@ -955,7 +1003,8 @@ export default function App() {
           };
           setProjects(prev => {
             const updated = prev.map(p => p.name === currentProjectName ? updatedProj : p);
-            localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+            const success = safeLocalStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+            if (!success) setIsLocalStorageQuotaExceeded(true);
             return updated;
           });
           saveProjectToFirestore(updatedProj).catch(console.warn);
@@ -978,7 +1027,8 @@ export default function App() {
 
       setProjects(prev => {
         const updated = prev.filter(p => p.id !== id);
-        localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        const success = safeLocalStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        if (!success) setIsLocalStorageQuotaExceeded(true);
         return updated;
       });
       
@@ -1031,7 +1081,8 @@ export default function App() {
           const updated = prev.some(p => p.name === currentProjectName)
             ? prev.map(p => p.name === currentProjectName ? currentData : p)
             : [...prev, currentData];
-          localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+          const success = safeLocalStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+          if (!success) setIsLocalStorageQuotaExceeded(true);
           return updated;
         });
         saveProjectToFirestore(currentData).catch(console.warn);
@@ -1060,7 +1111,8 @@ export default function App() {
 
     setProjects(prev => {
       const updated = [...prev, newProject];
-      localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+      const success = safeLocalStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+      if (!success) setIsLocalStorageQuotaExceeded(true);
       return updated;
     });
 
@@ -1157,7 +1209,8 @@ export default function App() {
           }
         });
 
-        localStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        const success = safeLocalStorage.setItem(PROJECTS_KEY, JSON.stringify(updated));
+        if (!success) setIsLocalStorageQuotaExceeded(true);
         
         let msg = `성공적으로 데이터를 복원하였습니다.`;
         if (newCount > 0) msg += ` (신규 ${newCount}개 추가)`;
@@ -1189,10 +1242,16 @@ export default function App() {
   };
 
   const discardSession = () => {
-    localStorage.removeItem(STORAGE_KEY);
+    safeLocalStorage.removeItem(STORAGE_KEY);
     setIsRecoveryModalOpen(false);
     setPendingSession(null);
   };
+
+  useEffect(() => {
+    if (isLocalStorageQuotaExceeded) {
+      showNotification('브라우저 저장 용량이 초과되었습니다. 최신 데이터는 클라우드(Firestore)에 안전하게 저장되지만, 로컬 캐시 저장은 제한됩니다.', 'error');
+    }
+  }, [isLocalStorageQuotaExceeded]);
 
   const showNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setNotification({ message, type });
@@ -1360,7 +1419,7 @@ export default function App() {
       // Handle automatic rule creation for multiple items
       // We only create rules for unique names in the selection
       if (autoRuleCreation && newCategory) {
-        const uniqueNames = Array.from(new Set(targetItems.map(i => i.name.trim()).filter(Boolean))) as string[];
+        const uniqueNames = Array.from(new Set(targetItems.map(i => (i.name || '').trim()).filter(Boolean))) as string[];
         if (uniqueNames.length > 0) {
           uniqueNames.forEach(name => {
             updateRuleFromClassification(name, newCategory);
@@ -2403,6 +2462,10 @@ export default function App() {
           setIsSettingsOpen(true);
           setIsMobileSidebarOpen(false);
         }}
+        onOpenComparison={() => {
+          setIsComparisonOpen(true);
+          setIsMobileSidebarOpen(false);
+        }}
         onResetTheme={() => setTheme(null)}
         onExportBackup={handleExportBackup}
         onImportBackup={handleImportBackup}
@@ -2527,9 +2590,22 @@ export default function App() {
               ) : (
                 <PriceAnalysis items={items} theme={theme} />
               )}
+            </motion.div>
+          </AnimatePresence>
 
+          <AnimatePresence>
+            {isComparisonOpen && (
+              <ProjectComparisonModal
+                onClose={() => setIsComparisonOpen(false)}
+                projects={projects}
+                theme={theme}
+              />
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {isCategoryManagerOpen && (
               <CategoryManager 
-                isOpen={isCategoryManagerOpen}
                 onClose={() => setIsCategoryManagerOpen(false)}
                 categories={categories}
                 onUpdate={handleUpdateCategoryList}
@@ -2540,9 +2616,12 @@ export default function App() {
                 autoRuleCreation={autoRuleCreation}
                 onSetAutoRuleCreation={setAutoRuleCreation}
               />
+            )}
+          </AnimatePresence>
 
+          <AnimatePresence>
+            {isSettingsOpen && (
               <SettingsManager 
-                isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
                 theme={theme}
                 onThemeChange={setTheme}
@@ -2555,7 +2634,7 @@ export default function App() {
                   showNotification('데이터가 초기 샘플로 복구되었습니다.', 'info');
                 }}
               />
-            </motion.div>
+            )}
           </AnimatePresence>
         </div>
       </main>

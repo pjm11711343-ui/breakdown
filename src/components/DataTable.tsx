@@ -205,15 +205,21 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
 
   useEffect(() => {
     if (!tableContainerRef.current) return;
+    let rafId: number;
     const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.contentRect.height > 100) {
-          setContainerHeight(entry.contentRect.height);
-        }
+      if (!entries || entries.length === 0) return;
+      const height = entries[0].contentRect.height;
+      if (height > 100) {
+        rafId = window.requestAnimationFrame(() => {
+          setContainerHeight(height);
+        });
       }
     });
     observer.observe(tableContainerRef.current);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (rafId) window.cancelAnimationFrame(rafId);
+    };
   }, []);
 
   const startEditing = (id: string, currentCategory: string) => {
@@ -799,7 +805,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                )}
                <ExcelUpload onDataLoaded={onDataLoaded} />
                <button 
-                  onClick={onClassify}
+                  onClick={() => onClassify()}
                   disabled={isClassifying}
                   className="px-4 py-1 bg-[#141414] text-white text-[10px] font-bold uppercase tracking-widest hover:bg-slate-800 transition-all disabled:opacity-50"
                >
@@ -973,81 +979,89 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
   };
 
   const toggleAll = React.useCallback((visibleItems: SpecItem[]) => {
-    const allVisibleSelected = visibleItems.every(item => selectedIds.has(item.id));
-    const newSelected = new Set(selectedIds);
-    if (allVisibleSelected) {
-      visibleItems.forEach(item => newSelected.delete(item.id));
-    } else {
-      visibleItems.forEach(item => newSelected.add(item.id));
-    }
-    setSelectedIds(newSelected);
+    setSelectedIds(prev => {
+      const allVisibleSelected = visibleItems.every(item => prev.has(item.id));
+      const newSelected = new Set(prev);
+      if (allVisibleSelected) {
+        visibleItems.forEach(item => newSelected.delete(item.id));
+      } else {
+        visibleItems.forEach(item => newSelected.add(item.id));
+      }
+      return newSelected;
+    });
     setSelectionHelper(null);
-  }, [selectedIds]);
+  }, []);
 
   const toggleOne = React.useCallback((id: string, index: number, isShiftKey = false) => {
-    const newSelected = new Set(selectedIds);
-    const wasSelected = newSelected.has(id);
-    
-    if (wasSelected && !isDragging) {
-      newSelected.delete(id);
-      if (selectionHelper?.id === id) {
+    setSelectedIds(prev => {
+      const newSelected = new Set(prev);
+      const wasSelected = newSelected.has(id);
+      
+      if (wasSelected && !isDragging) {
+        newSelected.delete(id);
+      } else {
+        newSelected.add(id);
+      }
+      return newSelected;
+    });
+
+    // Handle selection helper after state update
+    const targetItem = items.find(i => i.id === id);
+    if (targetItem && targetItem.name) {
+      const sameNameItems = items.filter(i => 
+        i.name === targetItem.name && 
+        i.id !== id
+      );
+      
+      if (sameNameItems.length > 0) {
+        setSelectionHelper({
+          id,
+          name: targetItem.name,
+          count: sameNameItems.length,
+          ids: sameNameItems.map(i => i.id)
+        });
+      } else {
         setSelectionHelper(null);
       }
-    } else {
-      newSelected.add(id);
-      
-      // Smart Selection Helper: Find other items with same name that aren't selected yet
-      const targetItem = items.find(i => i.id === id);
-      if (targetItem && targetItem.name) {
-        const sameNameItems = items.filter(i => 
-          i.name === targetItem.name && 
-          i.id !== id && 
-          !newSelected.has(i.id)
-        );
-        
-        if (sameNameItems.length > 0) {
-          setSelectionHelper({
-            id,
-            name: targetItem.name,
-            count: sameNameItems.length,
-            ids: sameNameItems.map(i => i.id)
-          });
-        } else {
-          setSelectionHelper(null);
-        }
-      }
     }
-    setSelectedIds(newSelected);
-  }, [selectedIds, isDragging, items, selectionHelper]);
+  }, [isDragging, items]);
 
   const handleMouseDown = React.useCallback((id: string, index: number) => {
     setIsDragging(true);
     setDragStartIdx(index);
-    const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
-    setSelectedIds(newSelected);
-  }, [selectedIds]);
+    setSelectedIds(prev => {
+      const newSelected = new Set(prev);
+      if (newSelected.has(id)) {
+        newSelected.delete(id);
+      } else {
+        newSelected.add(id);
+      }
+      return newSelected;
+    });
+  }, []);
 
   const handleMouseEnter = React.useCallback((index: number) => {
     if (isDragging && dragStartIdx !== null) {
       const start = Math.min(dragStartIdx, index);
       const end = Math.max(dragStartIdx, index);
-      const newSelected = new Set(selectedIds);
       
-      // Use virtualRows to determine which items to select in the range
-      for (let i = start; i <= end; i++) {
-        const row = virtualRows[i];
-        if (row && row.type === 'item') {
-          newSelected.add(row.item.id);
+      setSelectedIds(prev => {
+        const newSelected = new Set(prev);
+        let changed = false;
+        // Use virtualRows to determine which items to select in the range
+        for (let i = start; i <= end; i++) {
+          const row = virtualRows[i];
+          if (row && row.type === 'item') {
+            if (!newSelected.has(row.item.id)) {
+              newSelected.add(row.item.id);
+              changed = true;
+            }
+          }
         }
-      }
-      setSelectedIds(newSelected);
+        return changed ? newSelected : prev;
+      });
     }
-  }, [isDragging, dragStartIdx, selectedIds, virtualRows]);
+  }, [isDragging, dragStartIdx, virtualRows]);
 
 
   const handleMouseUp = () => {
@@ -1085,7 +1099,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
           </div>
           <div className="flex gap-2 mt-2 sm:mt-0">
             <button 
-              onClick={onClassify}
+              onClick={() => onClassify()}
               disabled={isClassifying}
               className={`px-3 py-1.5 text-[10px] font-bold uppercase rounded transition-all flex items-center gap-1 shrink-0 ${
                 theme === 'high-density'

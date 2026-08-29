@@ -10,6 +10,8 @@ interface Props {
 }
 
 export default function SectionSummaryCards({ items, theme, onClose }: Props) {
+  if (!items || items.length === 0) return null;
+
   // Helper to calculate category amount without labor costs (노무비 제외한 순수 재료비/자재비 합산)
   const getItemCategoryAmount = (item: SpecItem): number => {
     if (item.materialAmount !== undefined && item.materialAmount !== null && item.materialAmount !== 0) {
@@ -46,8 +48,6 @@ export default function SectionSummaryCards({ items, theme, onClose }: Props) {
       itemCount: sectionItems.length
     };
   });
-
-  if (items.length === 0) return null;
 
   const content = (
     <div className={onClose ? "max-h-[85vh] overflow-y-auto p-1" : ""}>

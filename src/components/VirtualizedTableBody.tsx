@@ -49,7 +49,7 @@ interface RowExtraProps {
   onUpdateMemo: (id: string, memo: string) => void;
 }
 
-const TableRowComponent = React.memo(({
+const TableRowInner = React.memo(({
   index,
   style,
   rows,
@@ -66,7 +66,7 @@ const TableRowComponent = React.memo(({
   onUpdateMemo,
   ariaAttributes
 }: {
-  ariaAttributes: {
+  ariaAttributes?: {
     "aria-posinset": number;
     "aria-setsize": number;
     role: "listitem";
@@ -77,11 +77,13 @@ const TableRowComponent = React.memo(({
   const row = rows[index];
   if (!row) return null;
 
+  const ariaProps = ariaAttributes || {};
+
   if (row.type === 'category-header') {
     return (
       <div 
         style={style} 
-        {...ariaAttributes}
+        {...ariaProps}
         className={`flex items-center min-w-[1616px] w-full text-xs font-bold ${
           isHighDensity ? 'bg-indigo-700 text-white border-[#141414]' : 'bg-indigo-900 text-white border-slate-800'
         } border-b select-none`}
@@ -120,7 +122,7 @@ const TableRowComponent = React.memo(({
     return (
       <div 
         style={style} 
-        {...ariaAttributes}
+        {...ariaProps}
         className={`flex items-center min-w-[1616px] w-full text-[11px] font-bold ${
           isHighDensity ? 'bg-slate-100 text-slate-800' : 'bg-slate-100/90 text-slate-700'
         } border-b border-slate-200 px-2 select-none`}
@@ -141,7 +143,7 @@ const TableRowComponent = React.memo(({
     return (
       <div 
         style={style} 
-        {...ariaAttributes}
+        {...ariaProps}
         className={`flex items-center min-w-[1616px] w-full text-xs font-bold ${
           isHighDensity ? 'bg-[#00B0F0] text-white border-[#141414]' : 'bg-sky-600 text-white border-sky-700'
         } border-b select-none`}
@@ -182,7 +184,7 @@ const TableRowComponent = React.memo(({
   return (
     <div 
       style={style}
-      {...ariaAttributes}
+      {...ariaProps}
       onMouseDown={() => handleMouseDown(item.id, index)}
       onMouseEnter={() => handleMouseEnter(index)}
       className={`flex items-center min-w-[1616px] w-full border-b text-xs select-none transition-colors ${
@@ -391,7 +393,7 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
       style={{ height, width: '100%' }}
       rowCount={rows.length}
       rowHeight={itemHeight}
-      rowComponent={TableRowComponent as any}
+      rowComponent={TableRowInner as any}
       rowProps={rowProps}
       className="custom-scrollbar"
     />

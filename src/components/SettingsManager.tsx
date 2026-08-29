@@ -3,7 +3,6 @@ import { X, Settings, Database, Zap, Palette, Trash2, AlertTriangle } from 'luci
 import { ThemeType, AppConfig } from '../types';
 
 interface Props {
-  isOpen: boolean;
   onClose: () => void;
   theme: ThemeType;
   onThemeChange: (theme: ThemeType) => void;
@@ -15,7 +14,6 @@ interface Props {
 }
 
 export default function SettingsManager({ 
-  isOpen, 
   onClose, 
   theme, 
   onThemeChange, 
@@ -25,8 +23,6 @@ export default function SettingsManager({
   onFontSizeChange,
   onResetData 
 }: Props) {
-  if (!isOpen) return null;
-
   // Keep track of the initial font family when modal opened to support Cancel/Revert action
   const [initialFont] = React.useState(fontFamily);
   const [tempFontFamily, setTempFontFamily] = React.useState(fontFamily);

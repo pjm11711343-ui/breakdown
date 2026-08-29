@@ -10,6 +10,8 @@ interface Props {
 }
 
 export default function Dashboard({ items, theme, onOpenSectionSummary }: Props) {
+  if (!items || items.length === 0) return null;
+  
   // Material vs Labor calculation
   const getItemMaterialAmount = (item: SpecItem): number => {
     if (item.category === '외주') return item.materialAmount || 0;
