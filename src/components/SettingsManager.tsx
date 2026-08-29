@@ -183,23 +183,43 @@ export default function SettingsManager({
 
               {/* Font Size */}
               <div className="pt-3 border-t border-slate-200/60">
-                <div className="flex justify-between items-center mb-2">
+                <div className="flex justify-between items-center mb-3">
                   <label className="text-xs font-black text-slate-400 uppercase tracking-widest">글자 크기 (Font Size)</label>
-                  <span className="text-sm font-bold text-indigo-600">{fontSize}px</span>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => onFontSizeChange(Math.max(8, fontSize - 0.5))}
+                      className="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 active:scale-95 transition-all font-bold"
+                    >
+                      -
+                    </button>
+                    <input 
+                      type="number"
+                      min="8"
+                      max="24"
+                      step="0.5"
+                      value={fontSize}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val)) {
+                          onFontSizeChange(val);
+                        }
+                      }}
+                      className="w-16 p-2 bg-white border border-slate-200 rounded-lg text-center text-sm font-bold text-indigo-600 focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                    <button 
+                      onClick={() => onFontSizeChange(Math.min(24, fontSize + 0.5))}
+                      className="w-8 h-8 flex items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 active:scale-95 transition-all font-bold"
+                    >
+                      +
+                    </button>
+                    <span className="text-xs font-bold text-slate-400 ml-1">px</span>
+                  </div>
                 </div>
-                <input 
-                  type="range"
-                  min="8"
-                  max="16"
-                  step="0.5"
-                  value={fontSize}
-                  onChange={(e) => onFontSizeChange(parseFloat(e.target.value))}
-                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400 font-bold mt-1">
-                  <span>작게 (8px)</span>
+                
+                <div className="flex justify-between text-[10px] text-slate-400 font-bold mt-1 px-1">
+                  <span>최소 (8px)</span>
                   <span>기본 (11px)</span>
-                  <span>크게 (16px)</span>
+                  <span>최대 (24px)</span>
                 </div>
               </div>
             </div>

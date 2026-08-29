@@ -31,6 +31,8 @@ import {
   subscribeCustomRulesFromFirestore,
   saveCategoriesToFirestore,
   subscribeCategoriesFromFirestore,
+  saveGlobalUIConfigToFirestore,
+  subscribeGlobalUIConfigFromFirestore,
   isCloudQuotaExceeded,
   onQuotaStateChange
 } from './lib/firebase';
@@ -251,19 +253,23 @@ export default function App() {
   });
   const [categoryManagerTab, setCategoryManagerTab] = useState<'categories' | 'rules'>('categories');
 
-  // Persist categories to local storage and Firestore
+  // Persist categories to local storage
   useEffect(() => {
     try {
       if (categories && categories.length > 0) {
         localStorage.setItem(CATEGORIES_KEY, JSON.stringify(categories));
-        saveCategoriesToFirestore(categories).catch(err => {
-          console.warn('Failed to sync categories to Firestore:', err);
-        });
       }
     } catch (e) {
       console.error('Error saving categories:', e);
     }
   }, [categories]);
+
+  const handleUpdateCategoryList = (newCategories: string[]) => {
+    setCategories(newCategories);
+    saveCategoriesToFirestore(newCategories).catch(err => {
+      console.warn('Failed to sync categories to Firestore:', err);
+    });
+  };
 
   const [customClassificationRules, setCustomClassificationRules] = useState<CustomClassificationRule[]>(() => {
     try {
@@ -286,17 +292,21 @@ export default function App() {
     ];
   });
 
-  // Persist classification rules to local and Firestore
+  // Persist classification rules to local
   useEffect(() => {
     try {
       localStorage.setItem('mechauto_custom_rules', JSON.stringify(customClassificationRules));
-      saveCustomRulesToFirestore(customClassificationRules).catch(err => {
-        console.warn('Failed to sync rules to Firestore:', err);
-      });
     } catch (e) {
       console.error('Error saving custom rules:', e);
     }
   }, [customClassificationRules]);
+
+  const handleUpdateRules = (newRules: CustomClassificationRule[]) => {
+    setCustomClassificationRules(newRules);
+    saveCustomRulesToFirestore(newRules).catch(err => {
+      console.warn('Failed to sync rules to Firestore:', err);
+    });
+  };
 
   const handleApplyRules = (updatedRules = customClassificationRules) => {
     if (items.length === 0) {
@@ -356,6 +366,17 @@ export default function App() {
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState<boolean>(false);
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [onUnlockSuccessCallback, setOnUnlockSuccessCallback] = useState<(() => void) | null>(null);
+
+  // Unified global UI settings handlers
+  const handleGlobalFontSizeChange = (size: number) => {
+    setFontSize(size);
+    saveGlobalUIConfigToFirestore({ fontFamily, fontSize: size }).catch(console.warn);
+  };
+
+  const handleGlobalFontFamilyChange = (font: string) => {
+    setFontFamily(font);
+    saveGlobalUIConfigToFirestore({ fontFamily: font, fontSize }).catch(console.warn);
+  };
   
   // Share Project State
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -387,24 +408,31 @@ export default function App() {
       }
     }
 
-    // Subscribe to Firestore Projects for real-time multi-PC synchronization
-    const unsubscribeProjects = subscribeProjectsFromFirestore(firestoreProjects => {
-      if (firestoreProjects && firestoreProjects.length >= 0) {
-        setProjects(firestoreProjects);
-        try {
-          localStorage.setItem(PROJECTS_KEY, JSON.stringify(firestoreProjects));
-        } catch (e) {
-          // ignore
+      // Subscribe to Firestore Projects for real-time multi-PC synchronization
+      const unsubscribeProjects = subscribeProjectsFromFirestore(firestoreProjects => {
+        if (firestoreProjects && firestoreProjects.length >= 0) {
+          setProjects(prev => {
+            if (JSON.stringify(prev) === JSON.stringify(firestoreProjects)) return prev;
+            return firestoreProjects;
+          });
+          try {
+            localStorage.setItem(PROJECTS_KEY, JSON.stringify(firestoreProjects));
+          } catch (e) {
+            // ignore
+          }
+          setCloudSyncStatus('synced');
+          setLastCloudSyncedTime(new Date().toTimeString().split(' ')[0]);
         }
-        setCloudSyncStatus('synced');
-        setLastCloudSyncedTime(new Date().toTimeString().split(' ')[0]);
-      }
-    });
+      });
 
     // Subscribe to Firestore Custom Rules
     const unsubscribeRules = subscribeCustomRulesFromFirestore(firestoreRules => {
       if (firestoreRules && firestoreRules.length > 0) {
-        setCustomClassificationRules(firestoreRules);
+        setCustomClassificationRules(prev => {
+          // Break potential infinite loop by comparing content
+          if (JSON.stringify(prev) === JSON.stringify(firestoreRules)) return prev;
+          return firestoreRules;
+        });
         try {
           localStorage.setItem('mechauto_custom_rules', JSON.stringify(firestoreRules));
         } catch (e) {
@@ -416,12 +444,26 @@ export default function App() {
     // Subscribe to Firestore Categories
     const unsubscribeCategories = subscribeCategoriesFromFirestore(firestoreCats => {
       if (firestoreCats && firestoreCats.length > 0) {
-        setCategories(firestoreCats);
+        setCategories(prev => {
+          // Break potential infinite loop by comparing content
+          if (JSON.stringify(prev) === JSON.stringify(firestoreCats)) return prev;
+          return firestoreCats;
+        });
         try {
           localStorage.setItem(CATEGORIES_KEY, JSON.stringify(firestoreCats));
         } catch (e) {
           // ignore
         }
+      }
+    });
+
+    // Subscribe to Global UI Config (Font settings)
+    const unsubscribeUIConfig = subscribeGlobalUIConfigFromFirestore(config => {
+      if (config.fontFamily) {
+        setFontFamily(prev => prev === config.fontFamily ? prev : config.fontFamily);
+      }
+      if (config.fontSize) {
+        setFontSize(prev => prev === config.fontSize ? prev : config.fontSize);
       }
     });
 
@@ -503,9 +545,9 @@ export default function App() {
             setItems(prevItems => {
               if (prevItems.length === 0) {
                 if (cloudSession.theme) setTheme(cloudSession.theme);
-                if (cloudSession.fontFamily) setFontFamily(cloudSession.fontFamily);
-                if (cloudSession.fontSize) setFontSize(cloudSession.fontSize);
-                if (cloudSession.categories && cloudSession.categories.length > 0) setCategories(cloudSession.categories);
+                if (cloudSession.categories && cloudSession.categories.length > 0) {
+                  setCategories(prev => JSON.stringify(prev) === JSON.stringify(cloudSession.categories) ? prev : cloudSession.categories);
+                }
                 if (cloudSession.projectName) setCurrentProjectName(cloudSession.projectName);
                 setIsProjectLocked(!!cloudSession.isLocked);
                 return cloudSession.items;
@@ -541,6 +583,7 @@ export default function App() {
       unsubscribeProjects();
       unsubscribeRules();
       unsubscribeCategories();
+      unsubscribeUIConfig();
       if (unsubscribeActiveSession) unsubscribeActiveSession();
       unsubscribeQuota();
     };
@@ -780,10 +823,13 @@ export default function App() {
     try {
       setItems(project.items || []);
       setTheme(project.theme);
+      // We no longer override global font settings from per-project config to ensure "unified" experience
+      /* 
       if (project.config) {
         setFontFamily(project.config.fontFamily || '"Gulim", "굴림", Dotum, "돋움", sans-serif');
         setFontSize(project.config.fontSize || 11);
       }
+      */
       setCategories(project.categories || INITIAL_CATEGORIES);
       setCurrentProjectName(project.name);
       
@@ -807,8 +853,8 @@ export default function App() {
         projectName: project.name,
         items: project.items || [],
         theme: project.theme,
-        fontFamily: project.config?.fontFamily || '"Gulim", "굴림", Dotum, "돋움", sans-serif',
-        fontSize: project.config?.fontSize || 11,
+        fontFamily,
+        fontSize,
         categories: project.categories || INITIAL_CATEGORIES,
         isLocked: true
       }).catch(console.warn);
@@ -1228,7 +1274,7 @@ export default function App() {
 
   const handleAddCategory = (newCategory: string) => {
     if (newCategory && !categories.includes(newCategory)) {
-      setCategories(prev => [...prev, newCategory]);
+      handleUpdateCategoryList([...categories, newCategory]);
       showNotification(`신규 카테고리 [${newCategory}]가 추가되었습니다.`, 'success');
     }
   };
@@ -1260,33 +1306,31 @@ export default function App() {
   };
 
   const updateRuleFromClassification = (name: string, category: string) => {
-    setCustomClassificationRules(prev => {
-      const existingIdx = prev.findIndex(r => r.pattern.toLowerCase().replace(/\s+/g, '') === name.toLowerCase().replace(/\s+/g, ''));
-      
-      if (existingIdx !== -1) {
-        // Update existing rule
-        const updated = [...prev];
-        updated[existingIdx] = {
-          ...updated[existingIdx],
-          category: category,
-          isEnabled: true // Ensure it's enabled if user manually updated it
-        };
-        showNotification(`품명 '${name}'에 대한 분류 규칙이 '${category}'(으)로 업데이트되었습니다.`, 'info');
-        return updated;
-      } else {
-        // Create new rule
-        const newRule: CustomClassificationRule = {
-          id: `auto-rule-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          pattern: name,
-          category: category,
-          isEnabled: true,
-          priority: 50, // Higher than default 10 to ensure manual overrides stick
-          description: `사용자 분류 시 자동 생성됨 (${new Date().toLocaleDateString()})`
-        };
-        showNotification(`신규 규칙 추가: '${name}' → '${category}' 분류 규칙이 자동 생성되었습니다.`, 'success');
-        return [...prev, newRule];
-      }
-    });
+    const existingIdx = customClassificationRules.findIndex(r => r.pattern.toLowerCase().replace(/\s+/g, '') === name.toLowerCase().replace(/\s+/g, ''));
+    
+    if (existingIdx !== -1) {
+      // Update existing rule
+      const updated = [...customClassificationRules];
+      updated[existingIdx] = {
+        ...updated[existingIdx],
+        category: category,
+        isEnabled: true // Ensure it's enabled if user manually updated it
+      };
+      handleUpdateRules(updated);
+      showNotification(`품명 '${name}'에 대한 분류 규칙이 '${category}'(으)로 업데이트되었습니다.`, 'info');
+    } else {
+      // Create new rule
+      const newRule: CustomClassificationRule = {
+        id: `auto-rule-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        pattern: name,
+        category: category,
+        isEnabled: true,
+        priority: 50, // Higher than default 10 to ensure manual overrides stick
+        description: `사용자 분류 시 자동 생성됨 (${new Date().toLocaleDateString()})`
+      };
+      handleUpdateRules([...customClassificationRules, newRule]);
+      showNotification(`신규 규칙 추가: '${name}' → '${category}' 분류 규칙이 자동 생성되었습니다.`, 'success');
+    }
   };
 
   const handleRevertCategory = (id: string) => {
@@ -2488,9 +2532,9 @@ export default function App() {
                 isOpen={isCategoryManagerOpen}
                 onClose={() => setIsCategoryManagerOpen(false)}
                 categories={categories}
-                onUpdate={setCategories}
+                onUpdate={handleUpdateCategoryList}
                 customRules={customClassificationRules}
-                onUpdateRules={setCustomClassificationRules}
+                onUpdateRules={handleUpdateRules}
                 onApplyRules={handleApplyRules}
                 initialTab={categoryManagerTab}
                 autoRuleCreation={autoRuleCreation}
@@ -2503,9 +2547,9 @@ export default function App() {
                 theme={theme}
                 onThemeChange={setTheme}
                 fontFamily={fontFamily}
-                onFontFamilyChange={setFontFamily}
+                onFontFamilyChange={handleGlobalFontFamilyChange}
                 fontSize={fontSize}
-                onFontSizeChange={setFontSize}
+                onFontSizeChange={handleGlobalFontSizeChange}
                 onResetData={() => {
                   setItems(SAMPLE_ITEMS);
                   showNotification('데이터가 초기 샘플로 복구되었습니다.', 'info');

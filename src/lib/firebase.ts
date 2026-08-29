@@ -463,3 +463,54 @@ export function subscribeCategoriesFromFirestore(
     return () => {};
   }
 }
+
+/**
+ * 8. Global UI configuration (Font Size, Family, etc.)
+ */
+export async function saveGlobalUIConfigToFirestore(config: {
+  fontFamily: string;
+  fontSize: number;
+}): Promise<void> {
+  if (!checkQuotaState()) return;
+
+  try {
+    const uiRef = doc(db, 'app_settings', 'ui_config');
+    await setDoc(uiRef, {
+      ...config,
+      updatedAt: Date.now()
+    });
+  } catch (err) {
+    handleFirestoreError(err, 'saveGlobalUIConfig');
+  }
+}
+
+export function subscribeGlobalUIConfigFromFirestore(
+  callback: (config: { fontFamily: string; fontSize: number }) => void
+): () => void {
+  if (!checkQuotaState()) {
+    return () => {};
+  }
+  try {
+    const uiRef = doc(db, 'app_settings', 'ui_config');
+    return onSnapshot(
+      uiRef,
+      docSnap => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.fontFamily && data.fontSize) {
+            callback({
+              fontFamily: data.fontFamily,
+              fontSize: data.fontSize
+            });
+          }
+        }
+      },
+      error => {
+        handleFirestoreError(error, 'ui config subscription');
+      }
+    );
+  } catch (err) {
+    handleFirestoreError(err, 'setup ui config subscription');
+    return () => {};
+  }
+}

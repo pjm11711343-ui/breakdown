@@ -391,7 +391,7 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
       style={{ height, width: '100%' }}
       rowCount={rows.length}
       rowHeight={itemHeight}
-      rowComponent={TableRowComponent}
+      rowComponent={TableRowComponent as any}
       rowProps={rowProps}
       className="custom-scrollbar"
     />
