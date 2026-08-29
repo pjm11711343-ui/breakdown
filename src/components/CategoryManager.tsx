@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, Check, X, Tags, Sliders, Info, HelpCircle, ChevronUp, ChevronDown, Sparkles, RotateCcw } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, Tags, Sliders, Info, HelpCircle, ChevronUp, ChevronDown, Sparkles, RotateCcw, FileText, Upload } from 'lucide-react';
 import { CustomClassificationRule, INITIAL_CATEGORIES } from '../types';
+import * as XLSX from 'xlsx';
 
 interface Props {
   categories: string[];
@@ -54,6 +55,8 @@ export default function CategoryManager({
   const [newCategory, setNewCategory] = useState('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Rules management states
   const [rulePattern, setRulePattern] = useState('');
@@ -83,6 +86,52 @@ export default function CategoryManager({
       onUpdate([...categories, newCategory.trim()]);
       setNewCategory('');
     }
+  };
+
+  const handleBulkImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = event.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+        // Extract first column values (assuming categories are listed vertically)
+        const importedCategories = jsonData
+          .map(row => row[0])
+          .filter(val => typeof val === 'string' && val.trim().length > 0)
+          .map(val => val.trim());
+
+        if (importedCategories.length === 0) {
+          alert('엑셀 파일에서 유효한 카테고리명을 찾을 수 없습니다. 첫 번째 열에 카테고리 이름을 나열해 주세요.');
+          return;
+        }
+
+        // Merge and deduplicate
+        const uniqueNewOnes = importedCategories.filter(cat => !categories.includes(cat));
+        if (uniqueNewOnes.length === 0) {
+          alert('이미 모든 카테고리가 등록되어 있습니다.');
+          return;
+        }
+
+        const merged = [...categories, ...uniqueNewOnes];
+        onUpdate(merged);
+        alert(`${uniqueNewOnes.length}개의 새로운 카테고리가 등록되었습니다.`);
+      } catch (error) {
+        console.error('Excel parse error:', error);
+        alert('엑셀 파일을 읽는 중 오류가 발생했습니다.');
+      } finally {
+        setIsImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
   };
 
   const handleResetDefaultCategories = () => {
@@ -261,8 +310,36 @@ export default function CategoryManager({
                   className="px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center gap-1.5 text-xs font-bold shadow-md shadow-indigo-100 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
-                  <span>카테고리 추가</span>
+                  <span>추가</span>
                 </button>
+              </div>
+
+              <div className="flex flex-col gap-2 p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-slate-500" />
+                    <span className="text-xs font-bold text-slate-700">양식 파일로 일괄 등록</span>
+                  </div>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isImporting}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:border-indigo-500 hover:text-indigo-600 text-slate-600 rounded-lg text-[11px] font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    {isImporting ? '처리 중...' : '엑셀 업로드'}
+                  </button>
+                  <input 
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleBulkImport}
+                    accept=".xlsx, .xls"
+                    className="hidden"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  엑셀 파일의 **첫 번째 열(A열)**에 등록할 카테고리 이름들을 나열하여 업로드해 주세요. 
+                  기존 목록에 없는 항목만 자동으로 추가됩니다.
+                </p>
               </div>
 
               <div className="flex items-center justify-between pt-1 border-b border-slate-100 pb-2">
