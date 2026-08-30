@@ -30,6 +30,7 @@ import {
   saveCustomRulesToFirestore,
   subscribeCustomRulesFromFirestore,
   saveCategoriesToFirestore,
+  saveCategoryColorsToFirestore,
   subscribeCategoriesFromFirestore,
   saveGlobalUIConfigToFirestore,
   subscribeGlobalUIConfigFromFirestore,
@@ -311,7 +312,20 @@ export default function App() {
     }
     return INITIAL_CATEGORIES;
   });
-  const [categoryManagerTab, setCategoryManagerTab] = useState<'categories' | 'rules'>('categories');
+
+  const [categoryColors, setCategoryColors] = useState<Record<string, string>>(() => {
+    try {
+      const saved = safeLocalStorage.getItem('mechauto_category_colors');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error('Error loading category colors:', e);
+    }
+    return {};
+  });
+
+  const [categoryManagerTab, setCategoryManagerTab] = useState<'categories' | 'rules' | 'stats'>('categories');
 
   // Persist categories to local storage
   useEffect(() => {
@@ -320,10 +334,24 @@ export default function App() {
     }
   }, [categories]);
 
+  // Persist category colors to local storage
+  useEffect(() => {
+    if (categoryColors && Object.keys(categoryColors).length > 0) {
+      safeLocalStorage.setItem('mechauto_category_colors', JSON.stringify(categoryColors));
+    }
+  }, [categoryColors]);
+
   const handleUpdateCategoryList = (newCategories: string[]) => {
     setCategories(newCategories);
     saveCategoriesToFirestore(newCategories).catch(err => {
       console.warn('Failed to sync categories to Firestore:', err);
+    });
+  };
+
+  const handleUpdateCategoryColors = (newColors: Record<string, string>) => {
+    setCategoryColors(newColors);
+    saveCategoryColorsToFirestore(newColors).catch(err => {
+      console.warn('Failed to sync category colors to Firestore:', err);
     });
   };
 
@@ -551,7 +579,7 @@ export default function App() {
     });
 
     // Subscribe to Firestore Categories
-    const unsubscribeCategories = subscribeCategoriesFromFirestore(firestoreCats => {
+    const unsubscribeCategories = subscribeCategoriesFromFirestore((firestoreCats, firestoreColors) => {
       if (firestoreCats && firestoreCats.length > 0) {
         setCategories(prev => {
           // Break potential infinite loop by comparing content
@@ -559,6 +587,14 @@ export default function App() {
           return firestoreCats;
         });
         safeLocalStorage.setItem(CATEGORIES_KEY, JSON.stringify(firestoreCats));
+      }
+      
+      if (firestoreColors && Object.keys(firestoreColors).length > 0) {
+        setCategoryColors(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(firestoreColors)) return prev;
+          return firestoreColors;
+        });
+        safeLocalStorage.setItem('mechauto_category_colors', JSON.stringify(firestoreColors));
       }
     });
 
@@ -2697,11 +2733,16 @@ export default function App() {
                   <CategorySummaryCards 
                     items={items} 
                     theme={theme} 
-                    categories={INITIAL_CATEGORIES}
+                    categories={categories}
+                    categoryColors={categoryColors}
                     projectName={currentProjectName}
                     isProjectLocked={isProjectLocked}
                     categoryEstimates={categoryEstimates}
                     onCategoryClick={(cat) => setCategoryFilter(cat)}
+                    onOpenStats={() => {
+                      setCategoryManagerTab('stats');
+                      setIsCategoryManagerOpen(true);
+                    }}
                     onUpdateSafetyAmount={handleUpdateSafetyAmount}
                     onUpdateCategoryEstimate={handleUpdateCategoryEstimate}
                   />
@@ -2716,6 +2757,7 @@ export default function App() {
                     items={items} 
                     theme={theme} 
                     categories={categories}
+                    categoryColors={categoryColors}
                     workbook={workbook}
                     onClassify={handleClassify}
                     isClassifying={isClassifying}
@@ -2735,6 +2777,7 @@ export default function App() {
                   items={items}
                   theme={theme}
                   categories={categories}
+                  categoryColors={categoryColors}
                   projectName={currentProjectName}
                   onOpenCategoryManager={() => {
                     setCategoryManagerTab('categories');
@@ -2762,7 +2805,10 @@ export default function App() {
               <CategoryManager 
                 onClose={() => setIsCategoryManagerOpen(false)}
                 categories={categories}
+                categoryColors={categoryColors}
+                items={items}
                 onUpdate={handleUpdateCategoryList}
+                onUpdateColors={handleUpdateCategoryColors}
                 customRules={customClassificationRules}
                 onUpdateRules={handleUpdateRules}
                 onApplyRules={handleApplyRules}

@@ -33,6 +33,7 @@ interface Props {
   items: SpecItem[];
   theme: ThemeType;
   categories: string[];
+  categoryColors?: Record<string, string>;
   projectName?: string;
   onOpenCategoryManager?: () => void;
 }

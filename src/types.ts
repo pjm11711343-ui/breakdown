@@ -27,6 +27,7 @@ export interface Project {
   theme: ThemeType;
   config?: AppConfig;
   categories: string[];
+  categoryColors?: Record<string, string>; // Category name -> hex color
   updatedAt: number;
   status?: 'working' | 'completed';
   categoryEstimates?: Record<string, number>; // Manual input quantity/amount per category

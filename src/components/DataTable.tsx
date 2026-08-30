@@ -11,6 +11,7 @@ interface Props {
   items: SpecItem[];
   theme: ThemeType;
   categories: string[];
+  categoryColors?: Record<string, string>;
   workbook: XLSX.WorkBook | null;
   onClassify: (targetIds?: string[]) => void;
   isClassifying: boolean;
@@ -167,7 +168,24 @@ const ColumnFilterDropdown = ({
   );
 };
 
-export default function DataTable({ items, theme, categories, workbook, onClassify, isClassifying, onUpdateCategory, onAddCategory, onRevertCategory, onUpdateCategories, onUpdateMemo, onUpdateExecutionAmount, onDataLoaded, categoryFilter = 'all', onCategoryFilterChange }: Props) {
+export default function DataTable({ 
+  items, 
+  theme, 
+  categories, 
+  categoryColors = {},
+  workbook, 
+  onClassify, 
+  isClassifying, 
+  onUpdateCategory, 
+  onAddCategory, 
+  onRevertCategory, 
+  onUpdateCategories, 
+  onUpdateMemo, 
+  onUpdateExecutionAmount, 
+  onDataLoaded, 
+  categoryFilter = 'all', 
+  onCategoryFilterChange 
+}: Props) {
   const [viewMode, setViewMode] = useState<'process' | 'category' | 'unclassified'>('process');
   const [showAggregated, setShowAggregated] = useState(false);
   const [sectionFilter, setSectionFilter] = useState<string>('all');
@@ -178,7 +196,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
     count: number;
     ids: string[];
   } | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<{ id: string, field: string } | null>(null);
   const [editValue, setEditValue] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
 
@@ -223,21 +241,30 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
     };
   }, []);
 
-  const startEditing = (id: string, currentCategory: string) => {
-    setEditingId(id);
-    setEditValue(currentCategory);
+  const startEditing = (id: string, field: string, value: any) => {
+    setEditingId({ id, field });
+    setEditValue(String(value));
   };
 
-  const saveEdit = (id: string) => {
-    if (editingId === id) {
+  const saveEdit = () => {
+    if (!editingId) return;
+    
+    const { id, field } = editingId;
+    if (field === 'category') {
       onUpdateCategory(id, editValue);
-      setEditingId(null);
+    } else if (field === 'memo') {
+      onUpdateMemo(id, editValue);
+    } else if (field === 'executionAmount') {
+      const amount = Number(editValue.replace(/[^0-9.-]/g, '')) || 0;
+      onUpdateExecutionAmount(id, amount);
     }
+    
+    setEditingId(null);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent, id: string) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
-      saveEdit(id);
+      saveEdit();
     } else if (e.key === 'Escape') {
       setEditingId(null);
     }
@@ -1324,6 +1351,7 @@ export default function DataTable({ items, theme, categories, workbook, onClassi
                 handleMouseEnter={handleMouseEnter}
                 renderRuleIndicator={renderRuleIndicator}
                 categories={categories}
+                categoryColors={categoryColors}
                 onUpdateCategory={onUpdateCategory}
                 onAddCategory={onAddCategory}
                 onRevertCategory={onRevertCategory}

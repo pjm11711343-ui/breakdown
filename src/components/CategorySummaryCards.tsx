@@ -1,16 +1,18 @@
 import React from 'react';
 import { SpecItem, ThemeType } from '../types';
 import { motion } from 'motion/react';
-import { Tags, TrendingUp, PieChart as PieChartIcon, Building2, Package, Wrench, ShieldCheck, AlertCircle, ArrowUpRight, Calculator } from 'lucide-react';
+import { Tags, TrendingUp, PieChart as PieChartIcon, Building2, Package, Wrench, ShieldCheck, AlertCircle, ArrowUpRight, Calculator, BarChart3 } from 'lucide-react';
 
 interface Props {
   items: SpecItem[];
   theme: ThemeType;
   categories: string[];
+  categoryColors?: Record<string, string>;
   projectName?: string;
   isProjectLocked?: boolean;
   categoryEstimates?: Record<string, number>;
   onCategoryClick?: (category: string) => void;
+  onOpenStats?: () => void;
   onUpdateSafetyAmount?: (amount: number) => void;
   onUpdateCategoryEstimate?: (category: string, amount: number) => void;
 }
@@ -19,10 +21,12 @@ export default function CategorySummaryCards({
   items,
   theme,
   categories,
+  categoryColors = {},
   projectName,
   isProjectLocked,
   categoryEstimates = {},
   onCategoryClick,
+  onOpenStats,
   onUpdateSafetyAmount,
   onUpdateCategoryEstimate
 }: Props) {
@@ -163,6 +167,16 @@ export default function CategorySummaryCards({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenStats?.();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1 bg-white border border-[#141414] hover:bg-yellow-400 hover:text-black text-[#141414] rounded text-[10px] font-black uppercase transition-all shadow-[2px_2px_0_0_#141414] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
+            >
+              <BarChart3 size={11} />
+              상세 통계 리포트
+            </button>
             <div className="bg-white/10 px-2.5 py-1 border border-white/20 text-right">
               <span className="text-[9px] uppercase opacity-70 block">총 계약 합계 (자재+외주)</span>
               <span className="text-sm font-mono font-black text-yellow-400">₩{totalContractAmount.toLocaleString()}</span>
@@ -267,7 +281,8 @@ export default function CategorySummaryCards({
                 <div 
                   key={cat.name} 
                   onClick={() => onCategoryClick?.(cat.name)}
-                  className={`p-3 flex flex-col justify-between bg-indigo-50/30 hover:bg-indigo-50/50 transition-colors border-[#141414] cursor-pointer border-l-4 border-l-indigo-600 ${showComparison ? 'ring-1 ring-inset ring-indigo-200' : ''}`}
+                  className={`p-3 flex flex-col justify-between bg-indigo-50/30 hover:bg-indigo-50/50 transition-colors border-[#141414] cursor-pointer border-l-4 ${showComparison ? 'ring-1 ring-inset ring-indigo-200' : ''}`}
+                  style={{ borderLeftColor: categoryColors[cat.name] || '#4f46e5' }}
                 >
                   <div className="flex justify-between items-start mb-1">
                     <span className="text-[11px] font-black text-indigo-700 uppercase truncate" title={cat.name}>🛡️ {cat.name}</span>
@@ -379,7 +394,8 @@ export default function CategorySummaryCards({
                 <div 
                   key={cat.name} 
                   onClick={() => onCategoryClick?.(cat.name)}
-                  className={`p-3 flex flex-col justify-between bg-amber-50/50 hover:bg-amber-100/60 transition-colors border-[#141414] cursor-pointer border-l-4 border-l-amber-500 ${showComparison ? 'ring-1 ring-inset ring-amber-200' : ''}`}
+                  className={`p-3 flex flex-col justify-between bg-amber-50/50 hover:bg-amber-100/60 transition-colors border-[#141414] cursor-pointer border-l-4 ${showComparison ? 'ring-1 ring-inset ring-amber-200' : ''}`}
+                  style={{ borderLeftColor: categoryColors[cat.name] || '#f59e0b' }}
                 >
                   <div className="flex justify-between items-start mb-1">
                     <span className="text-[11px] font-black text-amber-900 uppercase truncate flex items-center gap-1" title={cat.name}>
@@ -454,7 +470,8 @@ export default function CategorySummaryCards({
               <div 
                 key={cat.name} 
                 onClick={() => onCategoryClick?.(cat.name)}
-                className={`p-3 flex flex-col justify-between hover:bg-[#F9F9F9] transition-colors border-[#141414] cursor-pointer ${showComparison ? 'ring-1 ring-inset ring-indigo-200' : ''}`}
+                className={`p-3 flex flex-col justify-between hover:bg-[#F9F9F9] transition-colors border-[#141414] cursor-pointer border-t-2 ${showComparison ? 'ring-1 ring-inset ring-indigo-200' : ''}`}
+                style={{ borderTopColor: categoryColors[cat.name] || '#cbd5e1' }}
               >
                 <div className="flex justify-between items-start mb-1">
                   <span className="text-[11px] font-black text-slate-600 uppercase truncate" title={cat.name}>{cat.name}</span>
@@ -570,10 +587,18 @@ export default function CategorySummaryCards({
             </div>
           </div>
 
-          {/* Grand Total Breakdown Pill Matrix */}
-          <div className="flex flex-wrap items-center gap-3 bg-slate-50/90 p-3 rounded-2xl border border-slate-200/80">
-            {/* Total Contract Sum */}
-            <div className="px-4 py-2 bg-indigo-600 text-white rounded-xl shadow-sm">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenStats?.();
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-50 border border-indigo-100 hover:bg-indigo-600 hover:text-white text-indigo-700 rounded-xl text-xs font-black transition-all shadow-sm"
+              >
+                <BarChart3 size={14} />
+                분석 리포트 상세 보기
+              </button>
+              <div className="px-4 py-2 bg-indigo-600 text-white rounded-xl shadow-sm">
               <div className="text-[10px] uppercase font-bold text-indigo-100 tracking-wider">총 계약 합계 금액</div>
               <div className="text-xl md:text-2xl font-mono font-black tracking-tight">
                 ₩{totalContractAmount.toLocaleString()}
@@ -848,17 +873,18 @@ export default function CategorySummaryCards({
                   </div>
                   
                   <div className="flex flex-col gap-2 pt-2 border-t border-amber-200/60">
-                    <div className="h-1.5 w-full bg-amber-100 rounded-full overflow-hidden">
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                       <motion.div 
                         initial={{ width: 0 }}
                         animate={{ width: `${Math.min(100, cat.percentage)}%` }}
                         transition={{ duration: 0.8, ease: "easeOut", delay: idx * 0.03 }}
-                        className="h-full bg-amber-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.3)]" 
+                        style={{ backgroundColor: categoryColors[cat.name] || '#6366f1' }}
+                        className="h-full rounded-full" 
                       />
                     </div>
                     <div className="flex justify-between items-center text-xs">
-                      <span className="text-[10px] text-amber-700 font-bold uppercase">외주 품목수</span>
-                      <span className="text-[11px] text-amber-900 font-bold font-mono">{cat.count}건</span>
+                      <span className="text-[10px] text-slate-500 font-bold uppercase">외주 품목수</span>
+                      <span className="text-[11px] text-slate-900 font-bold font-mono">{cat.count}건</span>
                     </div>
                   </div>
                 </motion.div>
@@ -872,19 +898,34 @@ export default function CategorySummaryCards({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.02 }}
                 onClick={() => onCategoryClick?.(cat.name)}
+                style={{ borderLeft: `4px solid ${categoryColors[cat.name] || '#e2e8f0'}` }}
                 className={`bg-white p-5 rounded-2xl border transition-all group relative overflow-hidden cursor-pointer flex flex-col justify-between ${
                   showComparison ? 'border-indigo-300 shadow-md ring-1 ring-indigo-100' : 'border-slate-200 shadow-2xs hover:shadow-lg hover:border-indigo-200 hover:-translate-y-0.5'
                 }`}
               >
-                <div className="absolute top-0 right-0 w-16 h-16 -mr-4 -mt-4 bg-indigo-50 rounded-full blur-2xl group-hover:bg-indigo-100 transition-colors" />
+                <div 
+                  className="absolute top-0 right-0 w-16 h-16 -mr-4 -mt-4 rounded-full blur-2xl group-hover:opacity-80 transition-opacity" 
+                  style={{ backgroundColor: categoryColors[cat.name] || '#f8fafc', opacity: 0.1 }}
+                />
                 
                 <div>
                   <div className="flex justify-between items-start mb-2">
-                    <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest group-hover:text-indigo-600 transition-colors truncate" title={cat.name}>
+                    <span 
+                      className="text-[11px] font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors truncate" 
+                      title={cat.name}
+                      style={{ color: categoryColors[cat.name] ? `${categoryColors[cat.name]}ee` : undefined }}
+                    >
                       {cat.name}
                     </span>
                     {!showComparison && (
-                      <span className="text-[11px] font-black text-indigo-700 bg-indigo-100/50 px-2 py-0.5 rounded-md border border-indigo-100">
+                      <span 
+                        className="text-[11px] font-black px-2 py-0.5 rounded-md border"
+                        style={{ 
+                          backgroundColor: categoryColors[cat.name] ? `${categoryColors[cat.name]}15` : '#f1f5f9',
+                          color: categoryColors[cat.name] || '#475569',
+                          borderColor: categoryColors[cat.name] ? `${categoryColors[cat.name]}30` : '#e2e8f0'
+                        }}
+                      >
                         {cat.percentage.toFixed(1)}%
                       </span>
                     )}

@@ -468,14 +468,28 @@ export async function saveCategoriesToFirestore(categories: string[]): Promise<v
     await setDoc(catRef, {
       categories: categories || [],
       updatedAt: Date.now()
-    });
+    }, { merge: true });
   } catch (err) {
     handleFirestoreError(err, 'saveCategories');
   }
 }
 
+export async function saveCategoryColorsToFirestore(colors: Record<string, string>): Promise<void> {
+  if (!checkQuotaState()) return;
+
+  try {
+    const catRef = doc(db, 'app_settings', 'categories');
+    await setDoc(catRef, {
+      categoryColors: colors || {},
+      updatedAt: Date.now()
+    }, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, 'saveCategoryColors');
+  }
+}
+
 export function subscribeCategoriesFromFirestore(
-  callback: (categories: string[]) => void
+  callback: (categories: string[], colors: Record<string, string>) => void
 ): () => void {
   if (!checkQuotaState()) {
     return () => {};
@@ -487,9 +501,9 @@ export function subscribeCategoriesFromFirestore(
       docSnap => {
         if (docSnap.exists()) {
           const data = docSnap.data();
-          if (Array.isArray(data.categories) && data.categories.length > 0) {
-            callback(data.categories);
-          }
+          const categories = Array.isArray(data.categories) ? data.categories : [];
+          const colors = data.categoryColors || {};
+          callback(categories, colors);
         }
       },
       error => {

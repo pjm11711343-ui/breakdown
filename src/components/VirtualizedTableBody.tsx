@@ -21,21 +21,22 @@ interface VirtualizedTableBodyProps {
   handleMouseEnter: (index: number) => void;
   renderRuleIndicator: (item: SpecItem) => React.ReactNode;
   categories: string[];
+  categoryColors?: Record<string, string>;
   onUpdateCategory: (id: string, category: string) => void;
   onAddCategory: (category: string) => void;
   onRevertCategory: (id: string) => void;
   onUpdateMemo: (id: string, memo: string) => void;
   onUpdateExecutionAmount: (id: string, amount: number) => void;
-  editingId: string | null;
+  editingId: { id: string, field: string } | null;
   editValue: string;
-  startEditing: (id: string, currentCategory: string) => void;
-  saveEdit: (id: string) => void;
-  handleKeyDown: (e: React.KeyboardEvent, id: string) => void;
+  startEditing: (id: string, field: string, value: any) => void;
+  saveEdit: () => void;
+  handleKeyDown: (e: React.KeyboardEvent) => void;
   setEditValue: (value: string) => void;
   getCellPadding: (isHeader?: boolean) => string;
 }
 
-interface RowExtraProps {
+interface ItemData {
   rows: VirtualRowData[];
   isHighDensity: boolean;
   borderCellClass: string;
@@ -45,48 +46,62 @@ interface RowExtraProps {
   handleMouseDown: (id: string, index: number) => void;
   handleMouseEnter: (index: number) => void;
   renderRuleIndicator: (item: SpecItem) => React.ReactNode;
+  categoryColors?: Record<string, string>;
   onUpdateCategory: (id: string, category: string) => void;
   onRevertCategory: (id: string) => void;
   onUpdateMemo: (id: string, memo: string) => void;
   onUpdateExecutionAmount: (id: string, amount: number) => void;
+  editingId: { id: string, field: string } | null;
+  editValue: string;
+  startEditing: (id: string, field: string, value: any) => void;
+  saveEdit: () => void;
+  handleKeyDown: (e: React.KeyboardEvent) => void;
+  setEditValue: (value: string) => void;
 }
 
-const TableRowInner = React.memo(({
-  index,
-  style,
-  rows,
-  isHighDensity,
-  borderCellClass,
-  selectedIds,
-  toggleOne,
-  toggleAll,
-  handleMouseDown,
-  handleMouseEnter,
-  renderRuleIndicator,
-  onUpdateCategory,
-  onRevertCategory,
-  onUpdateMemo,
-  onUpdateExecutionAmount,
-  ariaAttributes
-}: {
-  ariaAttributes?: {
+const TableRowInner = (props: {
+  index: number;
+  style: CSSProperties;
+  ariaAttributes: {
     "aria-posinset": number;
     "aria-setsize": number;
     role: "listitem";
   };
-  index: number;
-  style: CSSProperties;
-} & RowExtraProps) => {
+} & ItemData) => {
+  const {
+    index,
+    style,
+    ariaAttributes,
+    rows,
+    isHighDensity,
+    borderCellClass,
+    selectedIds,
+    toggleOne,
+    toggleAll,
+    handleMouseDown,
+    handleMouseEnter,
+    renderRuleIndicator,
+    categoryColors,
+    onUpdateCategory,
+    onRevertCategory,
+    onUpdateMemo,
+    onUpdateExecutionAmount,
+    editingId,
+    editValue,
+    startEditing,
+    saveEdit,
+    handleKeyDown,
+    setEditValue
+  } = props;
+
   const row = rows[index];
   if (!row) return null;
-
-  const ariaProps = ariaAttributes || {};
 
   if (row.type === 'category-header') {
     return (
       <div 
         style={style} 
-        {...ariaProps}
+        {...ariaAttributes}
         className={`flex items-center min-w-[1816px] w-full text-xs font-bold ${
           isHighDensity ? 'bg-indigo-700 text-white border-[#141414]' : 'bg-indigo-900 text-white border-slate-800'
         } border-b select-none`}
@@ -125,7 +140,7 @@ const TableRowInner = React.memo(({
     return (
       <div 
         style={style} 
-        {...ariaProps}
+        {...ariaAttributes}
         className={`flex items-center min-w-[1816px] w-full text-[11px] font-bold ${
           isHighDensity ? 'bg-slate-100 text-slate-800' : 'bg-slate-100/90 text-slate-700'
         } border-b border-slate-200 px-2 select-none`}
@@ -146,7 +161,7 @@ const TableRowInner = React.memo(({
     return (
       <div 
         style={style} 
-        {...ariaProps}
+        {...ariaAttributes}
         className={`flex items-center min-w-[1816px] w-full text-xs font-bold ${
           isHighDensity ? 'bg-[#00B0F0] text-white border-[#141414]' : 'bg-sky-600 text-white border-sky-700'
         } border-b select-none`}
@@ -190,7 +205,7 @@ const TableRowInner = React.memo(({
   return (
     <div 
       style={style}
-      {...ariaProps}
+      {...ariaAttributes}
       onMouseDown={() => handleMouseDown(item.id, index)}
       onMouseEnter={() => handleMouseEnter(index)}
       className={`flex items-center min-w-[1816px] w-full border-b text-xs select-none transition-colors ${
@@ -199,7 +214,6 @@ const TableRowInner = React.memo(({
           : (isSelected ? 'bg-indigo-50/90 border-indigo-200' : 'bg-white hover:bg-slate-50 border-slate-100')
       } ${isSelected ? 'shadow-[inset_3px_0_0_0_#4f46e5]' : ''}`}
     >
-      {/* 1. Checkbox: 44px */}
       <div className={`w-[44px] h-full shrink-0 flex items-center justify-center ${borderCellClass}`} onClick={(e) => e.stopPropagation()}>
         {!isAggregated && (
           <input 
@@ -211,129 +225,139 @@ const TableRowInner = React.memo(({
         )}
       </div>
 
-      {/* 2. No: 50px */}
       <div className={`w-[50px] h-full shrink-0 flex items-center justify-center font-mono text-slate-500 text-[10px] ${borderCellClass}`}>
         {isAggregated ? `Σ${itemIdx + 1}` : (itemIdx + 1).toString().padStart(3, '0')}
       </div>
 
-      {/* 3. Name: 230px */}
       <div className={`w-[230px] h-full shrink-0 flex items-center px-2.5 font-bold text-slate-900 truncate text-[11px] ${borderCellClass}`} title={item.name}>
         <span className="truncate">{item.name}</span>
       </div>
 
-      {/* 4. Spec: 210px */}
       <div className={`w-[210px] h-full shrink-0 flex items-center px-2 text-slate-600 truncate text-[11px] ${borderCellClass}`} title={item.specification}>
         <span className="truncate">{item.specification || '-'}</span>
       </div>
 
-      {/* 5. Unit: 48px */}
       <div className={`w-[48px] h-full shrink-0 flex items-center justify-center text-slate-600 text-[11px] font-medium ${borderCellClass}`}>
         {item.unit || '-'}
       </div>
 
-      {/* 6. Quantity: 68px */}
       <div className={`w-[68px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-800 text-[11px] font-medium ${borderCellClass}`}>
         {item.quantity.toLocaleString()}
       </div>
 
-      {/* 7. Material Unit Price: 84px */}
       <div className={`w-[84px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-600 text-[11px] ${borderCellClass}`}>
         ₩{(item.materialUnitPrice || 0).toLocaleString()}
       </div>
 
-      {/* 8. Material Amount: 98px */}
       <div className={`w-[98px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-700 text-[11px] font-medium ${borderCellClass}`}>
         ₩{(item.materialAmount || 0).toLocaleString()}
       </div>
 
-      {/* 9. Labor Unit Price: 84px */}
       <div className={`w-[84px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-600 text-[11px] ${borderCellClass}`}>
         ₩{(item.laborUnitPrice || 0).toLocaleString()}
       </div>
 
-      {/* 10. Labor Amount: 98px */}
       <div className={`w-[98px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-700 text-[11px] font-medium ${borderCellClass}`}>
         ₩{(item.laborAmount || 0).toLocaleString()}
       </div>
 
-      {/* 11. Total Unit Price: 88px */}
       <div className={`w-[88px] h-full shrink-0 flex items-center justify-end px-2 font-mono font-semibold text-slate-900 bg-indigo-50/30 text-[11px] ${borderCellClass}`}>
         ₩{item.unitPrice.toLocaleString()}
       </div>
 
-      {/* 12. Total Amount: 110px */}
       <div className={`w-[110px] h-full shrink-0 flex items-center justify-end px-2 font-mono font-bold text-indigo-600 bg-amber-50/40 text-[11px] ${borderCellClass}`}>
         ₩{item.amount.toLocaleString()}
       </div>
 
-      {/* 13. Remark: 104px */}
       <div className={`w-[104px] h-full shrink-0 flex items-center px-2 text-slate-500 italic truncate text-[10px] ${borderCellClass}`} title={item.remark}>
         <span className="truncate">{item.remark || '-'}</span>
       </div>
 
-      {/* 14. Memo: 130px */}
       <div className={`w-[130px] h-full shrink-0 flex items-center px-2 ${borderCellClass}`} onClick={(e) => e.stopPropagation()}>
         {!isAggregated ? (
-          <input 
-            type="text" 
-            value={item.memo || ''} 
-            onChange={(e) => onUpdateMemo(item.id, e.target.value)}
-            placeholder="메모..."
-            className="w-full px-1.5 py-0.5 text-[10px] border border-slate-200 rounded bg-white focus:border-indigo-500 outline-none placeholder:text-slate-300"
-          />
+          editingId?.id === item.id && editingId?.field === 'memo' ? (
+            <input 
+              autoFocus
+              type="text" 
+              value={editValue} 
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={saveEdit}
+              onKeyDown={handleKeyDown}
+              className="w-full h-full bg-indigo-50 border-none outline-none text-[10px] font-bold"
+            />
+          ) : (
+            <div 
+              className="w-full flex items-center justify-between cursor-text min-h-[20px]"
+              onClick={() => startEditing(item.id, 'memo', item.memo || '')}
+            >
+              <span className="text-[10px] truncate text-slate-500 italic flex-1">
+                {item.memo || ''}
+              </span>
+            </div>
+          )
         ) : (
           <span className="text-slate-400 font-mono text-xs">-</span>
         )}
       </div>
 
-      {/* 15. Execution Amount: 120px */}
       <div className={`w-[120px] h-full shrink-0 flex items-center px-2 ${borderCellClass}`} onClick={(e) => e.stopPropagation()}>
         {!isAggregated ? (
-          <input 
-            type="text" 
-            value={item.executionAmount ? item.executionAmount.toLocaleString() : ''} 
-            onChange={(e) => {
-              const val = e.target.value.replace(/[^0-9]/g, '');
-              onUpdateExecutionAmount(item.id, Number(val) || 0);
-            }}
-            placeholder="실행금액..."
-            className="w-full px-1.5 py-0.5 text-[10px] font-mono border border-slate-200 rounded bg-white focus:border-indigo-500 outline-none placeholder:text-slate-300 text-right"
-          />
+          editingId?.id === item.id && editingId?.field === 'executionAmount' ? (
+            <input 
+              autoFocus
+              type="text" 
+              value={editValue} 
+              onChange={(e) => setEditValue(e.target.value)}
+              onBlur={saveEdit}
+              onKeyDown={handleKeyDown}
+              className="w-full h-full bg-amber-50 border-none outline-none text-[11px] font-black font-mono text-right"
+            />
+          ) : (
+            <div 
+              className="w-full flex items-center justify-end gap-2 cursor-text h-full"
+              onClick={() => startEditing(item.id, 'executionAmount', item.executionAmount || 0)}
+            >
+              <span className={`text-[11px] font-black font-mono ${item.executionAmount ? 'text-amber-600' : 'text-slate-300'}`}>
+                {item.executionAmount ? `₩${item.executionAmount.toLocaleString()}` : '₩0'}
+              </span>
+            </div>
+          )
         ) : (
           <span className="text-slate-400 font-mono text-xs">-</span>
         )}
       </div>
 
-      {/* 16. Comparison: 80px */}
       <div className={`w-[80px] h-full shrink-0 flex items-center justify-center font-mono font-bold text-[10px] ${borderCellClass} ${ratioColorClass}`}>
         {ratio > 0 ? `${ratio.toFixed(1)}%` : '-'}
       </div>
 
-      {/* 17. Category & Actions: 170px */}
-      <div className="w-[170px] h-full shrink-0 px-2 flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <div className="w-[170px] h-full shrink-0 px-2 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+        <div 
+          className="w-1.5 h-4 shrink-0 rounded-full" 
+          style={{ backgroundColor: (item.category && categoryColors[item.category]) || '#e2e8f0' }} 
+        />
         {renderRuleIndicator(item)}
         {!isAggregated ? (
           <div className="flex items-center gap-1 flex-1 min-w-0 relative group/category">
-            <input 
-              type="text"
-              list="category-suggestions"
-              defaultValue={item.category || ""}
-              onBlur={(e) => {
-                const val = e.target.value;
-                if (val !== item.category) {
-                  onUpdateCategory(item.id, val);
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const val = (e.target as HTMLInputElement).value;
-                  onUpdateCategory(item.id, val);
-                  (e.target as HTMLInputElement).blur();
-                }
-              }}
-              placeholder="분류 선택/입력"
-              className="w-full p-0.5 bg-white border border-slate-300 rounded text-[10px] font-bold outline-none cursor-pointer focus:border-indigo-500 truncate"
-            />
+            {editingId?.id === item.id && editingId?.field === 'category' ? (
+              <input 
+                autoFocus
+                type="text"
+                list="category-suggestions"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={saveEdit}
+                onKeyDown={handleKeyDown}
+                className="w-full p-0.5 bg-indigo-50 border border-indigo-400 rounded text-[10px] font-bold outline-none"
+              />
+            ) : (
+              <div 
+                className="w-full p-0.5 bg-white border border-slate-300 rounded text-[10px] font-bold truncate cursor-text"
+                onClick={() => startEditing(item.id, 'category', item.category || '')}
+              >
+                {item.category || ""}
+              </div>
+            )}
             {item.originalCategory && item.category !== item.originalCategory && (
               <button
                 type="button"
@@ -351,7 +375,7 @@ const TableRowInner = React.memo(({
       </div>
     </div>
   );
-});
+};
 
 export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
   rows,
@@ -365,6 +389,7 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
   handleMouseEnter,
   renderRuleIndicator,
   categories,
+  categoryColors = {},
   onUpdateCategory,
   onAddCategory,
   onRevertCategory,
@@ -375,8 +400,7 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
   startEditing,
   saveEdit,
   handleKeyDown,
-  setEditValue,
-  getCellPadding
+  setEditValue
 }) => {
   const itemHeight = React.useMemo(() => 
     theme === 'high-density' ? 28 + (density - 2) * 4 : 36 + (density - 2) * 5,
@@ -390,7 +414,7 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
     [isHighDensity]
   );
 
-  const rowProps: RowExtraProps = React.useMemo(() => ({
+  const itemData: ItemData = React.useMemo(() => ({
     rows,
     isHighDensity,
     borderCellClass,
@@ -400,10 +424,17 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
     handleMouseDown,
     handleMouseEnter,
     renderRuleIndicator,
+    categoryColors,
     onUpdateCategory,
     onRevertCategory,
     onUpdateMemo,
-    onUpdateExecutionAmount
+    onUpdateExecutionAmount,
+    editingId,
+    editValue,
+    startEditing,
+    saveEdit,
+    handleKeyDown,
+    setEditValue
   }), [
     rows,
     isHighDensity,
@@ -414,21 +445,31 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
     handleMouseDown,
     handleMouseEnter,
     renderRuleIndicator,
+    categoryColors,
     onUpdateCategory,
     onRevertCategory,
     onUpdateMemo,
-    onUpdateExecutionAmount
+    onUpdateExecutionAmount,
+    editingId,
+    editValue,
+    startEditing,
+    saveEdit,
+    handleKeyDown,
+    setEditValue
   ]);
 
   return (
-    <List
-      style={{ height, width: '100%' }}
-      rowCount={rows.length}
-      rowHeight={itemHeight}
-      rowComponent={TableRowInner as any}
-      rowProps={rowProps}
-      className="custom-scrollbar"
-    />
+    <div className="flex-grow bg-white overflow-hidden">
+      <List<ItemData>
+        rowCount={rows.length}
+        rowHeight={itemHeight}
+        rowProps={itemData}
+        rowComponent={TableRowInner}
+        style={{ height, width: '100%' }}
+        className="custom-scrollbar"
+      />
+    </div>
   );
 };
+
 

@@ -1,19 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, Check, X, Tags, Sliders, Info, HelpCircle, ChevronUp, ChevronDown, Sparkles, RotateCcw, FileText, Upload } from 'lucide-react';
-import { CustomClassificationRule, INITIAL_CATEGORIES } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Plus, Trash2, Edit2, Check, X, Tags, Sliders, Info, HelpCircle, ChevronUp, ChevronDown, Sparkles, RotateCcw, FileText, Upload, BarChart3, PieChart } from 'lucide-react';
+import { CustomClassificationRule, INITIAL_CATEGORIES, SpecItem } from '../types';
 import * as XLSX from 'xlsx';
 
 interface Props {
   categories: string[];
+  categoryColors?: Record<string, string>;
+  items: SpecItem[];
   onUpdate: (categories: string[]) => void;
+  onUpdateColors?: (colors: Record<string, string>) => void;
   onClose: () => void;
   customRules: CustomClassificationRule[];
   onUpdateRules: (rules: CustomClassificationRule[]) => void;
   onApplyRules?: (rules: CustomClassificationRule[]) => void;
-  initialTab?: 'categories' | 'rules';
+  initialTab?: 'categories' | 'rules' | 'stats';
   autoRuleCreation?: boolean;
   onSetAutoRuleCreation?: (val: boolean) => void;
 }
+
+const PRESET_COLORS = [
+  '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e',
+  '#10b981', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6',
+  '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#64748b', '#71717a'
+];
 
 // Read-only system rules for reference inside the UI
 const SYSTEM_MAPPING_RULES: Record<string, string> = {
@@ -40,7 +49,10 @@ const SYSTEM_MAPPING_RULES: Record<string, string> = {
 
 export default function CategoryManager({ 
   categories, 
+  categoryColors = {},
+  items = [],
   onUpdate, 
+  onUpdateColors,
   onClose,
   customRules = [],
   onUpdateRules,
@@ -49,13 +61,14 @@ export default function CategoryManager({
   autoRuleCreation = true,
   onSetAutoRuleCreation
 }: Props) {
-  const [activeTab, setActiveTab] = useState<'categories' | 'rules'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'categories' | 'rules' | 'stats'>(initialTab);
   
   // Category management states
   const [newCategory, setNewCategory] = useState('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [showColorPickerFor, setShowColorPickerFor] = useState<number | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Rules management states
@@ -237,6 +250,47 @@ export default function CategoryManager({
     (r.description || '').toLowerCase().includes(ruleSearch.toLowerCase())
   );
 
+  // Stats Calculation
+  const categoryStats = useMemo(() => {
+    const stats: Record<string, { count: number; totalAmount: number }> = {};
+    
+    // Initialize all categories
+    categories.forEach(cat => {
+      stats[cat] = { count: 0, totalAmount: 0 };
+    });
+    
+    // Unclassified category
+    stats['미분류'] = { count: 0, totalAmount: 0 };
+    
+    // Calculate totals
+    let grandTotalAmount = 0;
+    let grandTotalCount = 0;
+    
+    items.forEach(item => {
+      const cat = item.category || '미분류';
+      if (!stats[cat]) {
+        stats[cat] = { count: 0, totalAmount: 0 };
+      }
+      stats[cat].count++;
+      stats[cat].totalAmount += item.amount || 0;
+      grandTotalAmount += item.amount || 0;
+      grandTotalCount++;
+    });
+    
+    return {
+      byCategory: Object.entries(stats)
+        .map(([name, data]) => ({
+          name,
+          ...data,
+          percentage: grandTotalAmount > 0 ? (data.totalAmount / grandTotalAmount) * 100 : 0
+        }))
+        .filter(s => s.count > 0 || categories.includes(s.name))
+        .sort((a, b) => b.totalAmount - a.totalAmount),
+      grandTotalAmount,
+      grandTotalCount
+    };
+  }, [items, categories]);
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <div className={`bg-white rounded-2xl w-full ${activeTab === 'rules' ? 'max-w-2xl' : 'max-w-md'} shadow-2xl overflow-hidden flex flex-col h-[85vh] transition-all duration-300`}>
@@ -282,6 +336,17 @@ export default function CategoryManager({
           >
             <Sliders className="w-4 h-4" />
             분류 규칙 설정
+          </button>
+          <button
+            onClick={() => setActiveTab('stats')}
+            className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'stats'
+                ? 'border-indigo-600 text-indigo-600 bg-white'
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4" />
+            통계 분석 리포트
           </button>
         </div>
 
@@ -361,8 +426,41 @@ export default function CategoryManager({
                 {categories.map((cat, idx) => (
                   <div 
                     key={idx} 
-                    className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl group hover:bg-slate-100 transition-colors"
+                    className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl group hover:bg-slate-100 transition-colors"
                   >
+                    {/* Color Picker */}
+                    <div className="relative shrink-0">
+                      <button
+                        onClick={() => setShowColorPickerFor(showColorPickerFor === idx ? null : idx)}
+                        className="w-5 h-5 rounded-full border border-slate-200 shadow-sm transition-transform hover:scale-110"
+                        style={{ backgroundColor: categoryColors[cat] || '#e2e8f0' }}
+                        title="색상 변경"
+                      />
+                      {showColorPickerFor === idx && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-10" 
+                            onClick={() => setShowColorPickerFor(null)} 
+                          />
+                          <div className="absolute top-full left-0 mt-2 p-2 bg-white border border-slate-200 rounded-xl shadow-xl z-20 grid grid-cols-6 gap-1 w-36">
+                            {PRESET_COLORS.map(color => (
+                              <button
+                                key={color}
+                                onClick={() => {
+                                  if (onUpdateColors) {
+                                    onUpdateColors({ ...categoryColors, [cat]: color });
+                                  }
+                                  setShowColorPickerFor(null);
+                                }}
+                                className={`w-4 h-4 rounded-full border border-slate-100 hover:scale-110 transition-transform ${categoryColors[cat] === color ? 'ring-2 ring-indigo-500 ring-offset-1' : ''}`}
+                                style={{ backgroundColor: color }}
+                              />
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
                     {editingIndex === idx ? (
                       <>
                         <input 
@@ -383,25 +481,27 @@ export default function CategoryManager({
                     ) : (
                       <>
                         <span className="flex-grow font-medium text-slate-700 text-sm">{cat}</span>
-                        <button 
-                          onClick={() => startEditingCategory(idx)}
-                          className="p-1.5 text-slate-400 hover:bg-white hover:text-indigo-600 rounded-md opacity-0 group-hover:opacity-100 transition-all shadow-sm"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteCategory(idx)}
-                          className="p-1.5 text-slate-400 hover:bg-white hover:text-red-600 rounded-md opacity-0 group-hover:opacity-100 transition-all shadow-sm"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                          <button 
+                            onClick={() => startEditingCategory(idx)}
+                            className="p-1.5 text-slate-400 hover:bg-white hover:text-indigo-600 rounded-md shadow-sm"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteCategory(idx)}
+                            className="p-1.5 text-slate-400 hover:bg-white hover:text-red-600 rounded-md shadow-sm"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </>
                     )}
                   </div>
                 ))}
               </div>
             </div>
-          ) : (
+          ) : activeTab === 'rules' ? (
             /* --- RULES TAB (CLASSIFICATION RULES) --- */
             <div className="space-y-6">
               <div className="flex items-center justify-between p-4 bg-indigo-600 rounded-2xl shadow-md text-white">
@@ -657,6 +757,82 @@ export default function CategoryManager({
                   </div>
                 )}
               </div>
+            </div>
+          ) : (
+            /* --- STATS TAB (REPORT) --- */
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl">
+                  <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">전체 설계금액</span>
+                  <div className="text-xl font-black text-indigo-900 mt-1">
+                    ₩{categoryStats.grandTotalAmount.toLocaleString()}
+                  </div>
+                </div>
+                <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl">
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">총 품목 수</span>
+                  <div className="text-xl font-black text-slate-900 mt-1">
+                    {categoryStats.grandTotalCount.toLocaleString()} <span className="text-sm font-bold text-slate-400">건</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                    <PieChart className="w-4 h-4 text-indigo-600" />
+                    카테고리별 비중 및 할당량
+                  </h3>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase">비중(%) 순 정렬</span>
+                </div>
+
+                <div className="space-y-3">
+                  {categoryStats.byCategory.map((cat, idx) => (
+                    <div key={idx} className="bg-white border border-slate-100 rounded-xl p-3 shadow-sm hover:border-indigo-200 transition-all group">
+                      <div className="flex justify-between items-center mb-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div 
+                            className="w-3 h-3 rounded-full shrink-0" 
+                            style={{ backgroundColor: categoryColors[cat.name] || '#e2e8f0' }} 
+                          />
+                          <span className="text-sm font-bold text-slate-700 truncate">{cat.name}</span>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="text-right">
+                            <span className="text-[10px] font-bold text-slate-400 block leading-tight">금액 비중</span>
+                            <span className="text-xs font-black text-indigo-600">{cat.percentage.toFixed(1)}%</span>
+                          </div>
+                          <div className="text-right border-l border-slate-100 pl-3">
+                            <span className="text-[10px] font-bold text-slate-400 block leading-tight">항목 수</span>
+                            <span className="text-xs font-black text-slate-700">{cat.count}건</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="relative h-2 w-full bg-slate-50 rounded-full overflow-hidden">
+                        <div 
+                          className="absolute inset-y-0 left-0 transition-all duration-1000 ease-out rounded-full"
+                          style={{ 
+                            width: `${cat.percentage}%`,
+                            backgroundColor: categoryColors[cat.name] || '#6366f1'
+                          }}
+                        />
+                      </div>
+                      
+                      <div className="flex justify-between items-center mt-2">
+                        <span className="text-[10px] font-bold text-slate-400">설계금액</span>
+                        <span className="text-[11px] font-bold text-slate-600">₩{cat.totalAmount.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {categoryStats.grandTotalCount === 0 && (
+                <div className="flex flex-col items-center justify-center py-12 text-center space-y-3 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                  <BarChart3 className="w-12 h-12 text-slate-200" />
+                  <p className="text-sm font-bold text-slate-400">분석할 데이터가 없습니다.<br/>내역서 파일을 먼저 업로드해 주세요.</p>
+                </div>
+              )}
             </div>
           )}
 
