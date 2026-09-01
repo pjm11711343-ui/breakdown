@@ -995,7 +995,8 @@ export default function CategorySummaryCards({
                           initial={{ width: 0 }}
                           animate={{ width: `${Math.min(100, cat.percentage)}%` }}
                           transition={{ duration: 0.8, ease: "easeOut", delay: idx * 0.03 }}
-                          className="h-full bg-indigo-500 rounded-full group-hover:bg-indigo-600 transition-colors shadow-[0_0_8px_rgba(79,70,229,0.3)]" 
+                          style={{ backgroundColor: categoryColors[cat.name] || '#6366f1' }}
+                          className="h-full rounded-full transition-colors shadow-xs" 
                         />
                       </div>
                       <div className="flex justify-between items-center text-xs">

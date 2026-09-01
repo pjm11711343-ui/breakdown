@@ -430,7 +430,7 @@ export async function saveCustomRulesToFirestore(rules: CustomClassificationRule
 }
 
 export function subscribeCustomRulesFromFirestore(
-  callback: (rules: CustomClassificationRule[]) => void
+  callback: (rules: CustomClassificationRule[], updatedAt?: number) => void
 ): () => void {
   if (!checkQuotaState()) {
     return () => {};
@@ -443,7 +443,7 @@ export function subscribeCustomRulesFromFirestore(
         if (docSnap.exists()) {
           const data = docSnap.data();
           if (Array.isArray(data.rules)) {
-            callback(data.rules);
+            callback(data.rules, data.updatedAt);
           }
         }
       },

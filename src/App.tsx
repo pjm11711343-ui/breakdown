@@ -355,12 +355,47 @@ export default function App() {
     });
   };
 
+  const mergeClassificationRules = (
+    existingRules: CustomClassificationRule[],
+    incomingRules: CustomClassificationRule[]
+  ): CustomClassificationRule[] => {
+    const ruleMap = new Map<string, CustomClassificationRule>();
+    const getKey = (r: CustomClassificationRule) => (r.pattern || '').trim().toLowerCase().replace(/\s+/g, '');
+
+    // 1. Existing local rules take precedence
+    (existingRules || []).forEach(r => {
+      if (!r || !r.pattern) return;
+      const key = getKey(r);
+      if (key) ruleMap.set(key, r);
+    });
+
+    // 2. Incoming rules merge if not present
+    (incomingRules || []).forEach(r => {
+      if (!r || !r.pattern) return;
+      const key = getKey(r);
+      if (!key) return;
+
+      if (!ruleMap.has(key)) {
+        ruleMap.set(key, r);
+      } else {
+        const existing = ruleMap.get(key)!;
+        ruleMap.set(key, {
+          ...existing,
+          ...r,
+          priority: Math.max(existing.priority ?? 10, r.priority ?? 10)
+        });
+      }
+    });
+
+    return Array.from(ruleMap.values());
+  };
+
   const [customClassificationRules, setCustomClassificationRules] = useState<CustomClassificationRule[]>(() => {
     try {
       const saved = safeLocalStorage.getItem('mechauto_custom_rules');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed.map((r: any) => ({
             ...r,
             priority: typeof r.priority === 'number' ? r.priority : 10
@@ -376,15 +411,33 @@ export default function App() {
     ];
   });
 
-  const [learnedMappings, setLearnedMappings] = useState<Record<string, string>>({});
+  const [learnedMappings, setLearnedMappings] = useState<Record<string, string>>(() => {
+    try {
+      const saved = safeLocalStorage.getItem('mechauto_learned_mappings');
+      if (saved) {
+        return JSON.parse(saved) || {};
+      }
+    } catch (e) {
+      console.error('Error loading learned mappings from localStorage:', e);
+    }
+    return {};
+  });
 
-  // Persist classification rules to local
+  // Persist classification rules to local storage
   useEffect(() => {
     safeLocalStorage.setItem('mechauto_custom_rules', JSON.stringify(customClassificationRules));
+    safeLocalStorage.setItem('mechauto_custom_rules_updated_at', Date.now().toString());
   }, [customClassificationRules]);
+
+  // Persist learned mappings to local storage
+  useEffect(() => {
+    safeLocalStorage.setItem('mechauto_learned_mappings', JSON.stringify(learnedMappings));
+  }, [learnedMappings]);
 
   const handleUpdateRules = (newRules: CustomClassificationRule[]) => {
     setCustomClassificationRules(newRules);
+    safeLocalStorage.setItem('mechauto_custom_rules', JSON.stringify(newRules));
+    safeLocalStorage.setItem('mechauto_custom_rules_updated_at', Date.now().toString());
     saveCustomRulesToFirestore(newRules).catch(err => {
       console.warn('Failed to sync rules to Firestore:', err);
     });
@@ -566,35 +619,60 @@ export default function App() {
       }
     });
 
-    // Subscribe to Firestore Custom Rules
-    const unsubscribeRules = subscribeCustomRulesFromFirestore(firestoreRules => {
-      if (firestoreRules && firestoreRules.length > 0) {
+    // Subscribe to Firestore Custom Rules with intelligent non-destructive merging
+    const unsubscribeRules = subscribeCustomRulesFromFirestore((firestoreRules, firestoreUpdatedAt) => {
+      if (firestoreRules && Array.isArray(firestoreRules) && firestoreRules.length > 0) {
         setCustomClassificationRules(prev => {
-          // Break potential infinite loop by comparing content
-          if (JSON.stringify(prev) === JSON.stringify(firestoreRules)) return prev;
-          return firestoreRules;
+          const merged = mergeClassificationRules(prev, firestoreRules);
+          
+          // If local had rules that Firestore didn't have yet, sync the merged set to Firestore
+          if (merged.length > firestoreRules.length) {
+            saveCustomRulesToFirestore(merged).catch(err => {
+              console.warn('Failed to sync merged rules to Firestore:', err);
+            });
+          }
+
+          if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
+
+          safeLocalStorage.setItem('mechauto_custom_rules', JSON.stringify(merged));
+          safeLocalStorage.setItem('mechauto_custom_rules_updated_at', Date.now().toString());
+          return merged;
         });
-        safeLocalStorage.setItem('mechauto_custom_rules', JSON.stringify(firestoreRules));
+      } else {
+        // If Firestore document doesn't exist yet or is empty, push current local rules to Firestore
+        setCustomClassificationRules(prev => {
+          if (prev && prev.length > 0) {
+            saveCustomRulesToFirestore(prev).catch(err => {
+              console.warn('Failed to initialize rules in Firestore:', err);
+            });
+          }
+          return prev;
+        });
       }
     });
 
     // Subscribe to Firestore Categories
     const unsubscribeCategories = subscribeCategoriesFromFirestore((firestoreCats, firestoreColors) => {
-      if (firestoreCats && firestoreCats.length > 0) {
+      if (firestoreCats && Array.isArray(firestoreCats) && firestoreCats.length > 0) {
         setCategories(prev => {
-          // Break potential infinite loop by comparing content
-          if (JSON.stringify(prev) === JSON.stringify(firestoreCats)) return prev;
-          return firestoreCats;
+          // Merge to ensure locally created custom categories are preserved
+          const merged = Array.from(new Set([...prev, ...firestoreCats]));
+          if (merged.length > firestoreCats.length) {
+            saveCategoriesToFirestore(merged).catch(console.warn);
+          }
+          if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
+          safeLocalStorage.setItem(CATEGORIES_KEY, JSON.stringify(merged));
+          return merged;
         });
-        safeLocalStorage.setItem(CATEGORIES_KEY, JSON.stringify(firestoreCats));
       }
       
       if (firestoreColors && Object.keys(firestoreColors).length > 0) {
         setCategoryColors(prev => {
-          if (JSON.stringify(prev) === JSON.stringify(firestoreColors)) return prev;
-          return firestoreColors;
+          const merged = { ...prev, ...firestoreColors };
+          if (JSON.stringify(prev) === JSON.stringify(merged)) return prev;
+          safeLocalStorage.setItem('mechauto_category_colors', JSON.stringify(merged));
+          return merged;
         });
-        safeLocalStorage.setItem('mechauto_category_colors', JSON.stringify(firestoreColors));
       }
     });
 
@@ -610,7 +688,13 @@ export default function App() {
 
     // Subscribe to Learned Mappings (Classification Recommendation Service)
     const unsubscribeLearned = subscribeLearnedMappingsFromFirestore(mappings => {
-      setLearnedMappings(mappings);
+      if (mappings && Object.keys(mappings).length > 0) {
+        setLearnedMappings(prev => {
+          const merged = { ...prev, ...mappings };
+          safeLocalStorage.setItem('mechauto_learned_mappings', JSON.stringify(merged));
+          return merged;
+        });
+      }
     });
 
     // Check Shared link or Firestore Active Session on Mount
@@ -994,7 +1078,7 @@ export default function App() {
         setFontSize(project.config.fontSize || 11);
       }
       */
-      setCategories(project.categories || INITIAL_CATEGORIES);
+      setCategories(prev => Array.from(new Set([...prev, ...(project.categories || INITIAL_CATEGORIES)])));
       setCurrentProjectName(project.name);
       setCategoryEstimates(project.categoryEstimates || {});
       setProjectMetadata({
@@ -1505,31 +1589,75 @@ export default function App() {
   };
 
   const updateRuleFromClassification = (name: string, category: string) => {
-    const existingIdx = customClassificationRules.findIndex(r => r.pattern.toLowerCase().replace(/\s+/g, '') === name.toLowerCase().replace(/\s+/g, ''));
-    
-    if (existingIdx !== -1) {
-      // Update existing rule
-      const updated = [...customClassificationRules];
-      updated[existingIdx] = {
-        ...updated[existingIdx],
-        category: category,
-        isEnabled: true // Ensure it's enabled if user manually updated it
-      };
-      handleUpdateRules(updated);
-      showNotification(`품명 '${name}'에 대한 분류 규칙이 '${category}'(으)로 업데이트되었습니다.`, 'info');
-    } else {
-      // Create new rule
-      const newRule: CustomClassificationRule = {
-        id: `auto-rule-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        pattern: name,
-        category: category,
-        isEnabled: true,
-        priority: 50, // Higher than default 10 to ensure manual overrides stick
-        description: `사용자 분류 시 자동 생성됨 (${new Date().toLocaleDateString()})`
-      };
-      handleUpdateRules([...customClassificationRules, newRule]);
-      showNotification(`신규 규칙 추가: '${name}' → '${category}' 분류 규칙이 자동 생성되었습니다.`, 'success');
-    }
+    updateRulesFromClassifications([{ name, category }]);
+  };
+
+  const updateRulesFromClassifications = (entries: { name: string; category: string }[]) => {
+    if (!entries || entries.length === 0) return;
+
+    setCustomClassificationRules(prevRules => {
+      let updatedRules = [...prevRules];
+      let createdCount = 0;
+      let updatedCount = 0;
+
+      entries.forEach(({ name, category }) => {
+        const cleanName = (name || '').trim();
+        const cleanCat = (category || '').trim();
+        if (!cleanName || !cleanCat) return;
+
+        const normKey = cleanName.toLowerCase().replace(/\s+/g, '');
+        const existingIdx = updatedRules.findIndex(
+          r => (r.pattern || '').toLowerCase().replace(/\s+/g, '') === normKey
+        );
+
+        if (existingIdx !== -1) {
+          if (updatedRules[existingIdx].category !== cleanCat) {
+            updatedRules[existingIdx] = {
+              ...updatedRules[existingIdx],
+              category: cleanCat,
+              isEnabled: true
+            };
+            updatedCount++;
+          }
+        } else {
+          const newRule: CustomClassificationRule = {
+            id: `auto-rule-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            pattern: cleanName,
+            category: cleanCat,
+            isEnabled: true,
+            priority: 50, // Higher than default 10 to ensure manual overrides stick
+            description: `지능형 자동 학습 (${new Date().toLocaleDateString()})`
+          };
+          updatedRules.push(newRule);
+          createdCount++;
+        }
+      });
+
+      if (createdCount === 0 && updatedCount === 0) {
+        return prevRules;
+      }
+
+      // Synchronous local persistence immediately
+      safeLocalStorage.setItem('mechauto_custom_rules', JSON.stringify(updatedRules));
+      safeLocalStorage.setItem('mechauto_custom_rules_updated_at', Date.now().toString());
+
+      // Cloud Firestore synchronization
+      saveCustomRulesToFirestore(updatedRules).catch(err => {
+        console.warn('Failed to sync rules to Firestore:', err);
+      });
+
+      if (entries.length === 1) {
+        if (createdCount > 0) {
+          showNotification(`신규 규칙 자동저장: '${entries[0].name}' → '${entries[0].category}' 분류 규칙이 영구 저장되었습니다.`, 'success');
+        } else if (updatedCount > 0) {
+          showNotification(`품명 '${entries[0].name}'에 대한 분류 규칙이 '${entries[0].category}'(으)로 갱신 및 저장되었습니다.`, 'info');
+        }
+      } else if (createdCount > 0 || updatedCount > 0) {
+        showNotification(`지능형 자동 학습: ${createdCount + updatedCount}개 품목의 분류 규칙이 영구 저장되었습니다.`, 'success');
+      }
+
+      return updatedRules;
+    });
   };
 
   const handleRevertCategory = (id: string) => {
@@ -1577,14 +1705,12 @@ export default function App() {
         });
       }
 
-      // 2. Handle automatic rule creation for multiple items
-      // We only create rules for unique names in the selection
+      // 2. Handle automatic rule creation for multiple items (atomic batch update)
       if (autoRuleCreation && newCategory) {
         const uniqueNames = Array.from(new Set(targetItems.map(i => (i.name || '').trim()).filter(Boolean))) as string[];
         if (uniqueNames.length > 0) {
-          uniqueNames.forEach(name => {
-            updateRuleFromClassification(name, newCategory);
-          });
+          const entries = uniqueNames.map(name => ({ name, category: newCategory }));
+          updateRulesFromClassifications(entries);
         }
       }
 

@@ -252,48 +252,75 @@ export default function CategoryManager({
 
   // Stats Calculation
   const categoryStats = useMemo(() => {
-    const stats: Record<string, { count: number; totalAmount: number }> = {};
+    const stats: Record<string, { count: number; totalAmount: number; materialAmount: number; laborAmount: number }> = {};
     
     // Initialize all categories
     categories.forEach(cat => {
-      stats[cat] = { count: 0, totalAmount: 0 };
+      stats[cat] = { count: 0, totalAmount: 0, materialAmount: 0, laborAmount: 0 };
     });
     
     // Unclassified category
-    stats['미분류'] = { count: 0, totalAmount: 0 };
+    stats['미분류'] = { count: 0, totalAmount: 0, materialAmount: 0, laborAmount: 0 };
     
+    const getItemAmount = (item: SpecItem): number => {
+      if (item.amount && item.amount > 0) return item.amount;
+      if (item.materialAmount || item.laborAmount) {
+        return (item.materialAmount || 0) + (item.laborAmount || 0);
+      }
+      if (item.quantity && item.unitPrice) {
+        return item.quantity * item.unitPrice;
+      }
+      return 0;
+    };
+
     // Calculate totals
     let grandTotalAmount = 0;
     let grandTotalCount = 0;
+    let grandMaterialAmount = 0;
+    let grandLaborAmount = 0;
     
     items.forEach(item => {
       const cat = item.category || '미분류';
       if (!stats[cat]) {
-        stats[cat] = { count: 0, totalAmount: 0 };
+        stats[cat] = { count: 0, totalAmount: 0, materialAmount: 0, laborAmount: 0 };
       }
+      const itemAmt = getItemAmount(item);
+      const matAmt = item.materialAmount || (item.category !== '외주' ? itemAmt : 0);
+      const labAmt = item.laborAmount || (item.category === '외주' ? itemAmt : 0);
+
       stats[cat].count++;
-      stats[cat].totalAmount += item.amount || 0;
-      grandTotalAmount += item.amount || 0;
+      stats[cat].totalAmount += itemAmt;
+      stats[cat].materialAmount += matAmt;
+      stats[cat].laborAmount += labAmt;
+
+      grandTotalAmount += itemAmt;
       grandTotalCount++;
+      grandMaterialAmount += matAmt;
+      grandLaborAmount += labAmt;
     });
     
+    const sortedCategories = Object.entries(stats)
+      .map(([name, data]) => ({
+        name,
+        ...data,
+        percentage: grandTotalAmount > 0 ? (data.totalAmount / grandTotalAmount) * 100 : 0,
+        countPercentage: grandTotalCount > 0 ? (data.count / grandTotalCount) * 100 : 0
+      }))
+      .filter(s => s.count > 0 || categories.includes(s.name))
+      .sort((a, b) => b.totalAmount - a.totalAmount);
+
     return {
-      byCategory: Object.entries(stats)
-        .map(([name, data]) => ({
-          name,
-          ...data,
-          percentage: grandTotalAmount > 0 ? (data.totalAmount / grandTotalAmount) * 100 : 0
-        }))
-        .filter(s => s.count > 0 || categories.includes(s.name))
-        .sort((a, b) => b.totalAmount - a.totalAmount),
+      byCategory: sortedCategories,
       grandTotalAmount,
-      grandTotalCount
+      grandTotalCount,
+      grandMaterialAmount,
+      grandLaborAmount
     };
   }, [items, categories]);
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className={`bg-white rounded-2xl w-full ${activeTab === 'rules' ? 'max-w-2xl' : 'max-w-md'} shadow-2xl overflow-hidden flex flex-col h-[85vh] transition-all duration-300`}>
+      <div className={`bg-white rounded-2xl w-full ${activeTab === 'rules' || activeTab === 'stats' ? 'max-w-2xl md:max-w-3xl' : 'max-w-md'} shadow-2xl overflow-hidden flex flex-col h-[85vh] transition-all duration-300`}>
         {/* Modal Header */}
         <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-3">
@@ -761,66 +788,147 @@ export default function CategoryManager({
           ) : (
             /* --- STATS TAB (REPORT) --- */
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-3">
+              {/* Overall Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl">
-                  <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">전체 설계금액</span>
-                  <div className="text-xl font-black text-indigo-900 mt-1">
+                  <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest block">전체 총계약 금액 (100%)</span>
+                  <div className="text-xl font-black text-indigo-950 mt-1">
                     ₩{categoryStats.grandTotalAmount.toLocaleString()}
                   </div>
+                  <div className="text-[11px] font-bold text-indigo-600/80 mt-1">
+                    100.0% 기준 총액
+                  </div>
                 </div>
-                <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">총 품목 수</span>
-                  <div className="text-xl font-black text-slate-900 mt-1">
-                    {categoryStats.grandTotalCount.toLocaleString()} <span className="text-sm font-bold text-slate-400">건</span>
+                <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl">
+                  <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest block">자재비 합계</span>
+                  <div className="text-xl font-black text-blue-950 mt-1">
+                    ₩{categoryStats.grandMaterialAmount.toLocaleString()}
+                  </div>
+                  <div className="text-[11px] font-bold text-blue-600 mt-1">
+                    전체의 {categoryStats.grandTotalAmount > 0 ? ((categoryStats.grandMaterialAmount / categoryStats.grandTotalAmount) * 100).toFixed(1) : '0.0'}%
+                  </div>
+                </div>
+                <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl">
+                  <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest block">외주비 합계</span>
+                  <div className="text-xl font-black text-amber-950 mt-1">
+                    ₩{categoryStats.grandLaborAmount.toLocaleString()}
+                  </div>
+                  <div className="text-[11px] font-bold text-amber-700 mt-1">
+                    전체의 {categoryStats.grandTotalAmount > 0 ? ((categoryStats.grandLaborAmount / categoryStats.grandTotalAmount) * 100).toFixed(1) : '0.0'}%
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-4">
+              {/* 100% Stacked Category Composition Bar */}
+              {categoryStats.grandTotalAmount > 0 && (
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-2.5">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-extrabold text-slate-700 flex items-center gap-1.5">
+                      <BarChart3 className="w-4 h-4 text-indigo-600" />
+                      전체 예산 100% 구성 비율 분포
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                      총 {categoryStats.grandTotalCount}건 / 100%
+                    </span>
+                  </div>
+
+                  {/* Multi-segmented 100% bar */}
+                  <div className="h-4 w-full bg-slate-200 rounded-full overflow-hidden flex shadow-inner">
+                    {categoryStats.byCategory
+                      .filter(cat => cat.percentage > 0)
+                      .map((cat, idx) => (
+                        <div
+                          key={idx}
+                          className="h-full transition-all hover:opacity-90 relative group cursor-pointer"
+                          style={{
+                            width: `${cat.percentage}%`,
+                            backgroundColor: categoryColors[cat.name] || '#6366f1'
+                          }}
+                          title={`${cat.name}: ${cat.percentage.toFixed(1)}% (₩${cat.totalAmount.toLocaleString()})`}
+                        />
+                      ))}
+                  </div>
+
+                  {/* Mini legend of top categories */}
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1 text-[11px]">
+                    {categoryStats.byCategory
+                      .filter(cat => cat.percentage > 0)
+                      .slice(0, 6)
+                      .map((cat, idx) => (
+                        <div key={idx} className="flex items-center gap-1">
+                          <span
+                            className="w-2 h-2 rounded-full inline-block"
+                            style={{ backgroundColor: categoryColors[cat.name] || '#6366f1' }}
+                          />
+                          <span className="font-bold text-slate-600">{cat.name}</span>
+                          <span className="font-mono font-black text-indigo-700">{cat.percentage.toFixed(1)}%</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Detailed Category List */}
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
                     <PieChart className="w-4 h-4 text-indigo-600" />
-                    카테고리별 비중 및 할당량
+                    카테고리별 비중(%) 및 상세 점유율
                   </h3>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase">비중(%) 순 정렬</span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase">비중 높은 순</span>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-2.5 max-h-[45vh] overflow-y-auto pr-1">
                   {categoryStats.byCategory.map((cat, idx) => (
-                    <div key={idx} className="bg-white border border-slate-100 rounded-xl p-3 shadow-sm hover:border-indigo-200 transition-all group">
+                    <div key={idx} className="bg-white border border-slate-200/90 rounded-xl p-3.5 shadow-xs hover:border-indigo-300 transition-all">
                       <div className="flex justify-between items-center mb-2">
-                        <div className="flex items-center gap-2 min-w-0">
+                        <div className="flex items-center gap-2.5 min-w-0">
                           <div 
-                            className="w-3 h-3 rounded-full shrink-0" 
+                            className="w-3.5 h-3.5 rounded-full shrink-0 shadow-xs" 
                             style={{ backgroundColor: categoryColors[cat.name] || '#e2e8f0' }} 
                           />
-                          <span className="text-sm font-bold text-slate-700 truncate">{cat.name}</span>
+                          <span className="text-sm font-black text-slate-800 truncate">{cat.name}</span>
+                          {cat.name === '미분류' && cat.count > 0 && (
+                            <span className="px-1.5 py-0.5 text-[9px] font-bold bg-amber-100 text-amber-800 rounded">
+                              분류 필요
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
                           <div className="text-right">
                             <span className="text-[10px] font-bold text-slate-400 block leading-tight">금액 비중</span>
-                            <span className="text-xs font-black text-indigo-600">{cat.percentage.toFixed(1)}%</span>
+                            <span className="text-sm font-mono font-black text-indigo-600">{cat.percentage.toFixed(1)}%</span>
                           </div>
                           <div className="text-right border-l border-slate-100 pl-3">
-                            <span className="text-[10px] font-bold text-slate-400 block leading-tight">항목 수</span>
-                            <span className="text-xs font-black text-slate-700">{cat.count}건</span>
+                            <span className="text-[10px] font-bold text-slate-400 block leading-tight">품목 점유</span>
+                            <span className="text-xs font-mono font-bold text-slate-700">{cat.count}건 <span className="text-[10px] text-slate-400 font-normal">({cat.countPercentage.toFixed(1)}%)</span></span>
                           </div>
                         </div>
                       </div>
 
-                      <div className="relative h-2 w-full bg-slate-50 rounded-full overflow-hidden">
+                      {/* Individual Category Progress Bar */}
+                      <div className="relative h-2 w-full bg-slate-100 rounded-full overflow-hidden my-1.5">
                         <div 
-                          className="absolute inset-y-0 left-0 transition-all duration-1000 ease-out rounded-full"
+                          className="absolute inset-y-0 left-0 transition-all duration-700 ease-out rounded-full shadow-xs"
                           style={{ 
-                            width: `${cat.percentage}%`,
+                            width: `${Math.min(100, Math.max(0, cat.percentage))}%`,
                             backgroundColor: categoryColors[cat.name] || '#6366f1'
                           }}
                         />
                       </div>
                       
-                      <div className="flex justify-between items-center mt-2">
-                        <span className="text-[10px] font-bold text-slate-400">설계금액</span>
-                        <span className="text-[11px] font-bold text-slate-600">₩{cat.totalAmount.toLocaleString()}</span>
+                      <div className="flex justify-between items-center mt-1.5 text-xs">
+                        <span className="text-[11px] font-bold text-slate-500">
+                          합계 금액
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-black text-slate-900">
+                            ₩{cat.totalAmount.toLocaleString()}
+                          </span>
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded border border-indigo-100">
+                            {cat.percentage.toFixed(1)}%
+                          </span>
+                        </div>
                       </div>
                     </div>
                   ))}
