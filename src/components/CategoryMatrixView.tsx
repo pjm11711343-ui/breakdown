@@ -429,7 +429,8 @@ export default function CategoryMatrixView({
         projectName: projectName || '기계설비_공정분리',
         items,
         categories,
-        hidePriceAndAmount
+        hidePriceAndAmount,
+        autoHideEmptySectionCols
       });
     } catch (err) {
       console.error('Export failed', err);
@@ -533,10 +534,10 @@ export default function CategoryMatrixView({
                   ? 'bg-blue-50 border-blue-300 text-blue-700 shadow-xs'
                   : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
               }`}
-              title="선택된 카테고리/내역 중 합계 수량이 0인 구간 열을 표에서 자동으로 숨김/표시"
+              title="수량이 없는 공정(구간) 열을 표 및 엑셀 시트에서 자동으로 숨기거나 표시합니다. (클릭하여 전환)"
             >
               <Columns size={14} />
-              <span>합수량 0 구간열 숨김 {autoHideEmptySectionCols ? 'ON' : 'OFF'}</span>
+              <span>수량 0 공정 자동숨김 {autoHideEmptySectionCols ? 'ON' : 'OFF'}</span>
             </button>
 
             {/* Hide Price and Amount Toggle - Highly Visible Accent Button */}
@@ -801,7 +802,7 @@ export default function CategoryMatrixView({
                       onChange={e => setAutoHideEmptySectionCols(e.target.checked)}
                       className="rounded text-indigo-600 focus:ring-0 cursor-pointer"
                     />
-                    <span>합수량 0 구간열 자동 숨김</span>
+                    <span>수량 0 공정 자동 숨김 (표·엑셀 연동)</span>
                   </label>
                   <label className="flex items-center gap-1.5 cursor-pointer text-amber-800 font-bold hover:text-amber-950 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
                     <input

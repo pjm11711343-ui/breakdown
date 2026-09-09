@@ -1924,7 +1924,7 @@ export default function App() {
         items,
         categories
       });
-      showNotification('셀 서식과 재료비 단가/금액이 포함된 고급 엑셀 파일이 다운로드되었습니다.', 'success');
+      showNotification('카테고리_구간별_집계표 및 카테고리별 개별 시트(백강관, STS 등)가 포함된 고급 엑셀 파일이 다운로드되었습니다.', 'success');
     } catch (e: any) {
       console.error('Export failed', e);
       showNotification(e.message || '파일 생성 중 오류가 발생했습니다.', 'error');

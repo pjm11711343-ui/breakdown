@@ -4,7 +4,10 @@ import {
   getItemMaterialCost, 
   getItemLaborCost, 
   getItemContractAmount, 
-  isExcludedFromMaterialCost 
+  isExcludedFromMaterialCost,
+  isOutsourcingCategory,
+  isIndirectCostCategory,
+  isClientSuppliedCategory
 } from './costCalculation';
 
 interface ExportOptions {
@@ -12,13 +15,15 @@ interface ExportOptions {
   items: SpecItem[];
   categories?: string[];
   hidePriceAndAmount?: boolean;
+  autoHideEmptySectionCols?: boolean;
 }
 
 export async function exportStyledExcel({
   projectName = '기계설비_공정분리',
   items,
   categories = [],
-  hidePriceAndAmount = false
+  hidePriceAndAmount = false,
+  autoHideEmptySectionCols = true
 }: ExportOptions): Promise<void> {
   if (!items || items.length === 0) {
     throw new Error('내보낼 데이터가 없습니다.');
@@ -1016,12 +1021,336 @@ export async function exportStyledExcel({
     matrixSheet.getColumn(5).width = 14; // 단가
     matrixSheet.getColumn(6).width = 16; // 금액
   }
-  matrixSections.forEach((_, idx) => {
-    matrixSheet.getColumn(sectionStartCol + idx).width = 13;
+  matrixSections.forEach((sec, idx) => {
+    const colNum = sectionStartCol + idx;
+    const col = matrixSheet.getColumn(colNum);
+    col.width = 13;
+    const gQ = allGrandSectionQty[sec] || 0;
+    if (autoHideEmptySectionCols && gQ <= 0) {
+      col.hidden = true;
+    }
   });
 
   /* ==========================================================================
-     5. Write and Trigger Browser Download
+     5. SHEET 5+: 카테고리별 공정분리 시트 (카테고리_구간별_집계표 양식 적용)
+     백강관, 강관부속, STS위생관 등 카테고리별로 구간별 집계표 양식의 전용 시트 분리 생성
+     ========================================================================== */
+  function getColumnLetter(colIndex: number): string {
+    let temp = colIndex;
+    let letter = '';
+    while (temp > 0) {
+      const rem = (temp - 1) % 26;
+      letter = String.fromCharCode(65 + rem) + letter;
+      temp = Math.floor((temp - 1) / 26);
+    }
+    return letter;
+  }
+
+  // Track existing sheet names to avoid collision and invalid characters in Excel
+  const existingSheetNames = new Set<string>([
+    '공정분리_내역서',
+    '자재분류별_집계표',
+    '공종별_집계표',
+    '카테고리_구간별_집계표'
+  ]);
+
+  const sanitizeSheetName = (name: string): string => {
+    let clean = name.replace(/[/\\?*:[\]]/g, '_').trim();
+    if (!clean) clean = '기타';
+    clean = clean.slice(0, 31);
+    let finalName = clean;
+    let counter = 1;
+    while (existingSheetNames.has(finalName)) {
+      const suffix = `_${counter}`;
+      finalName = `${clean.slice(0, 31 - suffix.length)}${suffix}`;
+      counter++;
+    }
+    existingSheetNames.add(finalName);
+    return finalName;
+  };
+
+  // Determine sorted category list:
+  // General Materials (백강관, 강관부속, STS위생관...) -> Safety Equipment -> Outsourcing -> Unclassified
+  const presentCategories = Array.from(exportCategoryMap.keys());
+  const initialOrderedList: string[] = [];
+
+  categories.forEach(c => {
+    const trimmed = c.trim();
+    if (exportCategoryMap.has(trimmed) && !initialOrderedList.includes(trimmed)) {
+      initialOrderedList.push(trimmed);
+    }
+  });
+
+  presentCategories.forEach(c => {
+    if (!initialOrderedList.includes(c)) {
+      initialOrderedList.push(c);
+    }
+  });
+
+  const generalCats: string[] = [];
+  const safetyCats: string[] = [];
+  const outsourcingCats: string[] = [];
+  const unclassifiedCats: string[] = [];
+
+  initialOrderedList.forEach(cat => {
+    if (cat === '미분류') {
+      unclassifiedCats.push(cat);
+    } else if (isOutsourcingCategory(cat) || isIndirectCostCategory(cat) || isClientSuppliedCategory(cat)) {
+      outsourcingCats.push(cat);
+    } else if (cat.includes('안전')) {
+      safetyCats.push(cat);
+    } else {
+      generalCats.push(cat);
+    }
+  });
+
+  const finalCategorySheetOrder = [
+    ...generalCats,
+    ...safetyCats,
+    ...outsourcingCats,
+    ...unclassifiedCats
+  ];
+
+  finalCategorySheetOrder.forEach(catName => {
+    const itemMap = exportCategoryMap.get(catName);
+    if (!itemMap || itemMap.size === 0) return;
+
+    const validItems = Array.from(itemMap.values()).filter(item => item.totalQty > 0);
+    if (validItems.length === 0) return;
+
+    const sheetName = sanitizeSheetName(catName);
+    const catSheet = workbook.addWorksheet(sheetName, {
+      views: [{ state: 'frozen', xSplit: hidePriceAndAmount ? 4 : 6, ySplit: 2 }]
+    });
+
+    // 1. Setup Two-level Matrix Headers (identical to 카테고리_구간별_집계표)
+    catSheet.getRow(1).height = 24;
+    catSheet.getRow(2).height = 24;
+
+    catSheet.mergeCells('A1:A2');
+    catSheet.getCell('A1').value = '품 명';
+
+    catSheet.mergeCells('B1:B2');
+    catSheet.getCell('B1').value = '규 격';
+
+    catSheet.mergeCells('C1:C2');
+    catSheet.getCell('C1').value = '단위';
+
+    if (hidePriceAndAmount) {
+      catSheet.mergeCells('D1:D2');
+      catSheet.getCell('D1').value = '수량(M)';
+    } else {
+      catSheet.mergeCells('D1:F1');
+      catSheet.getCell('D1').value = '내역물량';
+      catSheet.getCell('D2').value = '수량(M)';
+      catSheet.getCell('E2').value = '단가';
+      catSheet.getCell('F2').value = '금액';
+    }
+
+    // Section Headers
+    matrixSections.forEach((sec, idx) => {
+      const colNum = sectionStartCol + idx;
+      let mainGroup = '기계설비';
+      let subGroup = sec;
+
+      if (sec.includes('>')) {
+        const parts = sec.split('>');
+        mainGroup = parts[0].trim();
+        subGroup = parts.slice(1).join('>').trim();
+      } else if (/^\d+/.test(sec)) {
+        subGroup = sec.replace(/^\d+[\s._-]*/, '').trim() || sec;
+      }
+
+      const cellTop = catSheet.getRow(1).getCell(colNum);
+      cellTop.value = mainGroup;
+
+      const cellBottom = catSheet.getRow(2).getCell(colNum);
+      cellBottom.value = subGroup;
+    });
+
+    // Style Header Cells
+    [1, 2].forEach(rIdx => {
+      const row = catSheet.getRow(rIdx);
+      row.eachCell({ includeEmpty: true }, (cell, cIdx) => {
+        cell.font = { name: '맑은 고딕', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.border = headerBorder;
+        if (hidePriceAndAmount) {
+          cell.fill = cIdx === 4 ? headerFillBoQ : headerFillGray;
+        } else {
+          cell.fill = cIdx >= 4 && cIdx <= 6 ? headerFillBoQ : headerFillGray;
+        }
+      });
+    });
+
+    // 2. Populate Category Item Rows
+    let catRowIdx = 3;
+    let catSubtotalQty = 0;
+    let catSubtotalAmt = 0;
+    const catSectionSubtotals: Record<string, number> = {};
+
+    validItems.forEach((item, itemIdx) => {
+      catSubtotalQty += item.totalQty;
+      catSubtotalAmt += item.totalAmount;
+
+      const row = catSheet.getRow(catRowIdx);
+      row.height = 20;
+
+      // Col A: Name
+      row.getCell(1).value = item.name;
+      row.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+      row.getCell(1).font = { name: '맑은 고딕', size: 9 };
+
+      // Col B: Spec
+      row.getCell(2).value = item.spec;
+      row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(2).font = { name: '맑은 고딕', size: 9 };
+
+      // Col C: Unit
+      row.getCell(3).value = item.unit;
+      row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+      row.getCell(3).font = { name: '맑은 고딕', size: 9 };
+
+      // Col D: Total Qty
+      row.getCell(4).value = item.totalQty;
+      row.getCell(4).numFmt = Number.isInteger(item.totalQty) ? '#,##0' : '#,##0.00';
+      row.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+      row.getCell(4).font = { name: '맑은 고딕', size: 9, bold: true };
+
+      if (!hidePriceAndAmount) {
+        // Col E: Unit Price
+        row.getCell(5).value = item.unitPrice;
+        row.getCell(5).numFmt = '#,##0';
+        row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(5).font = { name: '맑은 고딕', size: 9 };
+
+        // Col F: Total Amount
+        row.getCell(6).value = item.totalAmount;
+        row.getCell(6).numFmt = '#,##0';
+        row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(6).font = { name: '맑은 고딕', size: 9, bold: true };
+      }
+
+      // Section columns
+      matrixSections.forEach((sec, sIdx) => {
+        const cNum = sectionStartCol + sIdx;
+        const q = item.sectionQty[sec] || 0;
+        catSectionSubtotals[sec] = (catSectionSubtotals[sec] || 0) + q;
+
+        const cell = row.getCell(cNum);
+        if (q > 0) {
+          cell.value = q;
+          cell.numFmt = Number.isInteger(q) ? '#,##0' : '#,##0.00';
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          cell.font = { name: '맑은 고딕', size: 9, bold: true };
+        } else {
+          cell.value = '';
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        }
+      });
+
+      const isEven = itemIdx % 2 === 1;
+      const rowBgColor = isEven ? 'FFF8FAFC' : 'FFFFFFFF';
+      for (let c = 1; c <= totalBaseCols + matrixSections.length; c++) {
+        const cell = row.getCell(c);
+        cell.border = thinBorder;
+        if (isEven) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBgColor } };
+        }
+      }
+
+      catRowIdx++;
+    });
+
+    // 3. Category Subtotal Row (소계 / TOTAL)
+    const lastDataRow = catRowIdx - 1;
+    const subRow = catSheet.getRow(catRowIdx);
+    subRow.height = 24;
+
+    subRow.getCell(1).value = `[ ${catName} ] 소계 (TOTAL)`;
+    subRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+    subRow.getCell(1).font = { name: '맑은 고딕', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+
+    subRow.getCell(2).value = 'EA';
+    subRow.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+    subRow.getCell(2).font = { name: '맑은 고딕', size: 9.5, bold: true };
+
+    subRow.getCell(3).value = '소계';
+    subRow.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+    subRow.getCell(3).font = { name: '맑은 고딕', size: 9.5, bold: true };
+
+    subRow.getCell(4).value = {
+      formula: `SUM(D3:D${lastDataRow})`,
+      result: catSubtotalQty
+    };
+    subRow.getCell(4).numFmt = Number.isInteger(catSubtotalQty) ? '#,##0' : '#,##0.00';
+    subRow.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+    subRow.getCell(4).font = { name: '맑은 고딕', size: 9.5, bold: true };
+
+    if (!hidePriceAndAmount) {
+      subRow.getCell(5).value = '-';
+      subRow.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
+
+      subRow.getCell(6).value = {
+        formula: `SUM(F3:F${lastDataRow})`,
+        result: catSubtotalAmt
+      };
+      subRow.getCell(6).numFmt = '#,##0';
+      subRow.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+      subRow.getCell(6).font = { name: '맑은 고딕', size: 9.5, bold: true, color: { argb: 'FF1E3A8A' } };
+    }
+
+    matrixSections.forEach((sec, sIdx) => {
+      const cNum = sectionStartCol + sIdx;
+      const colLetter = getColumnLetter(cNum);
+      const secQ = catSectionSubtotals[sec] || 0;
+      const cell = subRow.getCell(cNum);
+      if (secQ > 0) {
+        cell.value = {
+          formula: `SUM(${colLetter}3:${colLetter}${lastDataRow})`,
+          result: secQ
+        };
+        cell.numFmt = Number.isInteger(secQ) ? '#,##0' : '#,##0.00';
+      } else {
+        cell.value = '';
+      }
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.font = { name: '맑은 고딕', size: 9.5, bold: true };
+    });
+
+    for (let c = 1; c <= totalBaseCols + matrixSections.length; c++) {
+      const cell = subRow.getCell(c);
+      cell.fill = goldenSubtotalFill;
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF0F172A' } },
+        bottom: { style: 'medium', color: { argb: 'FF0F172A' } },
+        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+      };
+    }
+
+    // 4. Column Widths for Category Matrix Sheet
+    catSheet.getColumn(1).width = 28; // 품명
+    catSheet.getColumn(2).width = 16; // 규격
+    catSheet.getColumn(3).width = 8;  // 단위
+    catSheet.getColumn(4).width = 12; // 수량
+    if (!hidePriceAndAmount) {
+      catSheet.getColumn(5).width = 14; // 단가
+      catSheet.getColumn(6).width = 16; // 금액
+    }
+    matrixSections.forEach((sec, idx) => {
+      const colNum = sectionStartCol + idx;
+      const col = catSheet.getColumn(colNum);
+      col.width = 13;
+      const secTotal = catSectionSubtotals[sec] || 0;
+      if (autoHideEmptySectionCols && secTotal <= 0) {
+        col.hidden = true;
+      }
+    });
+  });
+
+  /* ==========================================================================
+     6. Write and Trigger Browser Download
      ========================================================================== */
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
