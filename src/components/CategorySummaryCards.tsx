@@ -91,10 +91,10 @@ export default function CategorySummaryCards({
     return acc;
   }, {} as Record<string, { amount: number; materialAmount: number; laborAmount: number; count: number }>);
 
-  // Follow the provided categories array order (except safety equipment)
+  // 1. Follow the provided categories array order (excluding '안전장비류' and outsourcing categories)
   const sortedCategories = categories
+    .filter(name => name !== '안전장비류' && !isOutsourcingCategory(name))
     .map(name => {
-      if (name === '안전장비류') return null;
       const data = categoryData[name];
       if (!data) return null;
       return {
@@ -105,9 +105,9 @@ export default function CategorySummaryCards({
     })
     .filter((cat): cat is { name: string; amount: number; materialAmount: number; laborAmount: number; count: number; percentage: number } => cat !== null);
 
-  // Append extra categories (e.g. dynamically added)
+  // 2. Append extra regular categories (not in categories, not '안전장비류', not outsourcing)
   const extraCategories = Object.entries(categoryData)
-    .filter(([name]) => !categories.includes(name) && name !== '안전장비류')
+    .filter(([name]) => !categories.includes(name) && name !== '안전장비류' && !isOutsourcingCategory(name))
     .map(([name, data]) => ({
       name,
       ...data,
@@ -115,6 +115,7 @@ export default function CategorySummaryCards({
     }))
     .sort((a, b) => b.amount - a.amount);
 
+  // 3. Safety Category (안전장비류)
   const safetyData = categoryData['안전장비류'] || { amount: 0, materialAmount: 0, laborAmount: 0, count: 0 };
   const safetyCategory = {
     name: '안전장비류',
@@ -125,10 +126,37 @@ export default function CategorySummaryCards({
     percentage: totalContractAmount > 0 ? (safetyData.amount / totalContractAmount) * 100 : 0
   };
 
+  // 4. Outsourcing Categories (외주, 외주비, 외주비+덕트덕 등) - 반드시 안전장비류 뒤에 배치
+  const sortedOutsourcingCategories = categories
+    .filter(name => isOutsourcingCategory(name))
+    .map(name => {
+      const data = categoryData[name];
+      if (!data) return null;
+      return {
+        name,
+        ...data,
+        percentage: totalContractAmount > 0 ? (data.amount / totalContractAmount) * 100 : 0
+      };
+    })
+    .filter((cat): cat is { name: string; amount: number; materialAmount: number; laborAmount: number; count: number; percentage: number } => cat !== null);
+
+  const extraOutsourcingCategories = Object.entries(categoryData)
+    .filter(([name]) => !categories.includes(name) && isOutsourcingCategory(name))
+    .map(([name, data]) => ({
+      name,
+      ...data,
+      percentage: totalContractAmount > 0 ? (data.amount / totalContractAmount) * 100 : 0
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  const outsourcingCategories = [...sortedOutsourcingCategories, ...extraOutsourcingCategories];
+
+  // Final order: 일반 자재 카테고리 -> 안전장비류 -> 외주비 카테고리
   const filteredFinalCategories = [...sortedCategories, ...extraCategories];
   if (safetyData.count > 0 || categories.includes('안전장비류')) {
     filteredFinalCategories.push(safetyCategory);
   }
+  filteredFinalCategories.push(...outsourcingCategories);
 
   const unclassifiedItemsList = items.filter(item => !item.category || item.category === '미분류');
   const unclassifiedCount = unclassifiedItemsList.length;
