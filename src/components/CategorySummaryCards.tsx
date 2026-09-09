@@ -1,7 +1,7 @@
 import React from 'react';
 import { SpecItem, ThemeType } from '../types';
 import { motion } from 'motion/react';
-import { Tags, TrendingUp, PieChart as PieChartIcon, Building2, Package, Wrench, ShieldCheck, AlertCircle, ArrowUpRight, Calculator, BarChart3 } from 'lucide-react';
+import { Tags, TrendingUp, PieChart as PieChartIcon, Building2, Package, Wrench, ShieldCheck, AlertCircle, ArrowUpRight, Calculator, BarChart3, Edit2, Check, X } from 'lucide-react';
 import { 
   getItemMaterialCost, 
   getItemLaborCost, 
@@ -24,6 +24,7 @@ interface Props {
   onOpenStats?: () => void;
   onUpdateSafetyAmount?: (amount: number) => void;
   onUpdateCategoryEstimate?: (category: string, amount: number) => void;
+  onRenameCategory?: (oldCategory: string, newCategory: string) => void;
 }
 
 export default function CategorySummaryCards({
@@ -37,13 +38,60 @@ export default function CategorySummaryCards({
   onCategoryClick,
   onOpenStats,
   onUpdateSafetyAmount,
-  onUpdateCategoryEstimate
+  onUpdateCategoryEstimate,
+  onRenameCategory
 }: Props) {
   const [isEditingSafety, setIsEditingSafety] = React.useState(false);
   const [safetyInputVal, setSafetyInputVal] = React.useState('');
   const [showComparison, setShowComparison] = React.useState(false);
   const [editingEstimate, setEditingEstimate] = React.useState<string | null>(null);
   const [estimateInput, setEstimateInput] = React.useState('');
+
+  // Manual category name editing states
+  const [editingCategoryName, setEditingCategoryName] = React.useState<string | null>(null);
+  const [categoryNameInput, setCategoryNameInput] = React.useState('');
+  const [isRenameModalOpen, setIsRenameModalOpen] = React.useState(false);
+  const [modalSelectedCategory, setModalSelectedCategory] = React.useState('');
+  const [modalNewCategoryName, setModalNewCategoryName] = React.useState('');
+
+  const handleStartRename = (catName: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setEditingCategoryName(catName);
+    setCategoryNameInput(catName);
+  };
+
+  const handleSaveRename = (catName: string, e?: React.MouseEvent | React.KeyboardEvent) => {
+    e?.stopPropagation();
+    const trimmed = categoryNameInput.trim();
+    if (trimmed && trimmed !== catName) {
+      onRenameCategory?.(catName, trimmed);
+    }
+    setEditingCategoryName(null);
+    setCategoryNameInput('');
+  };
+
+  const handleCancelRename = (e?: React.MouseEvent | React.KeyboardEvent) => {
+    e?.stopPropagation();
+    setEditingCategoryName(null);
+    setCategoryNameInput('');
+  };
+
+  const openRenameModal = (targetCategory?: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const initialCat = targetCategory || '';
+    setModalSelectedCategory(initialCat);
+    setModalNewCategoryName(initialCat);
+    setIsRenameModalOpen(true);
+  };
+
+  const handleApplyModalRename = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!modalSelectedCategory || !modalNewCategoryName.trim()) return;
+    if (modalNewCategoryName.trim() !== modalSelectedCategory) {
+      onRenameCategory?.(modalSelectedCategory, modalNewCategoryName.trim());
+    }
+    setIsRenameModalOpen(false);
+  };
 
   if (items.length === 0) return null;
 
@@ -214,14 +262,24 @@ export default function CategorySummaryCards({
         </div>
 
         {/* Section Header */}
-        <div className="bg-[#F2F2F2] border-b border-[#141414] px-4 py-1.5 flex items-center justify-between text-black">
-          <div className="flex items-center gap-4">
+        <div className="bg-[#F2F2F2] border-b border-[#141414] px-4 py-1.5 flex flex-wrap items-center justify-between gap-2 text-black">
+          <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <Tags size={13} />
               <span className="text-[11px] font-black uppercase tracking-wider">
                 카테고리별 공정 분리 요약
               </span>
             </div>
+            {onRenameCategory && (
+              <button
+                onClick={(e) => openRenameModal(undefined, e)}
+                className="flex items-center gap-1 px-2 py-0.5 bg-white border border-[#141414] hover:bg-yellow-400 text-slate-900 rounded text-[10px] font-black uppercase transition-all shadow-[1px_1px_0_0_#141414] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none"
+                title="카테고리 명칭 수동 수정"
+              >
+                <Edit2 size={10} />
+                카테고리명 수정
+              </button>
+            )}
             <button 
               onClick={() => setShowComparison(!showComparison)}
               className={`flex items-center gap-1.5 px-2 py-0.5 border text-[10px] font-black uppercase transition-all ${
@@ -234,7 +292,11 @@ export default function CategorySummaryCards({
               수기 물량 비교 {showComparison ? 'OFF' : 'ON'}
             </button>
           </div>
-          <div className="flex items-center gap-3 text-[11px] font-mono">
+          <div className="flex items-center gap-2 sm:gap-3 text-[11px] font-mono">
+            <span className="hidden md:inline text-[10px] text-slate-500 font-normal">
+              💡 카드의 ✏️ 클릭 또는 명칭 더블클릭 시 수동 변경 가능
+            </span>
+            <span className="opacity-40 hidden md:inline">|</span>
             <span className="font-bold">총 품목: {items.length}건</span>
             <span className="opacity-50">|</span>
             <span className="text-indigo-700 font-bold">분류군: {filteredFinalCategories.length}개</span>
@@ -308,9 +370,60 @@ export default function CategorySummaryCards({
                   style={{ borderLeftColor: categoryColors[cat.name] || '#4f46e5' }}
                 >
                   <div className="flex justify-between items-start mb-1">
-                    <span className="text-[11px] font-black text-indigo-700 uppercase truncate" title={cat.name}>🛡️ {cat.name}</span>
-                    {!showComparison && (
-                      <span className="text-[11px] font-mono font-bold bg-indigo-100 text-indigo-700 px-1 border border-indigo-200">
+                    {editingCategoryName === cat.name ? (
+                      <div className="flex items-center gap-1 flex-1 mr-1" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          value={categoryNameInput}
+                          onChange={(e) => setCategoryNameInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveRename(cat.name, e);
+                            else if (e.key === 'Escape') handleCancelRename(e);
+                          }}
+                          className="w-full px-1.5 py-0.5 text-xs font-bold border border-indigo-500 rounded outline-none bg-white text-slate-800 shadow-xs focus:ring-1 focus:ring-indigo-400"
+                          autoFocus
+                          placeholder="카테고리명..."
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => handleSaveRename(cat.name, e)}
+                          className="p-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded"
+                          title="저장 (Enter)"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleCancelRename(e)}
+                          className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"
+                          title="취소 (Esc)"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 truncate group/title flex-1 min-w-0 mr-1">
+                        <span 
+                          className="text-[11px] font-black text-indigo-700 uppercase truncate cursor-text" 
+                          title={`${cat.name} (더블클릭 또는 연필 아이콘으로 수정)`}
+                          onDoubleClick={(e) => onRenameCategory && handleStartRename(cat.name, e)}
+                        >
+                          🛡️ {cat.name}
+                        </span>
+                        {onRenameCategory && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleStartRename(cat.name, e)}
+                            className="opacity-0 group-hover/title:opacity-100 p-0.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-100/60 rounded transition-all shrink-0"
+                            title="카테고리명 수정"
+                          >
+                            <Edit2 className="w-2.5 h-2.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {!showComparison && editingCategoryName !== cat.name && (
+                      <span className="text-[11px] font-mono font-bold bg-indigo-100 text-indigo-700 px-1 border border-indigo-200 shrink-0">
                         {cat.percentage.toFixed(1)}%
                       </span>
                     )}
@@ -421,11 +534,60 @@ export default function CategorySummaryCards({
                   style={{ borderLeftColor: categoryColors[cat.name] || '#f59e0b' }}
                 >
                   <div className="flex justify-between items-start mb-1">
-                    <span className="text-[11px] font-black text-amber-900 uppercase truncate flex items-center gap-1" title={cat.name}>
-                      🛠️ {cat.name}
-                    </span>
-                    {!showComparison && (
-                      <span className="text-[11px] font-mono font-bold bg-amber-200 text-amber-900 px-1 border border-amber-300">
+                    {editingCategoryName === cat.name ? (
+                      <div className="flex items-center gap-1 flex-1 mr-1" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          value={categoryNameInput}
+                          onChange={(e) => setCategoryNameInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveRename(cat.name, e);
+                            else if (e.key === 'Escape') handleCancelRename(e);
+                          }}
+                          className="w-full px-1.5 py-0.5 text-xs font-bold border border-amber-500 rounded outline-none bg-white text-slate-800 shadow-xs focus:ring-1 focus:ring-amber-400"
+                          autoFocus
+                          placeholder="카테고리명..."
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => handleSaveRename(cat.name, e)}
+                          className="p-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded"
+                          title="저장 (Enter)"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleCancelRename(e)}
+                          className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"
+                          title="취소 (Esc)"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 truncate group/title flex-1 min-w-0 mr-1">
+                        <span 
+                          className="text-[11px] font-black text-amber-900 uppercase truncate flex items-center gap-1 cursor-text" 
+                          title={`${cat.name} (더블클릭 또는 연필 아이콘으로 수정)`}
+                          onDoubleClick={(e) => onRenameCategory && handleStartRename(cat.name, e)}
+                        >
+                          🛠️ {cat.name}
+                        </span>
+                        {onRenameCategory && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleStartRename(cat.name, e)}
+                            className="opacity-0 group-hover/title:opacity-100 p-0.5 text-slate-400 hover:text-amber-700 hover:bg-amber-200/60 rounded transition-all shrink-0"
+                            title="카테고리명 수정"
+                          >
+                            <Edit2 className="w-2.5 h-2.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {!showComparison && editingCategoryName !== cat.name && (
+                      <span className="text-[11px] font-mono font-bold bg-amber-200 text-amber-900 px-1 border border-amber-300 shrink-0">
                         {cat.percentage.toFixed(1)}%
                       </span>
                     )}
@@ -497,13 +659,62 @@ export default function CategorySummaryCards({
                 style={{ borderTopColor: categoryColors[cat.name] || '#cbd5e1' }}
               >
                 <div className="flex justify-between items-start mb-1">
-                  <span className="text-[11px] font-black text-slate-600 uppercase truncate flex items-center gap-1" title={cat.name}>
-                    {cat.name}
-                    {isClientSupplied && <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded font-bold">지급자재</span>}
-                    {isIndirect && <span className="text-[9px] px-1 py-0.2 bg-purple-100 text-purple-800 rounded font-bold">간접비</span>}
-                  </span>
-                  {!showComparison && (
-                    <span className="text-[11px] font-mono font-bold bg-blue-100 text-blue-700 px-1 border border-blue-200">
+                  {editingCategoryName === cat.name ? (
+                    <div className="flex items-center gap-1 flex-1 mr-1" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="text"
+                        value={categoryNameInput}
+                        onChange={(e) => setCategoryNameInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveRename(cat.name, e);
+                          else if (e.key === 'Escape') handleCancelRename(e);
+                        }}
+                        className="w-full px-1.5 py-0.5 text-xs font-bold border border-indigo-500 rounded outline-none bg-white text-slate-800 shadow-xs focus:ring-1 focus:ring-indigo-400"
+                        autoFocus
+                        placeholder="카테고리명..."
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => handleSaveRename(cat.name, e)}
+                        className="p-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded"
+                        title="저장 (Enter)"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleCancelRename(e)}
+                        className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"
+                        title="취소 (Esc)"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 truncate group/title flex-1 min-w-0 mr-1">
+                      <span 
+                        className="text-[11px] font-black text-slate-600 uppercase truncate flex items-center gap-1 cursor-text" 
+                        title={`${cat.name} (더블클릭 또는 연필 아이콘으로 수정)`}
+                        onDoubleClick={(e) => onRenameCategory && handleStartRename(cat.name, e)}
+                      >
+                        {cat.name}
+                        {isClientSupplied && <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded font-bold">지급자재</span>}
+                        {isIndirect && <span className="text-[9px] px-1 py-0.2 bg-purple-100 text-purple-800 rounded font-bold">간접비</span>}
+                      </span>
+                      {onRenameCategory && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleStartRename(cat.name, e)}
+                          className="opacity-0 group-hover/title:opacity-100 p-0.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-200/60 rounded transition-all shrink-0"
+                          title="카테고리명 수정"
+                        >
+                          <Edit2 className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {!showComparison && editingCategoryName !== cat.name && (
+                    <span className="text-[11px] font-mono font-bold bg-blue-100 text-blue-700 px-1 border border-blue-200 shrink-0">
                       {cat.percentage.toFixed(1)}%
                     </span>
                   )}
@@ -694,7 +905,17 @@ export default function CategorySummaryCards({
               <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Category-wise Expenditure Summary (자재 + 외주)</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            {onRenameCategory && (
+              <button
+                onClick={(e) => openRenameModal(undefined, e)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 shadow-xs active:scale-95"
+                title="카테고리 명칭 수동 수정"
+              >
+                <Edit2 size={13} className="text-amber-700" />
+                <span>카테고리명 수정</span>
+              </button>
+            )}
             <button 
               onClick={() => setShowComparison(!showComparison)}
               className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold transition-all border ${
@@ -807,12 +1028,63 @@ export default function CategorySummaryCards({
                   
                   <div>
                     <div className="flex justify-between items-start mb-2">
-                      <span className="text-[11px] font-black text-indigo-700 uppercase tracking-widest flex items-center gap-1">
-                        🛡️ {cat.name}
-                      </span>
-                      <span className="text-[11px] font-black text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-md border border-indigo-200">
-                        {cat.percentage.toFixed(1)}%
-                      </span>
+                      {editingCategoryName === cat.name ? (
+                        <div className="flex items-center gap-1 flex-1 mr-1" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            value={categoryNameInput}
+                            onChange={(e) => setCategoryNameInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveRename(cat.name, e);
+                              else if (e.key === 'Escape') handleCancelRename(e);
+                            }}
+                            className="w-full px-2 py-1 text-xs font-bold border border-indigo-500 rounded-lg outline-none bg-white text-slate-800 shadow-xs focus:ring-2 focus:ring-indigo-400"
+                            autoFocus
+                            placeholder="카테고리명..."
+                          />
+                          <button
+                            type="button"
+                            onClick={(e) => handleSaveRename(cat.name, e)}
+                            className="p-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded"
+                            title="저장 (Enter)"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCancelRename(e)}
+                            className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"
+                            title="취소 (Esc)"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 truncate group/title flex-1 min-w-0 mr-1">
+                          <span 
+                            className="text-[11px] font-black text-indigo-700 uppercase tracking-widest flex items-center gap-1 cursor-text"
+                            title={`${cat.name} (더블클릭 또는 연필 아이콘으로 수정)`}
+                            onDoubleClick={(e) => onRenameCategory && handleStartRename(cat.name, e)}
+                          >
+                            🛡️ {cat.name}
+                          </span>
+                          {onRenameCategory && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleStartRename(cat.name, e)}
+                              className="opacity-0 group-hover/title:opacity-100 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-100/70 rounded-md transition-all shrink-0"
+                              title="카테고리명 수정"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {editingCategoryName !== cat.name && (
+                        <span className="text-[11px] font-black text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-md border border-indigo-200 shrink-0">
+                          {cat.percentage.toFixed(1)}%
+                        </span>
+                      )}
                     </div>
                     
                     {isEditingSafety ? (
@@ -888,12 +1160,63 @@ export default function CategorySummaryCards({
                   
                   <div>
                     <div className="flex justify-between items-start mb-2">
-                      <span className="text-[11px] font-black text-amber-800 uppercase tracking-widest flex items-center gap-1">
-                        🛠️ {cat.name} (외주비)
-                      </span>
-                      <span className="text-[11px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200">
-                        {cat.percentage.toFixed(1)}%
-                      </span>
+                      {editingCategoryName === cat.name ? (
+                        <div className="flex items-center gap-1 flex-1 mr-1" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            value={categoryNameInput}
+                            onChange={(e) => setCategoryNameInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveRename(cat.name, e);
+                              else if (e.key === 'Escape') handleCancelRename(e);
+                            }}
+                            className="w-full px-2 py-1 text-xs font-bold border border-amber-500 rounded-lg outline-none bg-white text-slate-800 shadow-xs focus:ring-2 focus:ring-amber-400"
+                            autoFocus
+                            placeholder="카테고리명..."
+                          />
+                          <button
+                            type="button"
+                            onClick={(e) => handleSaveRename(cat.name, e)}
+                            className="p-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded"
+                            title="저장 (Enter)"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCancelRename(e)}
+                            className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"
+                            title="취소 (Esc)"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 truncate group/title flex-1 min-w-0 mr-1">
+                          <span 
+                            className="text-[11px] font-black text-amber-800 uppercase tracking-widest flex items-center gap-1 cursor-text"
+                            title={`${cat.name} (더블클릭 또는 연필 아이콘으로 수정)`}
+                            onDoubleClick={(e) => onRenameCategory && handleStartRename(cat.name, e)}
+                          >
+                            🛠️ {cat.name} (외주비)
+                          </span>
+                          {onRenameCategory && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleStartRename(cat.name, e)}
+                              className="opacity-0 group-hover/title:opacity-100 p-1 text-slate-400 hover:text-amber-800 hover:bg-amber-200/70 rounded-md transition-all shrink-0"
+                              title="카테고리명 수정"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {editingCategoryName !== cat.name && (
+                        <span className="text-[11px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200 shrink-0">
+                          {cat.percentage.toFixed(1)}%
+                        </span>
+                      )}
                     </div>
                     
                     <div className="text-xl font-mono font-black text-slate-900 mb-2 group-hover:scale-[1.02] origin-left transition-transform">
@@ -939,18 +1262,64 @@ export default function CategorySummaryCards({
                 
                 <div>
                   <div className="flex justify-between items-start mb-2">
-                    <span 
-                      className="text-[11px] font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors truncate flex items-center gap-1.5" 
-                      title={cat.name}
-                      style={{ color: categoryColors[cat.name] ? `${categoryColors[cat.name]}ee` : undefined }}
-                    >
-                      {cat.name}
-                      {isClientSupplied && <span className="text-[9px] px-1.5 py-0.2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-bold">지급자재</span>}
-                      {isIndirect && <span className="text-[9px] px-1.5 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded font-bold">간접비</span>}
-                    </span>
-                    {!showComparison && (
+                    {editingCategoryName === cat.name ? (
+                      <div className="flex items-center gap-1 flex-1 mr-1" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          value={categoryNameInput}
+                          onChange={(e) => setCategoryNameInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleSaveRename(cat.name, e);
+                            else if (e.key === 'Escape') handleCancelRename(e);
+                          }}
+                          className="w-full px-2 py-1 text-xs font-bold border border-indigo-500 rounded-lg outline-none bg-white text-slate-800 shadow-xs focus:ring-2 focus:ring-indigo-400"
+                          autoFocus
+                          placeholder="카테고리명..."
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => handleSaveRename(cat.name, e)}
+                          className="p-1 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded"
+                          title="저장 (Enter)"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleCancelRename(e)}
+                          className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"
+                          title="취소 (Esc)"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 truncate group/title flex-1 min-w-0 mr-1">
+                        <span 
+                          className="text-[11px] font-black text-slate-500 uppercase tracking-widest group-hover:text-slate-700 transition-colors truncate flex items-center gap-1.5 cursor-text" 
+                          title={`${cat.name} (더블클릭 또는 연필 아이콘으로 수정)`}
+                          onDoubleClick={(e) => onRenameCategory && handleStartRename(cat.name, e)}
+                          style={{ color: categoryColors[cat.name] ? `${categoryColors[cat.name]}ee` : undefined }}
+                        >
+                          {cat.name}
+                          {isClientSupplied && <span className="text-[9px] px-1.5 py-0.2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-bold">지급자재</span>}
+                          {isIndirect && <span className="text-[9px] px-1.5 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded font-bold">간접비</span>}
+                        </span>
+                        {onRenameCategory && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleStartRename(cat.name, e)}
+                            className="opacity-0 group-hover/title:opacity-100 p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-all shrink-0"
+                            title="카테고리명 수정"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {!showComparison && editingCategoryName !== cat.name && (
                       <span 
-                        className="text-[11px] font-black px-2 py-0.5 rounded-md border"
+                        className="text-[11px] font-black px-2 py-0.5 rounded-md border shrink-0"
                         style={{ 
                           backgroundColor: categoryColors[cat.name] ? `${categoryColors[cat.name]}15` : '#f1f5f9',
                           color: categoryColors[cat.name] || '#475569',
@@ -1042,6 +1411,92 @@ export default function CategorySummaryCards({
           })}
         </div>
       </div>
+
+      {/* Manual Category Rename Modal */}
+      {isRenameModalOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setIsRenameModalOpen(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-slate-900 text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-amber-400" />
+                <h3 className="font-bold text-sm tracking-tight">카테고리 명칭 수동 수정</h3>
+              </div>
+              <button
+                onClick={() => setIsRenameModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleApplyModalRename} className="p-5 flex flex-col gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  변경할 대상 카테고리 선택
+                </label>
+                <select
+                  value={modalSelectedCategory}
+                  onChange={(e) => {
+                    setModalSelectedCategory(e.target.value);
+                    setModalNewCategoryName(e.target.value);
+                  }}
+                  className="w-full px-3 py-2 text-xs font-bold border border-slate-300 rounded-lg bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                >
+                  <option value="" disabled>카테고리를 선택하세요</option>
+                  {filteredFinalCategories.map((c) => (
+                    <option key={c.name} value={c.name}>
+                      {c.name} ({c.count}건 / ₩{c.amount.toLocaleString()})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  새 카테고리 명칭
+                </label>
+                <input
+                  type="text"
+                  value={modalNewCategoryName}
+                  onChange={(e) => setModalNewCategoryName(e.target.value)}
+                  placeholder="예: 배관공사, 외주비+특수덕트, 안전관리비"
+                  autoFocus
+                  className="w-full px-3 py-2 text-xs font-bold border border-indigo-300 rounded-lg bg-white focus:border-indigo-600 focus:ring-2 focus:ring-indigo-200 outline-none shadow-xs"
+                />
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-900 leading-relaxed">
+                <span className="font-bold block mb-0.5">안내 사항:</span>
+                • 카테고리명을 변경하면 해당 카테고리에 할당된 모든 내역서 품목, 맞춤 분류 규칙, 그래프 및 견적 통계가 즉시 일괄 갱신됩니다.<br />
+                • 카테고리 카드에서 명칭을 <b>더블클릭</b>하거나 ✏️ 아이콘을 눌러 실시간 인라인 수정도 가능합니다.
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsRenameModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  disabled={!modalSelectedCategory || !modalNewCategoryName.trim() || modalSelectedCategory === modalNewCategoryName.trim()}
+                  className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg shadow-sm transition-all"
+                >
+                  변경 적용하기
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

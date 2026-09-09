@@ -1718,6 +1718,105 @@ export default function App() {
     });
   };
 
+  const handleRenameCategory = (oldCategory: string, newCategory: string) => {
+    const trimmedOld = oldCategory.trim();
+    const trimmedNew = newCategory.trim();
+    if (!trimmedNew || trimmedOld === trimmedNew) return;
+
+    checkLockAndProceed(() => {
+      // 1. Update all items currently assigned to the old category
+      let affectedCount = 0;
+      setItems(prevItems => {
+        return prevItems.map(item => {
+          if (item.category === trimmedOld) {
+            affectedCount++;
+            return {
+              ...item,
+              category: trimmedNew,
+              remark: item.remark === trimmedOld ? trimmedNew : item.remark
+            };
+          }
+          return item;
+        });
+      });
+
+      // 2. Update category list state & Firestore
+      setCategories(prevCategories => {
+        let updated: string[];
+        if (prevCategories.includes(trimmedOld)) {
+          updated = prevCategories.map(c => (c === trimmedOld ? trimmedNew : c));
+        } else {
+          updated = [...prevCategories, trimmedNew];
+        }
+        const unique = Array.from(new Set(updated));
+        safeLocalStorage.setItem(CATEGORIES_KEY, JSON.stringify(unique));
+        saveCategoriesToFirestore(unique).catch(err => {
+          console.warn('Failed to sync categories to Firestore:', err);
+        });
+        return unique;
+      });
+
+      // 3. Update category color mappings
+      setCategoryColors(prevColors => {
+        if (prevColors[trimmedOld]) {
+          const updated = { ...prevColors, [trimmedNew]: prevColors[trimmedOld] };
+          delete updated[trimmedOld];
+          safeLocalStorage.setItem('mechauto_category_colors', JSON.stringify(updated));
+          saveCategoryColorsToFirestore(updated).catch(err => {
+            console.warn('Failed to sync category colors to Firestore:', err);
+          });
+          return updated;
+        }
+        return prevColors;
+      });
+
+      // 4. Update manual category estimates
+      setCategoryEstimates(prevEstimates => {
+        if (prevEstimates[trimmedOld] !== undefined) {
+          const updated = { ...prevEstimates, [trimmedNew]: prevEstimates[trimmedOld] };
+          delete updated[trimmedOld];
+          return updated;
+        }
+        return prevEstimates;
+      });
+
+      // 5. Update custom classification rules matching the old category
+      setCustomClassificationRules(prevRules => {
+        const hasMatchingRule = prevRules.some(r => r.category === trimmedOld);
+        if (hasMatchingRule) {
+          const updated = prevRules.map(r => (r.category === trimmedOld ? { ...r, category: trimmedNew } : r));
+          safeLocalStorage.setItem('mechauto_custom_rules', JSON.stringify(updated));
+          saveCustomRulesToFirestore(updated).catch(err => {
+            console.warn('Failed to sync rules to Firestore:', err);
+          });
+          return updated;
+        }
+        return prevRules;
+      });
+
+      // 6. Update learned mappings
+      setLearnedMappings(prev => {
+        let changed = false;
+        const next = { ...prev };
+        for (const [k, v] of Object.entries(next)) {
+          if (v === trimmedOld) {
+            next[k] = trimmedNew;
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+
+      // 7. Update active category filter if currently focused on the old category
+      setCategoryFilter(prev => (prev === trimmedOld ? trimmedNew : prev));
+
+      showNotification(
+        `카테고리명이 [${trimmedOld}]에서 [${trimmedNew}](으)로 변경되었습니다. (${affectedCount}개 품목 반영)`,
+        'success'
+      );
+    });
+  };
+
   const handleUpdateMemo = (id: string, newMemo: string) => {
     checkLockAndProceed(() => {
       setItems(prev => prev.map(item => 
@@ -2871,6 +2970,7 @@ export default function App() {
                     }}
                     onUpdateSafetyAmount={handleUpdateSafetyAmount}
                     onUpdateCategoryEstimate={handleUpdateCategoryEstimate}
+                    onRenameCategory={handleRenameCategory}
                   />
                   {isSectionSummaryOpen && (
                     <SectionSummaryCards 
@@ -2941,6 +3041,7 @@ export default function App() {
                 initialTab={categoryManagerTab}
                 autoRuleCreation={autoRuleCreation}
                 onSetAutoRuleCreation={setAutoRuleCreation}
+                onRenameCategory={handleRenameCategory}
               />
             )}
           </AnimatePresence>

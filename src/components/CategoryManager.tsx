@@ -23,6 +23,7 @@ interface Props {
   initialTab?: 'categories' | 'rules' | 'stats';
   autoRuleCreation?: boolean;
   onSetAutoRuleCreation?: (val: boolean) => void;
+  onRenameCategory?: (oldCategory: string, newCategory: string) => void;
 }
 
 const PRESET_COLORS = [
@@ -66,7 +67,8 @@ export default function CategoryManager({
   onApplyRules,
   initialTab = 'categories',
   autoRuleCreation = true,
-  onSetAutoRuleCreation
+  onSetAutoRuleCreation,
+  onRenameCategory
 }: Props) {
   const [activeTab, setActiveTab] = useState<'categories' | 'rules' | 'stats'>(initialTab);
   
@@ -184,14 +186,18 @@ export default function CategoryManager({
     if (editingIndex !== null && editingValue.trim()) {
       const oldCat = categories[editingIndex];
       const newCat = editingValue.trim();
-      const newList = [...categories];
-      newList[editingIndex] = newCat;
-      onUpdate(newList);
+      if (oldCat !== newCat) {
+        if (onRenameCategory) {
+          onRenameCategory(oldCat, newCat);
+        } else {
+          const newList = [...categories];
+          newList[editingIndex] = newCat;
+          onUpdate(newList);
+          const updatedRules = customRules.map(r => r.category === oldCat ? { ...r, category: newCat } : r);
+          onUpdateRules(updatedRules);
+        }
+      }
       setEditingIndex(null);
-
-      // Also update affected custom rules
-      const updatedRules = customRules.map(r => r.category === oldCat ? { ...r, category: newCat } : r);
-      onUpdateRules(updatedRules);
     }
   };
 
