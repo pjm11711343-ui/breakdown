@@ -2,6 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Edit2, Check, X, Tags, Sliders, Info, HelpCircle, ChevronUp, ChevronDown, Sparkles, RotateCcw, FileText, Upload, BarChart3, PieChart } from 'lucide-react';
 import { CustomClassificationRule, INITIAL_CATEGORIES, SpecItem } from '../types';
 import * as XLSX from 'xlsx';
+import { 
+  getItemMaterialCost, 
+  getItemLaborCost, 
+  isOutsourcingCategory, 
+  isClientSuppliedCategory, 
+  isIndirectCostCategory 
+} from '../utils/costCalculation';
 
 interface Props {
   categories: string[];
@@ -285,8 +292,8 @@ export default function CategoryManager({
         stats[cat] = { count: 0, totalAmount: 0, materialAmount: 0, laborAmount: 0 };
       }
       const itemAmt = getItemAmount(item);
-      const matAmt = item.materialAmount || (item.category !== '외주' ? itemAmt : 0);
-      const labAmt = item.laborAmount || (item.category === '외주' ? itemAmt : 0);
+      const matAmt = getItemMaterialCost(item);
+      const labAmt = getItemLaborCost(item);
 
       stats[cat].count++;
       stats[cat].totalAmount += itemAmt;

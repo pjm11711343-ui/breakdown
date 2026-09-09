@@ -2,6 +2,7 @@ import React from 'react';
 import { SpecItem, ThemeType } from '../types';
 import { motion } from 'motion/react';
 import { LayoutGrid, PieChart as PieChartIcon, ArrowUpRight, Calculator, X } from 'lucide-react';
+import { getItemMaterialCost } from '../utils/costCalculation';
 
 interface Props {
   items: SpecItem[];
@@ -12,18 +13,9 @@ interface Props {
 export default function SectionSummaryCards({ items, theme, onClose }: Props) {
   if (!items || items.length === 0) return null;
 
-  // Helper to calculate category amount without labor costs (노무비 제외한 순수 재료비/자재비 합산)
+  // Helper to calculate category amount without labor costs (노무비/외주비/간접비/지급자재 제외한 순수 재료비/자재비 합산)
   const getItemCategoryAmount = (item: SpecItem): number => {
-    if (item.materialAmount !== undefined && item.materialAmount !== null && item.materialAmount !== 0) {
-      return item.materialAmount;
-    }
-    if (item.laborAmount && item.laborAmount > 0) {
-      if (item.materialAmount !== undefined && item.materialAmount !== null) {
-        return item.materialAmount;
-      }
-      return Math.max(0, item.amount - item.laborAmount);
-    }
-    return item.amount || 0;
+    return getItemMaterialCost(item);
   };
 
   const sections = [...new Set(items.map(item => item.section || '기타 공정'))].sort();

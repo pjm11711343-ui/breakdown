@@ -2,6 +2,15 @@ import React from 'react';
 import { SpecItem, ThemeType } from '../types';
 import { motion } from 'motion/react';
 import { Tags, TrendingUp, PieChart as PieChartIcon, Building2, Package, Wrench, ShieldCheck, AlertCircle, ArrowUpRight, Calculator, BarChart3 } from 'lucide-react';
+import { 
+  getItemMaterialCost, 
+  getItemLaborCost, 
+  getItemContractAmount, 
+  isOutsourcingCategory, 
+  isIndirectCostCategory, 
+  isClientSuppliedCategory, 
+  isExcludedFromMaterialCost 
+} from '../utils/costCalculation';
 
 interface Props {
   items: SpecItem[];
@@ -40,31 +49,15 @@ export default function CategorySummaryCards({
 
   // 1. Precise breakdown of Material Cost vs Labor/Outsourcing Cost for each item
   const getItemMaterialAmount = (item: SpecItem): number => {
-    if (item.category === '외주') {
-      return item.materialAmount || 0;
-    }
-    if (item.materialAmount !== undefined && item.materialAmount !== null && item.materialAmount > 0) {
-      return item.materialAmount;
-    }
-    if (item.laborAmount && item.laborAmount > 0) {
-      return Math.max(0, (item.amount || 0) - item.laborAmount);
-    }
-    return item.amount || 0;
+    return getItemMaterialCost(item);
   };
 
   const getItemLaborAmount = (item: SpecItem): number => {
-    if (item.category === '외주') {
-      return item.laborAmount && item.laborAmount > 0 ? item.laborAmount : (item.amount || 0);
-    }
-    return item.laborAmount || 0;
+    return getItemLaborCost(item);
   };
 
   const getItemCategoryAmount = (item: SpecItem): number => {
-    const cat = item.category || '미분류';
-    if (cat === '외주') {
-      return getItemLaborAmount(item) + (item.materialAmount || 0);
-    }
-    return getItemMaterialAmount(item);
+    return getItemContractAmount(item);
   };
 
   // Grand totals across ALL items in the contract
@@ -273,8 +266,10 @@ export default function CategorySummaryCards({
 
           {/* Category Cards */}
           {filteredFinalCategories.map((cat) => {
-            const isOutsourcing = cat.name === '외주';
+            const isOutsourcing = isOutsourcingCategory(cat.name);
             const isSafety = cat.name === '안전장비류';
+            const isClientSupplied = isClientSuppliedCategory(cat.name);
+            const isIndirect = isIndirectCostCategory(cat.name);
 
             if (isSafety) {
               return (
@@ -474,7 +469,11 @@ export default function CategorySummaryCards({
                 style={{ borderTopColor: categoryColors[cat.name] || '#cbd5e1' }}
               >
                 <div className="flex justify-between items-start mb-1">
-                  <span className="text-[11px] font-black text-slate-600 uppercase truncate" title={cat.name}>{cat.name}</span>
+                  <span className="text-[11px] font-black text-slate-600 uppercase truncate flex items-center gap-1" title={cat.name}>
+                    {cat.name}
+                    {isClientSupplied && <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded font-bold">지급자재</span>}
+                    {isIndirect && <span className="text-[9px] px-1 py-0.2 bg-purple-100 text-purple-800 rounded font-bold">간접비</span>}
+                  </span>
                   {!showComparison && (
                     <span className="text-[11px] font-mono font-bold bg-blue-100 text-blue-700 px-1 border border-blue-200">
                       {cat.percentage.toFixed(1)}%
@@ -761,8 +760,10 @@ export default function CategorySummaryCards({
 
           {/* Category Cards */}
           {filteredFinalCategories.map((cat, idx) => {
-            const isOutsourcing = cat.name === '외주';
+            const isOutsourcing = isOutsourcingCategory(cat.name);
             const isSafety = cat.name === '안전장비류';
+            const isClientSupplied = isClientSuppliedCategory(cat.name);
+            const isIndirect = isIndirectCostCategory(cat.name);
 
             if (isSafety) {
               return (
@@ -911,11 +912,13 @@ export default function CategorySummaryCards({
                 <div>
                   <div className="flex justify-between items-start mb-2">
                     <span 
-                      className="text-[11px] font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors truncate" 
+                      className="text-[11px] font-black text-slate-400 uppercase tracking-widest group-hover:text-slate-600 transition-colors truncate flex items-center gap-1.5" 
                       title={cat.name}
                       style={{ color: categoryColors[cat.name] ? `${categoryColors[cat.name]}ee` : undefined }}
                     >
                       {cat.name}
+                      {isClientSupplied && <span className="text-[9px] px-1.5 py-0.2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-bold">지급자재</span>}
+                      {isIndirect && <span className="text-[9px] px-1.5 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded font-bold">간접비</span>}
                     </span>
                     {!showComparison && (
                       <span 

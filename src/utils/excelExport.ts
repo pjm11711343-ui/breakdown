@@ -1,5 +1,11 @@
 import ExcelJS from 'exceljs';
 import { SpecItem } from '../types';
+import { 
+  getItemMaterialCost, 
+  getItemLaborCost, 
+  getItemContractAmount, 
+  isExcludedFromMaterialCost 
+} from './costCalculation';
 
 interface ExportOptions {
   projectName?: string;
@@ -28,9 +34,9 @@ export async function exportStyledExcel({
   const formatCurrency = (val: number | undefined | null) => (val !== undefined && val !== null ? val : 0);
 
   // Calculate totals
-  const totalMaterialAmount = items.reduce((sum, item) => sum + (item.materialAmount || 0), 0);
-  const totalLaborAmount = items.reduce((sum, item) => sum + (item.laborAmount || 0), 0);
-  const totalGrandAmount = items.reduce((sum, item) => sum + (item.amount || 0), 0);
+  const totalMaterialAmount = items.reduce((sum, item) => sum + getItemMaterialCost(item), 0);
+  const totalLaborAmount = items.reduce((sum, item) => sum + getItemLaborCost(item), 0);
+  const totalGrandAmount = items.reduce((sum, item) => sum + getItemContractAmount(item), 0);
   const dateString = new Date().toLocaleDateString('ko-KR', {
     year: 'numeric',
     month: '2-digit',
@@ -140,20 +146,17 @@ export async function exportStyledExcel({
   let currentRowIndex = 5;
   items.forEach((item, index) => {
     const row = detailSheet.getRow(currentRowIndex);
-    const mUnitPrice = formatCurrency(item.materialUnitPrice);
-    const mAmount = item.materialAmount !== undefined && item.materialAmount !== null && item.materialAmount !== 0 
-      ? item.materialAmount 
-      : (mUnitPrice !== 0 && item.quantity > 0 ? Math.round(item.quantity * mUnitPrice) : 0);
+    const isExcluded = isExcludedFromMaterialCost(item.category);
+    const mUnitPrice = isExcluded ? 0 : formatCurrency(item.materialUnitPrice);
+    const mAmount = getItemMaterialCost(item);
 
-    const lUnitPrice = formatCurrency(item.laborUnitPrice);
-    const lAmount = item.laborAmount !== undefined && item.laborAmount !== null && item.laborAmount !== 0 
-      ? item.laborAmount 
-      : (lUnitPrice !== 0 && item.quantity > 0 ? Math.round(item.quantity * lUnitPrice) : 0);
+    const lUnitPrice = isExcluded && (!item.laborUnitPrice || item.laborUnitPrice === 0) && item.quantity > 0
+      ? Math.round(getItemLaborCost(item) / item.quantity)
+      : formatCurrency(item.laborUnitPrice);
+    const lAmount = getItemLaborCost(item);
 
     const uPrice = formatCurrency(item.unitPrice);
-    const totAmount = item.amount !== undefined && item.amount !== null && item.amount !== 0
-      ? item.amount
-      : (uPrice !== 0 && item.quantity > 0 ? Math.round(item.quantity * uPrice) : (mAmount + lAmount));
+    const totAmount = getItemContractAmount(item);
 
     row.values = [
       index + 1,
@@ -373,17 +376,13 @@ export async function exportStyledExcel({
     const current = categoryMap.get(cat)!;
     current.count += 1;
     
-    const mAmount = item.materialAmount !== undefined && item.materialAmount !== null && item.materialAmount !== 0
-      ? item.materialAmount
-      : (item.materialUnitPrice ? Math.round(item.quantity * item.materialUnitPrice) : 0);
-
-    const lAmount = item.laborAmount !== undefined && item.laborAmount !== null && item.laborAmount !== 0
-      ? item.laborAmount
-      : (item.laborUnitPrice ? Math.round(item.quantity * item.laborUnitPrice) : 0);
+    const mAmount = getItemMaterialCost(item);
+    const lAmount = getItemLaborCost(item);
+    const totAmount = getItemContractAmount(item);
 
     current.materialAmount += mAmount;
     current.laborAmount += lAmount;
-    current.totalAmount += (item.amount || (mAmount + lAmount));
+    current.totalAmount += totAmount;
   });
 
   // Sort categories by material amount descending (excluding '미분류' placed at bottom)
@@ -550,17 +549,13 @@ export async function exportStyledExcel({
     const current = sectionMap.get(sec)!;
     current.count += 1;
     
-    const mAmount = item.materialAmount !== undefined && item.materialAmount !== null && item.materialAmount !== 0
-      ? item.materialAmount
-      : (item.materialUnitPrice ? Math.round(item.quantity * item.materialUnitPrice) : 0);
-
-    const lAmount = item.laborAmount !== undefined && item.laborAmount !== null && item.laborAmount !== 0
-      ? item.laborAmount
-      : (item.laborUnitPrice ? Math.round(item.quantity * item.laborUnitPrice) : 0);
+    const mAmount = getItemMaterialCost(item);
+    const lAmount = getItemLaborCost(item);
+    const totAmount = getItemContractAmount(item);
 
     current.materialAmount += mAmount;
     current.laborAmount += lAmount;
-    current.totalAmount += (item.amount || (mAmount + lAmount));
+    current.totalAmount += totAmount;
   });
 
   const sortedSections = Array.from(sectionMap.entries()).sort((a, b) => b[1].totalAmount - a[1].totalAmount);

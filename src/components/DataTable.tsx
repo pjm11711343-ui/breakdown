@@ -6,6 +6,11 @@ import ExcelUpload from './ExcelUpload';
 import * as XLSX from 'xlsx';
 import { exportStyledExcel } from '../utils/excelExport';
 import { VirtualizedTableBody, VirtualRowData } from './VirtualizedTableBody';
+import { 
+  getItemMaterialCost, 
+  getItemLaborCost, 
+  getItemContractAmount 
+} from '../utils/costCalculation';
 
 interface Props {
   items: SpecItem[];
@@ -382,9 +387,9 @@ export default function DataTable({
 
       sortedCategories.forEach(([catName, sections], catIdx) => {
         const catItems = Object.values(sections).flat();
-        const catMaterialTotal = catItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0);
-        const catLaborTotal = catItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0);
-        const catTotal = catItems.reduce((sum, i) => sum + (i.amount || 0), 0);
+        const catMaterialTotal = catItems.reduce((sum, i) => sum + getItemMaterialCost(i), 0);
+        const catLaborTotal = catItems.reduce((sum, i) => sum + getItemLaborCost(i), 0);
+        const catTotal = catItems.reduce((sum, i) => sum + getItemContractAmount(i), 0);
 
         rows.push({
           type: 'category-header',
@@ -449,9 +454,9 @@ export default function DataTable({
       });
 
       Object.entries(itemsBySection).forEach(([sectionName, sectionItems], index) => {
-        const secMaterialTotal = sectionItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0);
-        const secLaborTotal = sectionItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0);
-        const secTotal = sectionItems.reduce((sum, i) => sum + (i.amount || 0), 0);
+        const secMaterialTotal = sectionItems.reduce((sum, i) => sum + getItemMaterialCost(i), 0);
+        const secLaborTotal = sectionItems.reduce((sum, i) => sum + getItemLaborCost(i), 0);
+        const secTotal = sectionItems.reduce((sum, i) => sum + getItemContractAmount(i), 0);
 
         rows.push({
           type: 'section-header',
@@ -1109,9 +1114,9 @@ export default function DataTable({
     if (selectedIds.size === 0) return null;
     const selectedItems = items.filter(i => selectedIds.has(i.id));
     return {
-      material: selectedItems.reduce((sum, i) => sum + (i.materialAmount || 0), 0),
-      labor: selectedItems.reduce((sum, i) => sum + (i.laborAmount || 0), 0),
-      total: selectedItems.reduce((sum, i) => sum + (i.amount || 0), 0),
+      material: selectedItems.reduce((sum, i) => sum + getItemMaterialCost(i), 0),
+      labor: selectedItems.reduce((sum, i) => sum + getItemLaborCost(i), 0),
+      total: selectedItems.reduce((sum, i) => sum + getItemContractAmount(i), 0),
       count: selectedItems.length
     };
   }, [selectedIds, items]);

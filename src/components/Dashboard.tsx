@@ -2,6 +2,11 @@ import React from 'react';
 import { SpecItem, ThemeType } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { BarChart3, TrendingUp, Info, LayoutGrid, ArrowRight, Package, Wrench } from 'lucide-react';
+import { 
+  getItemMaterialCost, 
+  getItemLaborCost, 
+  getItemContractAmount 
+} from '../utils/costCalculation';
 
 interface Props {
   items: SpecItem[];
@@ -45,29 +50,15 @@ export default function Dashboard({
   
   // Material vs Labor calculation
   const getItemMaterialAmount = (item: SpecItem): number => {
-    if (item.category === '외주') return item.materialAmount || 0;
-    if (item.materialAmount !== undefined && item.materialAmount !== null && item.materialAmount > 0) {
-      return item.materialAmount;
-    }
-    if (item.laborAmount && item.laborAmount > 0) {
-      return Math.max(0, (item.amount || 0) - item.laborAmount);
-    }
-    return item.amount || 0;
+    return getItemMaterialCost(item);
   };
 
   const getItemLaborAmount = (item: SpecItem): number => {
-    if (item.category === '외주') {
-      return item.laborAmount && item.laborAmount > 0 ? item.laborAmount : (item.amount || 0);
-    }
-    return item.laborAmount || 0;
+    return getItemLaborCost(item);
   };
 
   const getItemCategoryAmount = (item: SpecItem): number => {
-    const cat = item.category || '미분류';
-    if (cat === '외주') {
-      return getItemLaborAmount(item) + (item.materialAmount || 0);
-    }
-    return getItemMaterialAmount(item);
+    return getItemContractAmount(item);
   };
 
   const totalMaterialAmount = items.reduce((sum, item) => sum + getItemMaterialAmount(item), 0);

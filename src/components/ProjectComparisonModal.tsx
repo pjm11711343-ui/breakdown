@@ -2,6 +2,11 @@ import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, ArrowLeftRight, TrendingUp, TrendingDown, Minus, BarChart3, PieChart } from 'lucide-react';
 import { Project, SpecItem, ThemeType } from '../types';
+import { 
+  getItemMaterialCost, 
+  getItemLaborCost, 
+  getItemContractAmount 
+} from '../utils/costCalculation';
 
 interface Props {
   isOpen: boolean;
@@ -18,14 +23,14 @@ export default function ProjectComparisonModal({ onClose, projects, theme }: Omi
   const projectB = projects.find(p => p.id === projectBId);
 
   const calculateStats = (items: SpecItem[]) => {
-    const total = items.reduce((sum, item) => sum + (item.amount || 0), 0);
-    const material = items.reduce((sum, item) => sum + (item.materialAmount || 0), 0);
-    const labor = items.reduce((sum, item) => sum + (item.laborAmount || 0), 0);
+    const total = items.reduce((sum, item) => sum + getItemContractAmount(item), 0);
+    const material = items.reduce((sum, item) => sum + getItemMaterialCost(item), 0);
+    const labor = items.reduce((sum, item) => sum + getItemLaborCost(item), 0);
     
     const categoryBreakdown: Record<string, number> = {};
     items.forEach(item => {
       const cat = item.category || '미분류';
-      categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + (item.amount || 0);
+      categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + getItemContractAmount(item);
     });
 
     return { total, material, labor, categoryBreakdown };
