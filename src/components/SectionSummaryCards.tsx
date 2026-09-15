@@ -2,7 +2,7 @@ import React from 'react';
 import { SpecItem, ThemeType } from '../types';
 import { motion } from 'motion/react';
 import { LayoutGrid, PieChart as PieChartIcon, ArrowUpRight, Calculator, X } from 'lucide-react';
-import { getItemMaterialCost, getItemLaborCost } from '../utils/costCalculation';
+import { getItemMaterialCost, getItemLaborCost, getItemContractAmount, isSafetyEquipmentItem } from '../utils/costCalculation';
 
 interface Props {
   items: SpecItem[];
@@ -19,11 +19,11 @@ export default function SectionSummaryCards({ items, theme, onClose }: Props) {
   };
 
   const sections = [...new Set(items.map(item => item.section || '기타 공정'))].sort();
-  const totalProjectAmount = items.reduce((sum, item) => sum + item.amount, 0);
+  const totalProjectAmount = items.reduce((sum, item) => sum + getItemContractAmount(item), 0);
 
   const sectionData = sections.map(sectionName => {
     const sectionItems = items.filter(i => (i.section || '기타 공정') === sectionName);
-    const totalAmount = sectionItems.reduce((sum, i) => sum + i.amount, 0);
+    const totalAmount = sectionItems.reduce((sum, i) => sum + getItemContractAmount(i), 0);
     
     // Group by category within this section (Split labor to '간접비')
     const categoryBreakdown = sectionItems.reduce((acc, item) => {

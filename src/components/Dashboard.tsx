@@ -1,15 +1,17 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { SpecItem, ThemeType } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { BarChart3, TrendingUp, Info, LayoutGrid, ArrowRight, Package, Wrench } from 'lucide-react';
+import { BarChart3, TrendingUp, Info, LayoutGrid, ArrowRight, Package, Wrench, Shield } from 'lucide-react';
 import { 
   getItemMaterialCost, 
   getItemLaborCost, 
   getItemContractAmount,
+  calculateCostBreakdown,
   isOutsourcingCategory,
   isOutsourcingItem,
   isIndirectCostCategory,
-  isClientSuppliedCategory
+  isClientSuppliedCategory,
+  isSafetyEquipmentItem
 } from '../utils/costCalculation';
 
 interface Props {
@@ -65,48 +67,20 @@ export default function Dashboard({
     return getItemContractAmount(item);
   };
 
-  const costBreakdown = React.useMemo(() => {
-    let materialCost = 0;
-    let laborCost = 0;
-    let outsourcingCost = 0;
-    let indirectCost = 0;
-    let clientSuppliedCost = 0;
+  const costBreakdown = useMemo(() => calculateCostBreakdown(items), [items]);
 
-    items.forEach(item => {
-      const category = item.category || '';
-      
-      if (isOutsourcingItem(item)) {
-        outsourcingCost += getItemContractAmount(item);
-      } else if (isIndirectCostCategory(category)) {
-        indirectCost += getItemContractAmount(item);
-      } else if (isClientSuppliedCategory(category)) {
-        clientSuppliedCost += getItemContractAmount(item);
-      } else {
-        materialCost += getItemMaterialCost(item);
-        laborCost += getItemLaborCost(item);
-      }
-    });
-
-    return {
-      materialCost,
-      laborCost,
-      outsourcingCost,
-      indirectCost,
-      clientSuppliedCost
-    };
-  }, [items]);
-
-  const totalMaterialAmount = items.reduce((sum, item) => sum + getItemMaterialAmount(item), 0);
-  const totalLaborAmount = items.reduce((sum, item) => sum + getItemLaborAmount(item), 0);
-  const totalContractAmount = items.reduce((sum, item) => sum + (item.amount || (getItemMaterialAmount(item) + getItemLaborAmount(item))), 0);
+  // 안전장비류는 총 계약 합계 금액(TOTAL)에서 제외
+  const totalContractAmount = costBreakdown.totalContractAmount;
+  const totalMaterialAmount = costBreakdown.materialCost;
+  const totalLaborAmount = costBreakdown.totalLaborAndOutsourcing;
 
   const materialPercent = totalContractAmount > 0 ? (totalMaterialAmount / totalContractAmount) * 100 : 0;
   const laborPercent = totalContractAmount > 0 ? (totalLaborAmount / totalContractAmount) * 100 : 0;
 
-  // For chart, include all classified categories (including '외주')
+  // For chart, include all classified categories (안전장비류는 별도 관리이므로 차트에서 제외)
   const classifiedItems = items.filter(item => {
     const cat = item.category || '미분류';
-    return cat !== '미분류';
+    return cat !== '미분류' && !isSafetyEquipmentItem(item);
   });
 
   const categoryTotals = classifiedItems.reduce((acc, item) => {
@@ -156,11 +130,22 @@ export default function Dashboard({
               <span className="text-xl lg:text-2xl font-mono leading-none tracking-tighter italic font-black text-indigo-950">
                 ₩{totalContractAmount.toLocaleString()}
               </span>
+
+              {/* 안전장비류 별도 표기 */}
+              <div className="mt-2 flex items-center justify-between px-2 py-1 bg-amber-50/80 rounded border border-amber-200">
+                <span className="text-[9px] font-black text-amber-900 flex items-center gap-1">
+                  <Shield size={10} className="text-amber-700" />
+                  [별도] 안전장비류
+                </span>
+                <span className="text-xs font-mono font-black text-amber-950">
+                  ₩{costBreakdown.safetyEquipmentCost.toLocaleString()}
+                </span>
+              </div>
             </div>
             
             <div className="mt-3 pt-2 border-t border-[#141414]/10 grid grid-cols-1 gap-2">
               <div className="flex flex-col">
-                <span className="text-[8px] font-black text-slate-400 uppercase leading-none mb-1">재료 / 노무 / 외주</span>
+                <span className="text-[8px] font-black text-slate-400 uppercase leading-none mb-1">재료(직접) / 노무 / 외주</span>
                 <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold leading-none">
                   <span className="text-blue-600">₩{costBreakdown.materialCost.toLocaleString()}</span>
                   <span className="opacity-20">/</span>
@@ -269,11 +254,22 @@ export default function Dashboard({
             ₩{totalContractAmount.toLocaleString()}
           </div>
 
+          {/* 안전장비류 별도 표기 */}
+          <div className="mt-2.5 flex items-center justify-between px-3 py-2 bg-amber-50/90 rounded-xl border border-amber-200/80">
+            <div className="flex items-center gap-1.5">
+              <Shield size={14} className="text-amber-600" />
+              <span className="text-xs font-black text-amber-900 uppercase tracking-tight">[별도] 안전장비류</span>
+            </div>
+            <span className="text-sm font-mono font-black text-amber-950">
+              ₩{costBreakdown.safetyEquipmentCost.toLocaleString()}
+            </span>
+          </div>
+
           {/* Detailed Cost Breakdown */}
-          <div className="mt-5 space-y-3 bg-slate-50/80 p-4 rounded-xl border border-slate-100">
+          <div className="mt-4 space-y-3 bg-slate-50/80 p-4 rounded-xl border border-slate-100">
             <div className="grid grid-cols-2 gap-x-4 gap-y-3">
               <div className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight">재료비</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight">재료비 (직접자재)</span>
                 <span className="text-[11px] font-bold text-blue-600 font-mono">₩{costBreakdown.materialCost.toLocaleString()}</span>
               </div>
               <div className="flex flex-col gap-0.5">
@@ -281,7 +277,7 @@ export default function Dashboard({
                 <span className="text-[11px] font-bold text-amber-600 font-mono">₩{costBreakdown.laborCost.toLocaleString()}</span>
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight">외주비</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight">외주비 (자재+노무 일괄)</span>
                 <span className="text-[11px] font-bold text-indigo-600 font-mono">₩{costBreakdown.outsourcingCost.toLocaleString()}</span>
               </div>
               <div className="flex flex-col gap-0.5">

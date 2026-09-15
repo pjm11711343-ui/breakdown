@@ -10,10 +10,12 @@ import {
   getItemMaterialCost, 
   getItemLaborCost, 
   getItemContractAmount,
+  calculateCostBreakdown,
   isOutsourcingCategory,
   isOutsourcingItem,
   isIndirectCostCategory,
-  isClientSuppliedCategory
+  isClientSuppliedCategory,
+  isSafetyEquipmentItem
 } from '../utils/costCalculation';
 
 interface Props {
@@ -351,36 +353,7 @@ export default function DataTable({
 
   const pageItems = allMatchingItems;
 
-  const costBreakdown = useMemo(() => {
-    let materialCost = 0;
-    let laborCost = 0;
-    let outsourcingCost = 0;
-    let indirectCost = 0;
-    let clientSuppliedCost = 0;
-
-    allMatchingItems.forEach(item => {
-      const category = item.category || '';
-      
-      if (isOutsourcingItem(item)) {
-        outsourcingCost += getItemContractAmount(item);
-      } else if (isIndirectCostCategory(category)) {
-        indirectCost += getItemContractAmount(item);
-      } else if (isClientSuppliedCategory(category)) {
-        clientSuppliedCost += getItemContractAmount(item);
-      } else {
-        materialCost += getItemMaterialCost(item);
-        laborCost += getItemLaborCost(item);
-      }
-    });
-
-    return {
-      materialCost,
-      laborCost,
-      outsourcingCost,
-      indirectCost,
-      clientSuppliedCost
-    };
-  }, [allMatchingItems]);
+  const costBreakdown = useMemo(() => calculateCostBreakdown(allMatchingItems), [allMatchingItems]);
 
   const unclassifiedCount = useMemo(() => {
     return items.filter(item => !item.category || item.category === '미분류').length;
@@ -1431,7 +1404,7 @@ export default function DataTable({
                   {costViewType === 'total' && (
                     <div className="flex gap-3 items-center">
                       <div className="flex flex-col items-end border-l border-white/10 pl-2">
-                        <span className="text-[7px] text-slate-400 font-bold uppercase leading-none mb-0.5">재료비</span>
+                        <span className="text-[7px] text-slate-400 font-bold uppercase leading-none mb-0.5">재료(직접)</span>
                         <span className="text-blue-300 text-[10px] font-black leading-none">₩{costBreakdown.materialCost.toLocaleString()}</span>
                       </div>
                       <div className="flex flex-col items-end border-l border-white/10 pl-2">
@@ -1439,7 +1412,7 @@ export default function DataTable({
                         <span className="text-amber-200 text-[10px] font-black leading-none">₩{costBreakdown.laborCost.toLocaleString()}</span>
                       </div>
                       <div className="flex flex-col items-end border-l border-white/10 pl-2">
-                        <span className="text-[7px] text-slate-400 font-bold uppercase leading-none mb-0.5">외주비</span>
+                        <span className="text-[7px] text-slate-400 font-bold uppercase leading-none mb-0.5">외주(일괄)</span>
                         <span className="text-indigo-300 text-[10px] font-black leading-none">₩{costBreakdown.outsourcingCost.toLocaleString()}</span>
                       </div>
                       <div className="flex flex-col items-end border-l border-white/10 pl-2">
@@ -1450,24 +1423,36 @@ export default function DataTable({
                         <span className="text-[7px] text-slate-400 font-bold uppercase leading-none mb-0.5">지급자재</span>
                         <span className="text-emerald-400 text-[10px] font-black leading-none">₩{costBreakdown.clientSuppliedCost.toLocaleString()}</span>
                       </div>
+                      <div className="flex flex-col items-end border-l border-white/10 pl-2 bg-amber-400/15 px-1.5 py-0.5 rounded border border-amber-400/30">
+                        <span className="text-[7px] text-amber-300 font-bold uppercase leading-none mb-0.5">[별도] 안전장비</span>
+                        <span className="text-amber-200 text-[10px] font-black leading-none">₩{costBreakdown.safetyEquipmentCost.toLocaleString()}</span>
+                      </div>
                     </div>
                   )}
                 </div>
 
-                {/* Total Amount: 110px */}
+                {/* Total Amount: 110px (안전장비류 제외된 총 도급/계약 금액) */}
                 <div className={`w-[110px] shrink-0 px-2 text-right font-mono text-sm font-black border-r border-white/10 ${
                   costViewType === 'total' ? 'text-amber-300' : 
                   costViewType === 'material' ? 'text-blue-300' : 'text-amber-300'
-                }`}>
-                  ₩{allMatchingItems.reduce((sum, item) => {
-                    if (costViewType === 'total') return sum + item.amount;
-                    if (costViewType === 'material') return sum + (item.materialAmount || 0);
-                    return sum + (item.laborAmount || 0);
-                  }, 0).toLocaleString()}
+                }`} title={costViewType === 'total' ? `총 계약 합계 (안전장비류 ₩${costBreakdown.safetyEquipmentCost.toLocaleString()} 제외)` : undefined}>
+                  ₩{(
+                    costViewType === 'total'
+                      ? costBreakdown.totalContractAmount
+                      : costViewType === 'material'
+                        ? costBreakdown.materialCost
+                        : costBreakdown.totalLaborAndOutsourcing
+                  ).toLocaleString()}
                 </div>
 
                 {/* Page Sum info: 604px (104+130+120+80+170) */}
-                <div className="w-[604px] shrink-0 px-4 text-xs text-slate-300 font-medium truncate">
+                <div className="w-[604px] shrink-0 px-4 text-xs text-slate-300 font-medium flex items-center justify-between truncate">
+                  {costBreakdown.safetyEquipmentCost > 0 && (
+                    <span className="text-amber-300 text-[11px] font-bold flex items-center gap-1">
+                      <span>🛡️</span>
+                      <span>[별도 표기] 안전장비류: ₩{costBreakdown.safetyEquipmentCost.toLocaleString()} (총 계약 합계 금액에서 제외됨)</span>
+                    </span>
+                  )}
                 </div>
               </div>
             )}
