@@ -14,6 +14,7 @@ interface VirtualizedTableBodyProps {
   height: number;
   theme: ThemeType;
   density: number;
+  costViewType: 'total' | 'material' | 'labor';
   selectedIds: Set<string>;
   toggleOne: (id: string, index: number) => void;
   toggleAll: (items: SpecItem[]) => void;
@@ -39,6 +40,7 @@ interface VirtualizedTableBodyProps {
 interface ItemData {
   rows: VirtualRowData[];
   isHighDensity: boolean;
+  costViewType: 'total' | 'material' | 'labor';
   borderCellClass: string;
   selectedIds: Set<string>;
   toggleOne: (id: string, index: number) => void;
@@ -74,6 +76,7 @@ const TableRowInner = (props: {
     ariaAttributes,
     rows,
     isHighDensity,
+    costViewType,
     borderCellClass,
     selectedIds,
     toggleOne,
@@ -120,13 +123,13 @@ const TableRowInner = (props: {
         <div className="w-[556px] shrink-0 font-black uppercase tracking-wider px-3 truncate text-xs text-white">
           [분류] {row.catName}
         </div>
-        <div className="w-[182px] shrink-0 text-right font-mono font-bold px-2 text-indigo-200 text-xs">
+        <div className={`w-[182px] shrink-0 text-right font-mono font-bold px-2 text-indigo-200 text-xs ${costViewType === 'material' ? 'bg-blue-600/40' : ''}`}>
           재: ₩{row.materialTotal.toLocaleString()}
         </div>
-        <div className="w-[182px] shrink-0 text-right font-mono font-bold px-2 text-indigo-200 text-xs">
+        <div className={`w-[182px] shrink-0 text-right font-mono font-bold px-2 text-indigo-200 text-xs ${costViewType === 'labor' ? 'bg-amber-600/40' : ''}`}>
           노: ₩{row.laborTotal.toLocaleString()}
         </div>
-        <div className="w-[198px] shrink-0 text-right font-mono font-black px-2 text-amber-300 text-xs">
+        <div className={`w-[198px] shrink-0 text-right font-mono font-black px-2 text-amber-300 text-xs ${costViewType === 'total' ? 'bg-indigo-600/40' : ''}`}>
           합: ₩{row.total.toLocaleString()}
         </div>
         <div className="w-[604px] shrink-0 text-right font-mono text-[10px] px-4 text-indigo-200">
@@ -180,13 +183,13 @@ const TableRowInner = (props: {
         <div className="w-[556px] shrink-0 font-black uppercase tracking-wider px-3 truncate text-xs text-white">
           {row.sectionName}
         </div>
-        <div className="w-[182px] shrink-0 text-right font-mono font-bold px-2 text-sky-100 text-xs">
+        <div className={`w-[182px] shrink-0 text-right font-mono font-bold px-2 text-sky-100 text-xs ${costViewType === 'material' ? 'bg-blue-600/40' : ''}`}>
           재: ₩{row.materialTotal.toLocaleString()}
         </div>
-        <div className="w-[182px] shrink-0 text-right font-mono font-bold px-2 text-sky-100 text-xs">
+        <div className={`w-[182px] shrink-0 text-right font-mono font-bold px-2 text-sky-100 text-xs ${costViewType === 'labor' ? 'bg-amber-600/40' : ''}`}>
           노: ₩{row.laborTotal.toLocaleString()}
         </div>
-        <div className="w-[198px] shrink-0 text-right font-mono font-black px-2 text-amber-200 text-xs">
+        <div className={`w-[198px] shrink-0 text-right font-mono font-black px-2 text-amber-200 text-xs ${costViewType === 'total' ? 'bg-sky-600/40' : ''}`}>
           합: ₩{row.total.toLocaleString()}
         </div>
         <div className="w-[604px] shrink-0 text-right font-mono text-[10px] px-4 text-sky-100">
@@ -245,27 +248,27 @@ const TableRowInner = (props: {
         {item.quantity.toLocaleString()}
       </div>
 
-      <div className={`w-[84px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-600 text-[11px] ${borderCellClass}`}>
+      <div className={`w-[84px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-600 text-[11px] ${borderCellClass} ${costViewType === 'material' ? 'bg-blue-50/50' : ''}`}>
         ₩{(item.materialUnitPrice || 0).toLocaleString()}
       </div>
 
-      <div className={`w-[98px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-700 text-[11px] font-medium ${borderCellClass}`}>
+      <div className={`w-[98px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-700 text-[11px] font-medium ${borderCellClass} ${costViewType === 'material' ? 'bg-blue-50' : ''}`}>
         ₩{(item.materialAmount || 0).toLocaleString()}
       </div>
 
-      <div className={`w-[84px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-600 text-[11px] ${borderCellClass}`}>
+      <div className={`w-[84px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-600 text-[11px] ${borderCellClass} ${costViewType === 'labor' ? 'bg-amber-50/50' : ''}`}>
         ₩{(item.laborUnitPrice || 0).toLocaleString()}
       </div>
 
-      <div className={`w-[98px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-700 text-[11px] font-medium ${borderCellClass}`}>
+      <div className={`w-[98px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-700 text-[11px] font-medium ${borderCellClass} ${costViewType === 'labor' ? 'bg-amber-50' : ''}`}>
         ₩{(item.laborAmount || 0).toLocaleString()}
       </div>
 
-      <div className={`w-[88px] h-full shrink-0 flex items-center justify-end px-2 font-mono font-semibold text-slate-900 bg-indigo-50/30 text-[11px] ${borderCellClass}`}>
+      <div className={`w-[88px] h-full shrink-0 flex items-center justify-end px-2 font-mono font-semibold text-slate-900 bg-indigo-50/30 text-[11px] ${borderCellClass} ${costViewType === 'total' ? 'bg-indigo-100/50' : ''}`}>
         ₩{item.unitPrice.toLocaleString()}
       </div>
 
-      <div className={`w-[110px] h-full shrink-0 flex items-center justify-end px-2 font-mono font-bold text-indigo-600 bg-amber-50/40 text-[11px] ${borderCellClass}`}>
+      <div className={`w-[110px] h-full shrink-0 flex items-center justify-end px-2 font-mono font-bold text-indigo-600 bg-amber-50/40 text-[11px] ${borderCellClass} ${costViewType === 'total' ? 'bg-amber-100/50' : ''}`}>
         ₩{item.amount.toLocaleString()}
       </div>
 
@@ -382,6 +385,7 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
   height,
   theme,
   density,
+  costViewType,
   selectedIds,
   toggleOne,
   toggleAll,
@@ -417,6 +421,7 @@ export const VirtualizedTableBody: React.FC<VirtualizedTableBodyProps> = ({
   const itemData: ItemData = React.useMemo(() => ({
     rows,
     isHighDensity,
+    costViewType,
     borderCellClass,
     selectedIds,
     toggleOne,

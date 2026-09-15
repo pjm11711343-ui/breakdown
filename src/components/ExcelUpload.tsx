@@ -198,7 +198,7 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
         }
 
         // 4. Specific Column Matching
-        const cleanHeaders = headers.map(h => (h || '').replace(/\s+/g, '').toLowerCase());
+        const cleanHeaders = headers.map(h => (h || '').replace(/[^a-z0-9가-힣]/g, '').toLowerCase());
 
         const nameKeywords = [
           '품명', '항목', '공종', '명칭', '구분', '항목명', '내용', '자재명', '비목', '세부공종', '목', '자재', '공사명', 
@@ -210,13 +210,21 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           '규격·사양', 'specification', '규격및사양', '규격(동)', '규격·동', '규격(특기사항)', '규격·사양·형식', 'type/size', 'dimension'
         ];
         const unitKeywords = ['단위', 'unit', 'u/t'];
-        const qtyKeywords = ['수량', '설계수량', 'qty', 'quantity', '기성수량', '검측수량', '공수', '설계', '합계수량', '실수량', '분량', '정미수량', '수료'];
+        const qtyKeywords = ['수량', '설계수량', 'qty', 'quantity', '기성수량', '검측수량', '합계수량', '실수량', '분량', '정미수량', '수량(m)', '수량(set)'];
 
         const remarkKeywords = ['비고', '산출근거', '특기사항', '적요', 'remark', 'notes', '관련근거'];
 
         const findColByKeywords = (keywords: string[]) => {
+          // 1st pass: Precise match
           for (const kw of keywords) {
-            const cleanKw = kw.replace(/\s+/g, '').toLowerCase();
+            const cleanKw = kw.replace(/[^a-z0-9가-힣]/g, '').toLowerCase();
+            const idx = cleanHeaders.findIndex(h => h === cleanKw);
+            if (idx !== -1) return idx;
+          }
+          // 2nd pass: Includes match
+          for (const kw of keywords) {
+            const cleanKw = kw.replace(/[^a-z0-9가-힣]/g, '').toLowerCase();
+            if (!cleanKw) continue;
             const idx = cleanHeaders.findIndex(h => h.includes(cleanKw));
             if (idx !== -1) return idx;
           }
@@ -423,7 +431,7 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           }
 
           const unit = getValue(unitIdx);
-          const qtyValue = cleanNum(getRawValue(qtyIdx !== -1 ? qtyIdx : -1));
+          let qtyValue = cleanNum(getRawValue(qtyIdx !== -1 ? qtyIdx : -1));
           let mPriceValue = cleanNum(getRawValue(finalMaterialPriceIdx));
           let mAmountValue = cleanNum(getRawValue(finalMaterialAmountIdx));
           let lPriceValue = cleanNum(getRawValue(finalLaborPriceIdx));
@@ -431,6 +439,19 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           let rawPriceValue = cleanNum(getRawValue(finalPriceIdx));
           let rawAmountValue = cleanNum(getRawValue(finalAmountIdx));
           const remark = getValue(remarkIdx);
+
+          // 0. Quantity derivation: If quantity is 0 but amount and price exist
+          if (qtyValue === 0) {
+            const totalAmt = rawAmountValue || (mAmountValue + lAmountValue);
+            const totalUnitPrice = rawPriceValue || (mPriceValue + lPriceValue);
+            if (totalAmt !== 0 && totalUnitPrice !== 0) {
+              qtyValue = Math.round((totalAmt / totalUnitPrice) * 1000) / 1000;
+            } else if (mAmountValue !== 0 && mPriceValue !== 0) {
+              qtyValue = Math.round((mAmountValue / mPriceValue) * 1000) / 1000;
+            } else if (lAmountValue !== 0 && lPriceValue !== 0) {
+              qtyValue = Math.round((lAmountValue / lPriceValue) * 1000) / 1000;
+            }
+          }
 
           // 1. Single price/amount format fallback: If material prices are 0 but total price/amount exist and labor is 0
           if (mPriceValue === 0 && mAmountValue === 0 && lPriceValue === 0 && lAmountValue === 0) {

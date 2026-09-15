@@ -122,42 +122,17 @@ export default function CategorySummaryCards({
     return cat !== '미분류';
   });
 
-  // Calculate totals by category for classified items (including '외주')
+  // Calculate totals by category for classified items
   const categoryData = classifiedItems.reduce((acc, item) => {
     const itemCat = item.category || '미분류';
     const matAmt = getItemMaterialAmount(item);
     const labAmt = getItemLaborCost(item);
 
-    const isSpecialCat = isOutsourcingCategory(itemCat) || 
-                        isIndirectCostCategory(itemCat) || 
-                        isClientSuppliedCategory(itemCat);
-
-    if (isSpecialCat) {
-      // Keep everything in the special category
-      if (!acc[itemCat]) acc[itemCat] = { amount: 0, materialAmount: 0, laborAmount: 0, count: 0 };
-      acc[itemCat].amount += (matAmt + labAmt);
-      acc[itemCat].materialAmount += matAmt;
-      acc[itemCat].laborAmount += labAmt;
-      acc[itemCat].count += 1;
-    } else {
-      // Normal material category: Split labor to '간접비'
-      // 1. Material part stays in original category
-      if (!acc[itemCat]) acc[itemCat] = { amount: 0, materialAmount: 0, laborAmount: 0, count: 0 };
-      acc[itemCat].materialAmount += matAmt;
-      acc[itemCat].amount += matAmt;
-      if (matAmt > 0) acc[itemCat].count += 1;
-
-      // 2. Labor part moves to '간접비'
-      if (labAmt > 0) {
-        const indirectCat = '간접비';
-        if (!acc[indirectCat]) acc[indirectCat] = { amount: 0, materialAmount: 0, laborAmount: 0, count: 0 };
-        acc[indirectCat].laborAmount += labAmt;
-        acc[indirectCat].amount += labAmt;
-        // Only increment count if the item wasn't already purely labor (in which case it's an indirect item anyway)
-        // Actually, let's just increment count for '간접비' too to show it's contributing.
-        acc[indirectCat].count += 1;
-      }
-    }
+    if (!acc[itemCat]) acc[itemCat] = { amount: 0, materialAmount: 0, laborAmount: 0, count: 0 };
+    acc[itemCat].amount += (matAmt + labAmt);
+    acc[itemCat].materialAmount += matAmt;
+    acc[itemCat].laborAmount += labAmt;
+    acc[itemCat].count += 1;
     
     return acc;
   }, {} as Record<string, { amount: number; materialAmount: number; laborAmount: number; count: number }>);
@@ -482,20 +457,32 @@ export default function CategorySummaryCards({
                         />
                       </div>
                     ) : (
-                      <div className="flex items-center justify-between mt-1">
-                        <span className="text-sm font-mono font-black italic tracking-tighter text-indigo-900">₩{cat.amount.toLocaleString()}</span>
-                        {!showComparison && (
-                          <span 
-                            className="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold bg-white px-1.5 py-0.5 rounded border border-indigo-200 shadow-xs flex items-center" 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSafetyInputVal(cat.amount ? String(cat.amount) : '');
-                              setIsEditingSafety(true);
-                            }}
-                          >
-                            수동 ✎
-                          </span>
-                        )}
+                      <div className="flex flex-col mt-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-mono font-black italic tracking-tighter text-indigo-900">₩{cat.amount.toLocaleString()}</span>
+                          {!showComparison && (
+                            <span 
+                              className="text-[9px] text-indigo-600 hover:text-indigo-800 font-bold bg-white px-1.5 py-0.5 rounded border border-indigo-200 shadow-xs flex items-center" 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSafetyInputVal(cat.amount ? String(cat.amount) : '');
+                                setIsEditingSafety(true);
+                              }}
+                            >
+                              수동 ✎
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-0.5 mt-0.5 pt-0.5 border-t border-indigo-100">
+                          <div className="flex justify-between text-[9px] font-mono">
+                            <span className="text-blue-600 font-bold">재료비:</span>
+                            <span className="text-blue-700">₩{cat.materialAmount.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between text-[9px] font-mono">
+                            <span className="text-amber-600 font-bold">노무비:</span>
+                            <span className="text-amber-700">₩{cat.laborAmount.toLocaleString()}</span>
+                          </div>
+                        </div>
                       </div>
                     )}
                     {!showComparison && <span className="text-[9px] opacity-50 uppercase font-bold text-indigo-700">{cat.count} items</span>}
@@ -619,6 +606,16 @@ export default function CategorySummaryCards({
                     <span className="text-sm font-mono font-black italic tracking-tighter text-amber-950">
                       ₩{cat.amount.toLocaleString()}
                     </span>
+                    <div className="flex flex-col gap-0.5 mt-0.5 pt-0.5 border-t border-amber-200/50">
+                      <div className="flex justify-between text-[9px] font-mono">
+                        <span className="text-amber-700 font-bold">재료비:</span>
+                        <span className="text-amber-800">₩{cat.materialAmount.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-[9px] font-mono">
+                        <span className="text-amber-800 font-bold">노무비:</span>
+                        <span className="text-amber-900">₩{cat.laborAmount.toLocaleString()}</span>
+                      </div>
+                    </div>
                     {!showComparison && (
                       <div className="flex justify-between items-center text-[10px] text-amber-800 mt-1 font-mono">
                         <span>{cat.count} items</span>
@@ -746,7 +743,17 @@ export default function CategorySummaryCards({
                 <div className="flex flex-col gap-1.5">
                   <div className="flex flex-col">
                     <span className="text-sm font-mono font-black italic tracking-tighter">₩{cat.amount.toLocaleString()}</span>
-                    {!showComparison && <span className="text-[10px] opacity-50 uppercase font-bold">{cat.count} items</span>}
+                    <div className="flex flex-col gap-0.5 mt-1 pt-1 border-t border-slate-100">
+                      <div className="flex justify-between text-[9px] font-mono">
+                        <span className="text-blue-500 font-bold">재료비:</span>
+                        <span className="text-blue-600">₩{cat.materialAmount.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-[9px] font-mono">
+                        <span className="text-amber-600 font-bold">노무비:</span>
+                        <span className="text-amber-700">₩{cat.laborAmount.toLocaleString()}</span>
+                      </div>
+                    </div>
+                    {!showComparison && <span className="text-[10px] opacity-50 uppercase font-bold mt-0.5">{cat.count} items</span>}
                   </div>
 
                   {showComparison && (

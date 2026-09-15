@@ -220,7 +220,7 @@ export default function CategoryMatrixView({
         const unitPrice = item.unitPrice || (quantity > 0 ? (matAmt + labAmt) / quantity : 0);
         addMatrixEntry(itemCat, name, spec, unit, quantity, matAmt + labAmt, unitPrice, section);
       } else {
-        // Split: Material in original cat, Labor in '간접비'
+        // Keep both in original category, but separate rows
         // 1. Material
         if (matAmt > 0 || labAmt === 0) {
           const unitPrice = item.materialUnitPrice || (quantity > 0 ? matAmt / quantity : 0);
@@ -229,10 +229,9 @@ export default function CategoryMatrixView({
         
         // 2. Labor
         if (labAmt > 0) {
-          const indirectCat = '간접비';
           const laborName = `[노무비] ${name}`;
           const unitPrice = item.laborUnitPrice || (quantity > 0 ? labAmt / quantity : 0);
-          addMatrixEntry(indirectCat, laborName, spec, unit, quantity, labAmt, unitPrice, section, ':::LABOR');
+          addMatrixEntry(itemCat, laborName, spec, unit, quantity, labAmt, unitPrice, section, ':::LABOR');
         }
       }
     });

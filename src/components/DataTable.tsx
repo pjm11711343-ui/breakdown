@@ -192,6 +192,7 @@ export default function DataTable({
   onCategoryFilterChange 
 }: Props) {
   const [viewMode, setViewMode] = useState<'process' | 'category' | 'unclassified'>('process');
+  const [costViewType, setCostViewType] = useState<'total' | 'material' | 'labor'>('total');
   const [showAggregated, setShowAggregated] = useState(false);
   const [sectionFilter, setSectionFilter] = useState<string>('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -221,9 +222,6 @@ export default function DataTable({
     return Array.from(specs).sort();
   }, [items]);
 
-  // Pagination & High-speed rendering state (Default 100 rows per page for zero-lag rendering)
-  const [pageSize, setPageSize] = useState<number>(0);
-  const [currentPage, setCurrentPage] = useState<number>(1);
   const [containerHeight, setContainerHeight] = useState<number>(600);
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
 
@@ -340,22 +338,12 @@ export default function DataTable({
     return filteredItems;
   }, [items, viewMode, filteredItems, sectionFilter, searchQuery]);
 
-  // Reset to page 1 whenever filters or search query changes
+  // Reset helper whenever filters or search query changes
   useEffect(() => {
-    setCurrentPage(1);
     setSelectionHelper(null);
   }, [sectionFilter, categoryFilter, showUnclassifiedOnly, searchQuery, viewMode]);
 
-  const totalPages = useMemo(() => {
-    if (pageSize === 0) return 1;
-    return Math.max(1, Math.ceil(allMatchingItems.length / pageSize));
-  }, [allMatchingItems.length, pageSize]);
-
-  const pageItems = useMemo(() => {
-    if (pageSize === 0) return allMatchingItems;
-    const startIndex = (currentPage - 1) * pageSize;
-    return allMatchingItems.slice(startIndex, startIndex + pageSize);
-  }, [allMatchingItems, currentPage, pageSize]);
+  const pageItems = allMatchingItems;
 
   const unclassifiedCount = useMemo(() => {
     return items.filter(item => !item.category || item.category === '미분류').length;
@@ -776,6 +764,26 @@ export default function DataTable({
             <div className="ml-auto flex flex-wrap gap-4 items-center">
                <div className="flex bg-gray-200 p-0.5 rounded-sm border border-gray-300">
                  <button 
+                   onClick={() => setCostViewType('total')}
+                   className={`px-3 py-1 text-[9px] font-black uppercase transition-all ${costViewType === 'total' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:text-black'}`}
+                 >
+                   전체
+                 </button>
+                 <button 
+                   onClick={() => setCostViewType('material')}
+                   className={`px-3 py-1 text-[9px] font-black uppercase transition-all ${costViewType === 'material' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:text-black'}`}
+                 >
+                   재료비
+                 </button>
+                 <button 
+                   onClick={() => setCostViewType('labor')}
+                   className={`px-3 py-1 text-[9px] font-black uppercase transition-all ${costViewType === 'labor' ? 'bg-amber-600 text-white' : 'text-gray-600 hover:text-black'}`}
+                 >
+                   노무비
+                 </button>
+               </div>
+               <div className="flex bg-gray-200 p-0.5 rounded-sm border border-gray-300">
+                 <button 
                    onClick={() => setViewMode('process')}
                    className={`px-3 py-1 text-[9px] font-black uppercase transition-all ${viewMode === 'process' ? 'bg-[#141414] text-white' : 'text-gray-600 hover:text-black'}`}
                  >
@@ -859,6 +867,26 @@ export default function DataTable({
           </div>
           
           <div className="flex flex-wrap gap-4 md:gap-6 items-center">
+            <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 shadow-sm">
+              <button 
+                onClick={() => setCostViewType('total')}
+                className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${costViewType === 'total' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                전체
+              </button>
+              <button 
+                onClick={() => setCostViewType('material')}
+                className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${costViewType === 'material' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                재료비
+              </button>
+              <button 
+                onClick={() => setCostViewType('labor')}
+                className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${costViewType === 'labor' ? 'bg-amber-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                노무비
+              </button>
+            </div>
             <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
               <button 
                 onClick={() => setViewMode('process')}
@@ -1224,12 +1252,12 @@ export default function DataTable({
                 </div>
 
                 {/* 7 & 8. Material: 182px (84px + 98px) */}
-                <div className={`w-[182px] shrink-0 flex flex-col border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
-                  <div className={`h-1/2 flex items-center justify-center border-b font-black ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                <div className={`w-[182px] shrink-0 flex flex-col border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'} ${costViewType === 'material' ? 'bg-blue-600 text-white ring-2 ring-inset ring-blue-400 z-10' : ''}`}>
+                  <div className={`h-1/2 flex items-center justify-center border-b font-black ${theme === 'high-density' ? 'border-[#141414]' : (costViewType === 'material' ? 'border-blue-400' : 'border-slate-200')}`}>
                     재 료 비
                   </div>
                   <div className="h-1/2 flex text-[10px]">
-                    <div className={`w-[84px] shrink-0 flex items-center justify-center border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                    <div className={`w-[84px] shrink-0 flex items-center justify-center border-r ${theme === 'high-density' ? 'border-[#141414]' : (costViewType === 'material' ? 'border-blue-400' : 'border-slate-200')}`}>
                       단 가
                     </div>
                     <div className="w-[98px] shrink-0 flex items-center justify-center">
@@ -1239,12 +1267,12 @@ export default function DataTable({
                 </div>
 
                 {/* 9 & 10. Labor: 182px (84px + 98px) */}
-                <div className={`w-[182px] shrink-0 flex flex-col border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
-                  <div className={`h-1/2 flex items-center justify-center border-b font-black ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                <div className={`w-[182px] shrink-0 flex flex-col border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'} ${costViewType === 'labor' ? 'bg-amber-600 text-white ring-2 ring-inset ring-amber-400 z-10' : ''}`}>
+                  <div className={`h-1/2 flex items-center justify-center border-b font-black ${theme === 'high-density' ? 'border-[#141414]' : (costViewType === 'labor' ? 'border-amber-400' : 'border-slate-200')}`}>
                     노 무 비
                   </div>
                   <div className="h-1/2 flex text-[10px]">
-                    <div className={`w-[84px] shrink-0 flex items-center justify-center border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                    <div className={`w-[84px] shrink-0 flex items-center justify-center border-r ${theme === 'high-density' ? 'border-[#141414]' : (costViewType === 'labor' ? 'border-amber-400' : 'border-slate-200')}`}>
                       단 가
                     </div>
                     <div className="w-[98px] shrink-0 flex items-center justify-center">
@@ -1254,15 +1282,15 @@ export default function DataTable({
                 </div>
 
                 {/* 11 & 12. Total: 198px (88px + 110px) */}
-                <div className={`w-[198px] shrink-0 flex flex-col border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
-                  <div className={`h-1/2 flex items-center justify-center border-b font-black ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                <div className={`w-[198px] shrink-0 flex flex-col border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'} ${costViewType === 'total' ? 'bg-indigo-600 text-white ring-2 ring-inset ring-indigo-400 z-10' : ''}`}>
+                  <div className={`h-1/2 flex items-center justify-center border-b font-black ${theme === 'high-density' ? 'border-[#141414]' : (costViewType === 'total' ? 'border-indigo-400' : 'border-slate-200')}`}>
                     합 계
                   </div>
                   <div className="h-1/2 flex text-[10px]">
-                    <div className={`w-[88px] shrink-0 flex items-center justify-center border-r ${theme === 'high-density' ? 'border-[#141414]' : 'border-slate-200'}`}>
+                    <div className={`w-[88px] shrink-0 flex items-center justify-center border-r ${theme === 'high-density' ? 'border-[#141414]' : (costViewType === 'total' ? 'border-indigo-400' : 'border-slate-200')}`}>
                       단 가
                     </div>
-                    <div className="w-[110px] shrink-0 flex items-center justify-center text-indigo-600 font-bold">
+                    <div className={`w-[110px] shrink-0 flex items-center justify-center font-bold ${costViewType === 'total' ? 'text-amber-300' : 'text-indigo-600'}`}>
                       금 액
                     </div>
                   </div>
@@ -1321,6 +1349,7 @@ export default function DataTable({
                 height={Math.max(containerHeight - 95, 400)}
                 theme={theme}
                 density={density}
+                costViewType={costViewType}
                 selectedIds={selectedIds}
                 toggleOne={toggleOne}
                 toggleAll={toggleAll}
@@ -1351,17 +1380,25 @@ export default function DataTable({
               }`}>
                 {/* Spans Checkbox to Total Unit Price: 44+50+230+210+48+68+84+98+84+98+88 = 1102px */}
                 <div className="w-[1102px] shrink-0 px-4 text-right text-xs font-black uppercase tracking-[0.15em] border-r border-white/10">
-                  전체 합계 금액 (TOTAL)
+                  {costViewType === 'total' ? '전체 합계 금액 (TOTAL)' : 
+                   costViewType === 'material' ? '재료비 합계 금액 (MATERIAL)' : 
+                   '노무비 합계 금액 (LABOR)'}
                 </div>
 
                 {/* Total Amount: 110px */}
-                <div className="w-[110px] shrink-0 px-2 text-right font-mono text-sm font-black border-r border-white/10 text-amber-300">
-                  ₩{allMatchingItems.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}
+                <div className={`w-[110px] shrink-0 px-2 text-right font-mono text-sm font-black border-r border-white/10 ${
+                  costViewType === 'total' ? 'text-amber-300' : 
+                  costViewType === 'material' ? 'text-blue-300' : 'text-amber-300'
+                }`}>
+                  ₩{allMatchingItems.reduce((sum, item) => {
+                    if (costViewType === 'total') return sum + item.amount;
+                    if (costViewType === 'material') return sum + (item.materialAmount || 0);
+                    return sum + (item.laborAmount || 0);
+                  }, 0).toLocaleString()}
                 </div>
 
                 {/* Page Sum info: 604px (104+130+120+80+170) */}
                 <div className="w-[604px] shrink-0 px-4 text-xs text-slate-300 font-medium truncate">
-                  {pageSize > 0 && totalPages > 1 ? `현재 페이지 합계: ₩${pageItems.reduce((sum, item) => sum + item.amount, 0).toLocaleString()}` : ''}
                 </div>
               </div>
             )}

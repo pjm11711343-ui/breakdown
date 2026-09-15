@@ -808,7 +808,7 @@ export async function exportStyledExcel({
       rowObj.totalAmount += amt;
       rowObj.sectionQty[sec] = (rowObj.sectionQty[sec] || 0) + qty;
     } else {
-      // Split: Material in original cat, Labor in '간접비'
+      // Keep both in original category, but separate rows
       // 1. Material
       if (matAmt > 0 || labAmt === 0) {
         const cat = itemCat;
@@ -829,7 +829,7 @@ export async function exportStyledExcel({
       
       // 2. Labor
       if (labAmt > 0) {
-        const cat = '간접비';
+        const cat = itemCat;
         const laborName = `[노무비] ${name}`;
         const unitPrice = item.laborUnitPrice || (qty > 0 ? labAmt / qty : 0);
         const amt = labAmt;
