@@ -2,7 +2,7 @@ import React from 'react';
 import { SpecItem, ThemeType } from '../types';
 import { motion } from 'motion/react';
 import { LayoutGrid, PieChart as PieChartIcon, ArrowUpRight, Calculator, X } from 'lucide-react';
-import { getItemMaterialCost } from '../utils/costCalculation';
+import { getItemMaterialCost, getItemLaborCost } from '../utils/costCalculation';
 
 interface Props {
   items: SpecItem[];
@@ -25,10 +25,28 @@ export default function SectionSummaryCards({ items, theme, onClose }: Props) {
     const sectionItems = items.filter(i => (i.section || '기타 공정') === sectionName);
     const totalAmount = sectionItems.reduce((sum, i) => sum + i.amount, 0);
     
-    // Group by category within this section (노무비 제외한 자재비 기준)
+    // Group by category within this section (Split labor to '간접비')
     const categoryBreakdown = sectionItems.reduce((acc, item) => {
-      const cat = item.category || '기타';
-      acc[cat] = (acc[cat] || 0) + getItemCategoryAmount(item);
+      const itemCat = item.category || '기타';
+      const matAmt = getItemMaterialCost(item);
+      const labAmt = getItemLaborCost(item); // Note: I need to import getItemLaborCost or use it if available
+      
+      const isSpecial = itemCat.includes('외주') || itemCat.includes('간접') || itemCat.includes('지급자재');
+
+      if (isSpecial) {
+        acc[itemCat] = (acc[itemCat] || 0) + matAmt + labAmt;
+      } else {
+        // Material stays in original category
+        if (matAmt > 0) {
+          acc[itemCat] = (acc[itemCat] || 0) + matAmt;
+        }
+        // Labor moves to '간접비'
+        if (labAmt > 0) {
+          const indirectCat = '간접비';
+          acc[indirectCat] = (acc[indirectCat] || 0) + labAmt;
+        }
+      }
+      
       return acc;
     }, {} as Record<string, number>);
 

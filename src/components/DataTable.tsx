@@ -222,7 +222,7 @@ export default function DataTable({
   }, [items]);
 
   // Pagination & High-speed rendering state (Default 100 rows per page for zero-lag rendering)
-  const [pageSize, setPageSize] = useState<number>(100);
+  const [pageSize, setPageSize] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [containerHeight, setContainerHeight] = useState<number>(600);
   const tableContainerRef = useRef<HTMLDivElement | null>(null);
@@ -807,20 +807,6 @@ export default function DataTable({
                  </button>
                )}
                <div className="flex items-center gap-2 px-3 py-1 bg-white border border-gray-300 rounded-sm">
-                 <span className="text-[9px] font-black uppercase opacity-60">페이지당 표시</span>
-                 <select
-                   value={pageSize}
-                   onChange={(e) => setPageSize(Number(e.target.value))}
-                   className="text-[10px] font-bold border border-gray-300 rounded px-1 py-0.5 bg-white text-black outline-none cursor-pointer"
-                 >
-                   <option value={50}>50개씩</option>
-                   <option value={100}>100개씩 (초고속)</option>
-                   <option value={200}>200개씩</option>
-                   <option value={500}>500개씩</option>
-                   <option value={0}>전체 (가상 스크롤 없음)</option>
-                 </select>
-               </div>
-               <div className="flex items-center gap-2 px-3 py-1 bg-white border border-gray-300 rounded-sm">
                  <span className="text-[9px] font-black uppercase opacity-60">간격 조정</span>
                  <input 
                    type="range" 
@@ -905,20 +891,6 @@ export default function DataTable({
                 {showAggregated ? '전체 내역 보기' : '동일 품목 집계'}
               </button>
             )}
-            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
-              <span className="text-[10px] font-bold text-slate-500 uppercase">표시 개수</span>
-              <select
-                value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                className="text-xs font-bold border border-slate-200 rounded px-2 py-1 bg-white text-slate-700 outline-none cursor-pointer"
-              >
-                <option value={50}>50개</option>
-                <option value={100}>100개 (초고속)</option>
-                <option value={200}>200개</option>
-                <option value={500}>500개</option>
-                <option value={0}>전체</option>
-              </select>
-            </div>
             <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg">
               <Maximize2 className="w-4 h-4 text-slate-400" />
               <div className="flex items-center gap-2">
@@ -1396,82 +1368,7 @@ export default function DataTable({
           </div>
         </div>
 
-        {/* Pagination Navigation Bar */}
-        {pageSize > 0 && totalPages > 1 && (
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-white border-t border-slate-200">
-            <div className="text-xs text-slate-600 font-medium">
-              총 <span className="font-bold text-slate-900">{allMatchingItems.length}</span>개 중{' '}
-              <span className="font-bold text-indigo-600">{(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, allMatchingItems.length)}</span>개 표시 중 (페이지 {currentPage} / {totalPages})
-            </div>
-            
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setCurrentPage(1)}
-                disabled={currentPage === 1}
-                className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer font-bold"
-                title="첫 페이지"
-              >
-                &laquo;
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer font-bold"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                이전
-              </button>
-
-              {/* Page Number Buttons (Centered window around current page) */}
-              <div className="flex items-center gap-1">
-                {Array.from({ length: totalPages }, (_, i) => i + 1)
-                  .filter(p => p === 1 || p === totalPages || (p >= currentPage - 2 && p <= currentPage + 2))
-                  .map((p, idx, arr) => {
-                    const prevP = arr[idx - 1];
-                    return (
-                      <React.Fragment key={p}>
-                        {prevP && p - prevP > 1 && (
-                          <span className="px-1 text-slate-400 text-xs font-bold">...</span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setCurrentPage(p)}
-                          className={`w-7 h-7 text-xs font-bold rounded flex items-center justify-center cursor-pointer transition-colors ${
-                            currentPage === p
-                              ? 'bg-indigo-600 text-white shadow-sm'
-                              : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                          }`}
-                        >
-                          {p}
-                        </button>
-                      </React.Fragment>
-                    );
-                  })}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer font-bold"
-              >
-                다음
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(totalPages)}
-                disabled={currentPage === totalPages}
-                className="px-2 py-1 text-xs border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer font-bold"
-                title="마지막 페이지"
-              >
-                &raquo;
-              </button>
-            </div>
-          </div>
-        )}
+        {/* Pagination Navigation Bar removed per user request */}
       </div>
       {/* Smart Selection Helper Popup */}
       {selectionHelper && (

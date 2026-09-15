@@ -75,9 +75,24 @@ export default function Dashboard({
   });
 
   const categoryTotals = classifiedItems.reduce((acc, item) => {
-    const cat = item.category || '미분류';
-    if (!acc[cat]) acc[cat] = 0;
-    acc[cat] += getItemCategoryAmount(item);
+    const itemCat = item.category || '미분류';
+    const matAmt = getItemMaterialAmount(item);
+    const labAmt = getItemLaborAmount(item);
+
+    const isSpecial = itemCat.includes('외주') || itemCat.includes('간접') || itemCat.includes('지급자재');
+
+    if (isSpecial) {
+      acc[itemCat] = (acc[itemCat] || 0) + matAmt + labAmt;
+    } else {
+      // Normal category: Split
+      if (matAmt > 0) {
+        acc[itemCat] = (acc[itemCat] || 0) + matAmt;
+      }
+      if (labAmt > 0) {
+        const indirectCat = '간접비';
+        acc[indirectCat] = (acc[indirectCat] || 0) + labAmt;
+      }
+    }
     return acc;
   }, {} as Record<string, number>);
 

@@ -29,6 +29,14 @@ import {
 import { exportStyledExcel } from '../utils/excelExport';
 import { exportMatrixToPDF } from '../utils/pdfExport';
 
+import {
+  getItemMaterialCost,
+  getItemLaborCost,
+  isOutsourcingCategory,
+  isIndirectCostCategory,
+  isClientSuppliedCategory
+} from '../utils/costCalculation';
+
 interface Props {
   items: SpecItem[];
   theme: ThemeType;
@@ -161,25 +169,15 @@ export default function CategoryMatrixView({
 
     const categoryMap = new Map<string, Map<string, MatrixItemRow>>();
 
-    items.forEach(item => {
-      const cat = (item.category || '미분류').trim() || '미분류';
-      const name = (item.name || '').trim();
-      const spec = (item.specification || '').trim();
-      const unit = (item.unit || 'EA').trim() || 'EA';
-      const unitPrice = item.materialUnitPrice || item.unitPrice || 0;
-      const section = (item.section || '기타 공정').trim() || '기타 공정';
-      const quantity = item.quantity || 0;
-      const amount = item.amount || (quantity * unitPrice);
-
+    const addMatrixEntry = (cat: string, name: string, spec: string, unit: string, quantity: number, amount: number, unitPrice: number, section: string, extraKey: string = '') => {
       if (!categoryMap.has(cat)) {
         categoryMap.set(cat, new Map<string, MatrixItemRow>());
       }
 
       const itemMap = categoryMap.get(cat)!;
-      // When price is hidden, group identical items together; when price is shown, keep price tiers
       const itemKey = hidePriceAndAmount
-        ? `${name}:::${spec}:::${unit}`
-        : `${name}:::${spec}:::${unit}:::${unitPrice}`;
+        ? `${name}:::${spec}:::${unit}${extraKey}`
+        : `${name}:::${spec}:::${unit}:::${unitPrice}${extraKey}`;
 
       if (!itemMap.has(itemKey)) {
         itemMap.set(itemKey, {
@@ -202,6 +200,41 @@ export default function CategoryMatrixView({
         row.unitPrice = unitPrice;
       }
       row.sectionQuantities[section] = (row.sectionQuantities[section] || 0) + quantity;
+    };
+
+    items.forEach(item => {
+      const itemCat = (item.category || '미분류').trim() || '미분류';
+      const name = (item.name || '').trim();
+      const spec = (item.specification || '').trim();
+      const unit = (item.unit || 'EA').trim() || 'EA';
+      const section = (item.section || '기타 공정').trim() || '기타 공정';
+      const quantity = item.quantity || 0;
+      
+      const matAmt = getItemMaterialCost(item);
+      const labAmt = getItemLaborCost(item);
+
+      const isSpecial = isOutsourcingCategory(itemCat) || isIndirectCostCategory(itemCat) || isClientSuppliedCategory(itemCat);
+
+      if (isSpecial) {
+        // Everything stays in the special category
+        const unitPrice = item.unitPrice || (quantity > 0 ? (matAmt + labAmt) / quantity : 0);
+        addMatrixEntry(itemCat, name, spec, unit, quantity, matAmt + labAmt, unitPrice, section);
+      } else {
+        // Split: Material in original cat, Labor in '간접비'
+        // 1. Material
+        if (matAmt > 0 || labAmt === 0) {
+          const unitPrice = item.materialUnitPrice || (quantity > 0 ? matAmt / quantity : 0);
+          addMatrixEntry(itemCat, name, spec, unit, quantity, matAmt, unitPrice, section);
+        }
+        
+        // 2. Labor
+        if (labAmt > 0) {
+          const indirectCat = '간접비';
+          const laborName = `[노무비] ${name}`;
+          const unitPrice = item.laborUnitPrice || (quantity > 0 ? labAmt / quantity : 0);
+          addMatrixEntry(indirectCat, laborName, spec, unit, quantity, labAmt, unitPrice, section, ':::LABOR');
+        }
+      }
     });
 
     // Build Category Groups

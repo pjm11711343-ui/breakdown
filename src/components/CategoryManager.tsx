@@ -293,20 +293,38 @@ export default function CategoryManager({
     let grandLaborAmount = 0;
     
     items.forEach(item => {
-      const cat = item.category || '미분류';
-      if (!stats[cat]) {
-        stats[cat] = { count: 0, totalAmount: 0, materialAmount: 0, laborAmount: 0 };
-      }
-      const itemAmt = getItemAmount(item);
+      const itemCat = item.category || '미분류';
       const matAmt = getItemMaterialCost(item);
       const labAmt = getItemLaborCost(item);
 
-      stats[cat].count++;
-      stats[cat].totalAmount += itemAmt;
-      stats[cat].materialAmount += matAmt;
-      stats[cat].laborAmount += labAmt;
+      const isSpecial = isOutsourcingCategory(itemCat) || isIndirectCostCategory(itemCat) || isClientSuppliedCategory(itemCat);
 
-      grandTotalAmount += itemAmt;
+      if (isSpecial) {
+        // Keep everything in the special category
+        if (!stats[itemCat]) stats[itemCat] = { count: 0, totalAmount: 0, materialAmount: 0, laborAmount: 0 };
+        stats[itemCat].count++;
+        stats[itemCat].totalAmount += (matAmt + labAmt);
+        stats[itemCat].materialAmount += matAmt;
+        stats[itemCat].laborAmount += labAmt;
+      } else {
+        // Normal material category: Split labor to '간접비'
+        // 1. Material stays in original category
+        if (!stats[itemCat]) stats[itemCat] = { count: 0, totalAmount: 0, materialAmount: 0, laborAmount: 0 };
+        stats[itemCat].materialAmount += matAmt;
+        stats[itemCat].totalAmount += matAmt;
+        if (matAmt > 0) stats[itemCat].count++;
+
+        // 2. Labor moves to '간접비'
+        if (labAmt > 0) {
+          const indirectCat = '간접비';
+          if (!stats[indirectCat]) stats[indirectCat] = { count: 0, totalAmount: 0, materialAmount: 0, laborAmount: 0 };
+          stats[indirectCat].laborAmount += labAmt;
+          stats[indirectCat].totalAmount += labAmt;
+          stats[indirectCat].count++;
+        }
+      }
+
+      grandTotalAmount += (matAmt + labAmt);
       grandTotalCount++;
       grandMaterialAmount += matAmt;
       grandLaborAmount += labAmt;

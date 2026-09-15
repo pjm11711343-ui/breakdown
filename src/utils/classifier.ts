@@ -628,6 +628,16 @@ export function autoClassify(
   if (name.includes('조경수전함')) {
     category = '밸브류';
   }
+
+  // User requested: 자재비에 노무비 있는 금액은 노무비만 추출해서 간접비로 추가
+  const isLaborKeyword = name.includes('노무비') || name.includes('인건비') || name.includes('가공비') || 
+                        spec.includes('노무비') || spec.includes('인건비') || spec.includes('가공비') ||
+                        name === '품' || spec === '품' || name.includes('공수');
+
+  if (isLaborKeyword) {
+    category = '간접비';
+  }
+
   if (section.replace(/\s+/g, '').includes('세대외오배수배관공사')) {
     if (name.includes('동만') || name.includes('동망') || name.includes('동관') || name.includes('동')) {
       category = 'PVC';

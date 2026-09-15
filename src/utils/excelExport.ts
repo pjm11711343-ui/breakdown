@@ -777,39 +777,76 @@ export async function exportStyledExcel({
   }
 
   const exportCategoryMap = new Map<string, Map<string, ExportMatrixItem>>();
+  
   items.forEach(item => {
-    const cat = (item.category || '미분류').trim() || '미분류';
+    const itemCat = (item.category || '미분류').trim() || '미분류';
     const name = (item.name || '').trim();
     const spec = (item.specification || '').trim();
     const unit = (item.unit || 'EA').trim() || 'EA';
-    const unitPrice = item.materialUnitPrice || item.unitPrice || 0;
     const sec = (item.section || '기타 공정').trim() || '기타 공정';
     const qty = item.quantity || 0;
-    const amt = item.amount || (qty * unitPrice);
+    
+    const matAmt = getItemMaterialCost(item);
+    const labAmt = getItemLaborCost(item);
+    
+    const isSpecial = isOutsourcingCategory(itemCat) || isIndirectCostCategory(itemCat) || isClientSuppliedCategory(itemCat);
 
-    if (!exportCategoryMap.has(cat)) {
-      exportCategoryMap.set(cat, new Map());
+    if (isSpecial) {
+      // Everything stays in the special category
+      const cat = itemCat;
+      const unitPrice = item.unitPrice || (qty > 0 ? (matAmt + labAmt) / qty : 0);
+      const amt = matAmt + labAmt;
+      
+      if (!exportCategoryMap.has(cat)) exportCategoryMap.set(cat, new Map());
+      const itemMap = exportCategoryMap.get(cat)!;
+      const key = `${name}:::${spec}:::${unit}:::${unitPrice}`;
+      if (!itemMap.has(key)) {
+        itemMap.set(key, { name, spec, unit, unitPrice, totalQty: 0, totalAmount: 0, sectionQty: {} });
+      }
+      const rowObj = itemMap.get(key)!;
+      rowObj.totalQty += qty;
+      rowObj.totalAmount += amt;
+      rowObj.sectionQty[sec] = (rowObj.sectionQty[sec] || 0) + qty;
+    } else {
+      // Split: Material in original cat, Labor in '간접비'
+      // 1. Material
+      if (matAmt > 0 || labAmt === 0) {
+        const cat = itemCat;
+        const unitPrice = item.materialUnitPrice || (qty > 0 ? matAmt / qty : 0);
+        const amt = matAmt;
+        
+        if (!exportCategoryMap.has(cat)) exportCategoryMap.set(cat, new Map());
+        const itemMap = exportCategoryMap.get(cat)!;
+        const key = `${name}:::${spec}:::${unit}:::${unitPrice}`;
+        if (!itemMap.has(key)) {
+          itemMap.set(key, { name, spec, unit, unitPrice, totalQty: 0, totalAmount: 0, sectionQty: {} });
+        }
+        const rowObj = itemMap.get(key)!;
+        rowObj.totalQty += qty;
+        rowObj.totalAmount += amt;
+        rowObj.sectionQty[sec] = (rowObj.sectionQty[sec] || 0) + qty;
+      }
+      
+      // 2. Labor
+      if (labAmt > 0) {
+        const cat = '간접비';
+        const laborName = `[노무비] ${name}`;
+        const unitPrice = item.laborUnitPrice || (qty > 0 ? labAmt / qty : 0);
+        const amt = labAmt;
+        
+        if (!exportCategoryMap.has(cat)) exportCategoryMap.set(cat, new Map());
+        const itemMap = exportCategoryMap.get(cat)!;
+        // Include 'Labor' in key to differentiate from same-named material items if any
+        const key = `${laborName}:::${spec}:::${unit}:::${unitPrice}:::LABOR`;
+        if (!itemMap.has(key)) {
+          itemMap.set(key, { name: laborName, spec, unit, unitPrice, totalQty: 0, totalAmount: 0, sectionQty: {} });
+        }
+        const rowObj = itemMap.get(key)!;
+        rowObj.totalQty += qty;
+        rowObj.totalAmount += amt;
+        rowObj.sectionQty[sec] = (rowObj.sectionQty[sec] || 0) + qty;
+      }
     }
-
-    const itemMap = exportCategoryMap.get(cat)!;
-    const key = `${name}:::${spec}:::${unit}:::${unitPrice}`;
-
-    if (!itemMap.has(key)) {
-      itemMap.set(key, {
-        name,
-        spec,
-        unit,
-        unitPrice,
-        totalQty: 0,
-        totalAmount: 0,
-        sectionQty: {}
-      });
-    }
-
-    const rowObj = itemMap.get(key)!;
-    rowObj.totalQty += qty;
-    rowObj.totalAmount += amt;
-    rowObj.sectionQty[sec] = (rowObj.sectionQty[sec] || 0) + qty;
   });
 
   // 4. Populate Matrix Rows

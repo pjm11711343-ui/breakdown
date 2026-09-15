@@ -73,29 +73,14 @@ export function getItemMaterialCost(item: SpecItem): number {
  * 외주비 카테고리 품목은 엑셀 재료비 열에 기재되었더라도 전체 금액이 외주비로 산출됩니다.
  */
 export function getItemLaborCost(item: SpecItem): number {
-  // 1. 외주비 카테고리: 전체 금액이 외주비로 인정
+  // 1. 외주비 카테고리: 전체 금액이 외주비/용역비로 인정
   if (isOutsourcingCategory(item.category)) {
-    if (item.laborAmount && item.laborAmount > 0) {
-      return item.laborAmount;
-    }
-    if (item.amount && item.amount > 0) {
-      return item.amount;
-    }
-    if (item.materialAmount && item.materialAmount > 0) {
-      return item.materialAmount;
-    }
-    if (item.quantity && item.unitPrice && item.quantity > 0 && item.unitPrice > 0) {
-      return Math.round(item.quantity * item.unitPrice);
-    }
-    return 0;
+    return item.amount || (item.materialAmount || 0) + (item.laborAmount || 0) || (item.quantity * item.unitPrice) || 0;
   }
 
-  // 2. 간접비 카테고리: 간접노무비/경비 금액으로 산출
+  // 2. 간접비 카테고리: 전체 금액이 간접노무비/경비/간접비로 인정
   if (isIndirectCostCategory(item.category)) {
-    if (item.laborAmount && item.laborAmount > 0) {
-      return item.laborAmount;
-    }
-    return item.amount || 0;
+    return item.amount || (item.materialAmount || 0) + (item.laborAmount || 0) || (item.quantity * item.unitPrice) || 0;
   }
 
   // 3. 지급자재: 시공/설치 노무비가 별도 기재된 경우에만 인정

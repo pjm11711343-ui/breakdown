@@ -124,18 +124,41 @@ export default function CategorySummaryCards({
 
   // Calculate totals by category for classified items (including '외주')
   const categoryData = classifiedItems.reduce((acc, item) => {
-    const cat = item.category || '미분류';
-    if (!acc[cat]) {
-      acc[cat] = { amount: 0, materialAmount: 0, laborAmount: 0, count: 0 };
-    }
-    const catAmt = getItemCategoryAmount(item);
+    const itemCat = item.category || '미분류';
     const matAmt = getItemMaterialAmount(item);
-    const labAmt = getItemLaborAmount(item);
+    const labAmt = getItemLaborCost(item);
 
-    acc[cat].amount += catAmt;
-    acc[cat].materialAmount += matAmt;
-    acc[cat].laborAmount += labAmt;
-    acc[cat].count += 1;
+    const isSpecialCat = isOutsourcingCategory(itemCat) || 
+                        isIndirectCostCategory(itemCat) || 
+                        isClientSuppliedCategory(itemCat);
+
+    if (isSpecialCat) {
+      // Keep everything in the special category
+      if (!acc[itemCat]) acc[itemCat] = { amount: 0, materialAmount: 0, laborAmount: 0, count: 0 };
+      acc[itemCat].amount += (matAmt + labAmt);
+      acc[itemCat].materialAmount += matAmt;
+      acc[itemCat].laborAmount += labAmt;
+      acc[itemCat].count += 1;
+    } else {
+      // Normal material category: Split labor to '간접비'
+      // 1. Material part stays in original category
+      if (!acc[itemCat]) acc[itemCat] = { amount: 0, materialAmount: 0, laborAmount: 0, count: 0 };
+      acc[itemCat].materialAmount += matAmt;
+      acc[itemCat].amount += matAmt;
+      if (matAmt > 0) acc[itemCat].count += 1;
+
+      // 2. Labor part moves to '간접비'
+      if (labAmt > 0) {
+        const indirectCat = '간접비';
+        if (!acc[indirectCat]) acc[indirectCat] = { amount: 0, materialAmount: 0, laborAmount: 0, count: 0 };
+        acc[indirectCat].laborAmount += labAmt;
+        acc[indirectCat].amount += labAmt;
+        // Only increment count if the item wasn't already purely labor (in which case it's an indirect item anyway)
+        // Actually, let's just increment count for '간접비' too to show it's contributing.
+        acc[indirectCat].count += 1;
+      }
+    }
+    
     return acc;
   }, {} as Record<string, { amount: number; materialAmount: number; laborAmount: number; count: number }>);
 
