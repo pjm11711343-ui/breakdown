@@ -31,6 +31,15 @@ export function isClientSuppliedCategory(category?: string | null): boolean {
 }
 
 /**
+ * 품목이 외주 관련인지 판별합니다 (카테고리 또는 품명 기준).
+ */
+export function isOutsourcingItem(item: SpecItem): boolean {
+  if (isOutsourcingCategory(item.category)) return true;
+  const name = item.name || '';
+  return name.includes('외주');
+}
+
+/**
  * 자재비(재료비) 금액 집계에서 완전히 제외해야 하는 카테고리인지 판별합니다.
  * - 간접비 계열 카테고리
  * - 지급자재 계열 카테고리
@@ -65,8 +74,8 @@ export function getItemMaterialCost(item: SpecItem): number {
     return Math.max(0, (item.amount || 0) - item.laborAmount);
   }
 
-  // 외주비 카테고리인데 재료비가 명시되지 않은 경우는 0으로 반환 (전액 노무비로 처리되기 위함)
-  if (isOutsourcingCategory(item.category)) {
+  // 외주비 항목인데 재료비가 명시되지 않은 경우는 0으로 반환 (전액 노무비로 처리되기 위함)
+  if (isOutsourcingItem(item)) {
     return 0;
   }
 
@@ -77,8 +86,8 @@ export function getItemMaterialCost(item: SpecItem): number {
  * 개별 품목의 외주비/노무비 금액을 산출합니다.
  */
 export function getItemLaborCost(item: SpecItem): number {
-  // 1. 외주비 카테고리
-  if (isOutsourcingCategory(item.category)) {
+  // 1. 외주비 항목 (카테고리 또는 품명)
+  if (isOutsourcingItem(item)) {
     // 명시된 노무비가 있으면 그것을 사용
     if (item.laborAmount !== undefined && item.laborAmount !== null && item.laborAmount > 0) {
       return item.laborAmount;
@@ -121,7 +130,7 @@ export function getItemLaborCost(item: SpecItem): number {
  * 개별 품목의 총 도급/실행 계약 인정 금액을 산출합니다.
  */
 export function getItemContractAmount(item: SpecItem): number {
-  if (isOutsourcingCategory(item.category)) {
+  if (isOutsourcingItem(item)) {
     return getItemLaborCost(item);
   }
   if (isClientSuppliedCategory(item.category)) {

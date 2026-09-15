@@ -13,13 +13,14 @@ import SectionSummaryCards from './components/SectionSummaryCards';
 import CategorySummaryCards from './components/CategorySummaryCards';
 import DataTable from './components/DataTable';
 import PriceAnalysis from './components/PriceAnalysis';
+import AIAnalysisDrawer from './components/AIAnalysisDrawer';
 import CategoryMatrixView from './components/CategoryMatrixView';
 import ExcelUpload from './components/ExcelUpload';
 import CategoryManager from './components/CategoryManager';
 import SettingsManager from './components/SettingsManager';
 import ProjectSiteManager from './components/ProjectSiteManager';
 import SiteListSidebar from './components/SiteListSidebar';
-import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X, Save, Lock, KeySquare, Sliders, Cloud, CheckCircle2, RefreshCw, Menu, Database, AlertCircle, Layers } from 'lucide-react';
+import { Settings, FileSpreadsheet, LogOut, ChevronRight, Tags, BarChart3, Download, Share2, Copy, Check, X, Save, Lock, KeySquare, Sliders, Cloud, CheckCircle2, RefreshCw, Menu, Database, AlertCircle, Layers, Brain } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   saveProjectToFirestore,
@@ -295,6 +296,7 @@ export default function App() {
   const [fontSize, setFontSize] = useState<number>(11);
   const [items, setItems] = useState<SpecItem[]>([]);
   const [activeTab, setActiveTab] = useState<'list' | 'matrix' | 'analysis'>('list');
+  const [isAIAnalysisDrawerOpen, setIsAIAnalysisDrawerOpen] = useState(false);
   const [categories, setCategories] = useState<string[]>(() => {
     try {
       const saved = safeLocalStorage.getItem(CATEGORIES_KEY);
@@ -2996,6 +2998,7 @@ export default function App() {
                     onDataLoaded={handleDataLoaded}
                     categoryFilter={categoryFilter}
                     onCategoryFilterChange={setCategoryFilter}
+                    onOpenAnalysis={() => setIsAIAnalysisDrawerOpen(true)}
                   />
                 </>
               ) : activeTab === 'matrix' ? (
@@ -3063,6 +3066,36 @@ export default function App() {
               />
             )}
           </AnimatePresence>
+
+          {/* AI Analysis Floating Button */}
+          <AnimatePresence>
+            {activeTab === 'list' && !isAIAnalysisDrawerOpen && (
+              <motion.button
+                initial={{ scale: 0, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0, opacity: 0, y: 20 }}
+                whileHover={{ scale: 1.1, y: -5 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setIsAIAnalysisDrawerOpen(true)}
+                className="fixed bottom-8 right-8 z-[150] w-14 h-14 bg-indigo-600 text-white rounded-full shadow-[0_10px_25px_rgba(79,70,229,0.4)] flex items-center justify-center hover:bg-indigo-700 transition-colors group"
+                title="AI 단가 및 시스템 분석"
+              >
+                <Brain className="w-7 h-7" />
+                <div className="absolute right-full mr-4 px-3 py-1.5 bg-slate-900 text-white text-[10px] font-bold rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl border border-white/10">
+                  자체 시스템 AI 분석 실행
+                </div>
+              </motion.button>
+            )}
+          </AnimatePresence>
+
+          {/* AI Analysis Drawer */}
+          <AIAnalysisDrawer 
+            isOpen={isAIAnalysisDrawerOpen}
+            onClose={() => setIsAIAnalysisDrawerOpen(false)}
+            items={items}
+            theme={theme}
+            onExportXlsx={handleDownloadResults}
+          />
         </div>
       </main>
     </div>

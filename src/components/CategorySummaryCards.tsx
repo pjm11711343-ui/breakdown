@@ -172,9 +172,9 @@ export default function CategorySummaryCards({
     percentage: totalContractAmount > 0 ? (safetyData.amount / totalContractAmount) * 100 : 0
   };
 
-  // 4. Outsourcing Categories (외주, 외주비, 외주비+덕트덕 등) - 반드시 안전장비류 뒤에 배치
+  // 4. Outsourcing Categories (외주, 외주비, 외주비+덕트덕 등)
   const sortedOutsourcingCategories = categories
-    .filter(name => isOutsourcingCategory(name))
+    .filter(name => isOutsourcingCategory(name) && !isIndirectCostCategory(name) && !isClientSuppliedCategory(name))
     .map(name => {
       const data = categoryData[name];
       if (!data) return null;
@@ -187,7 +187,7 @@ export default function CategorySummaryCards({
     .filter((cat): cat is { name: string; amount: number; materialAmount: number; laborAmount: number; count: number; percentage: number } => cat !== null);
 
   const extraOutsourcingCategories = Object.entries(categoryData)
-    .filter(([name]) => !categories.includes(name) && isOutsourcingCategory(name))
+    .filter(([name]) => !categories.includes(name) && isOutsourcingCategory(name) && !isIndirectCostCategory(name) && !isClientSuppliedCategory(name))
     .map(([name, data]) => ({
       name,
       ...data,
@@ -197,12 +197,33 @@ export default function CategorySummaryCards({
 
   const outsourcingCategories = [...sortedOutsourcingCategories, ...extraOutsourcingCategories];
 
-  // Final order: 일반 자재 카테고리 -> 안전장비류 -> 외주비 카테고리
-  const filteredFinalCategories = [...sortedCategories, ...extraCategories];
+  // 5. Indirect Costs and Client Supplied Materials (반드시 가장 뒤에 배치)
+  const indirectAndSuppliedCategories = Object.entries(categoryData)
+    .filter(([name]) => isIndirectCostCategory(name) || isClientSuppliedCategory(name))
+    .map(([name, data]) => ({
+      name,
+      ...data,
+      percentage: totalContractAmount > 0 ? (data.amount / totalContractAmount) * 100 : 0
+    }))
+    .sort((a, b) => {
+      // 간접비 먼저, 그 다음 지급자재
+      const aIsIndirect = isIndirectCostCategory(a.name);
+      const bIsIndirect = isIndirectCostCategory(b.name);
+      if (aIsIndirect && !bIsIndirect) return -1;
+      if (!aIsIndirect && bIsIndirect) return 1;
+      return b.amount - a.amount;
+    });
+
+  // Final order: 일반 재료비 카테고리 -> 안전장비류 -> 외주비 카테고리 -> 간접비/지급자재
+  const filteredFinalCategories = [...sortedCategories, ...extraCategories]
+    .filter(cat => !isOutsourcingCategory(cat.name) && !isIndirectCostCategory(cat.name) && !isClientSuppliedCategory(cat.name) && cat.name !== '안전장비류');
+
   if (safetyData.count > 0 || categories.includes('안전장비류')) {
     filteredFinalCategories.push(safetyCategory);
   }
+  
   filteredFinalCategories.push(...outsourcingCategories);
+  filteredFinalCategories.push(...indirectAndSuppliedCategories);
 
   const unclassifiedItemsList = items.filter(item => !item.category || item.category === '미분류');
   const unclassifiedCount = unclassifiedItemsList.length;
@@ -245,11 +266,11 @@ export default function CategorySummaryCards({
               상세 통계 리포트
             </button>
             <div className="bg-white/10 px-2.5 py-1 border border-white/20 text-right">
-              <span className="text-[9px] uppercase opacity-70 block">총 계약 합계 (자재+외주)</span>
+              <span className="text-[9px] uppercase opacity-70 block">총 계약 합계 (재료비+외주)</span>
               <span className="text-sm font-mono font-black text-yellow-400">₩{totalContractAmount.toLocaleString()}</span>
             </div>
             <div className="bg-white/5 px-2 py-1 border border-white/10 text-right">
-              <span className="text-[9px] uppercase opacity-70 block">자재비: {materialPercent.toFixed(1)}%</span>
+              <span className="text-[9px] uppercase opacity-70 block">재료비: {materialPercent.toFixed(1)}%</span>
               <span className="text-xs font-mono font-bold text-sky-300">₩{totalMaterialAmount.toLocaleString()}</span>
             </div>
             <div className="bg-white/5 px-2 py-1 border border-white/10 text-right">
@@ -320,7 +341,7 @@ export default function CategorySummaryCards({
             </div>
             <div className="pt-1.5 border-t border-indigo-200/80 space-y-0.5 text-[10px] font-mono">
               <div className="flex justify-between text-slate-700">
-                <span>자재비:</span>
+                <span>재료비:</span>
                 <span className="font-bold text-blue-700">₩{totalMaterialAmount.toLocaleString()} ({materialPercent.toFixed(0)}%)</span>
               </div>
               <div className="flex justify-between text-slate-700">
@@ -878,7 +899,7 @@ export default function CategorySummaryCards({
               <div className="px-3.5 py-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-blue-600 uppercase">
                   <Package size={12} />
-                  <span>자재비 합계 ({materialPercent.toFixed(1)}%)</span>
+                  <span>재료비 합계 ({materialPercent.toFixed(1)}%)</span>
                 </div>
                 <div className="text-base font-mono font-black text-slate-800">
                   ₩{totalMaterialAmount.toLocaleString()}
@@ -902,7 +923,7 @@ export default function CategorySummaryCards({
         <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col gap-1.5">
           <div className="flex justify-between items-center text-xs font-bold text-slate-500">
             <span className="flex items-center gap-1 text-blue-600">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> 자재비: ₩{totalMaterialAmount.toLocaleString()} ({materialPercent.toFixed(1)}%)
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block" /> 재료비: ₩{totalMaterialAmount.toLocaleString()} ({materialPercent.toFixed(1)}%)
             </span>
             <span className="flex items-center gap-1 text-amber-600">
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" /> 외주비: ₩{totalLaborAmount.toLocaleString()} ({laborPercent.toFixed(1)}%)
@@ -912,7 +933,7 @@ export default function CategorySummaryCards({
             <div 
               className="h-full bg-blue-500 transition-all duration-500" 
               style={{ width: `${materialPercent}%` }} 
-              title={`자재비: ${materialPercent.toFixed(1)}%`}
+              title={`재료비: ${materialPercent.toFixed(1)}%`}
             />
             <div 
               className="h-full bg-amber-500 transition-all duration-500" 
@@ -932,7 +953,7 @@ export default function CategorySummaryCards({
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900 tracking-tight leading-none mb-0.5">카테고리별 공종 금액 일람</h2>
-              <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Category-wise Expenditure Summary (자재 + 외주)</p>
+              <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Category-wise Expenditure Summary (재료비 + 외주)</p>
             </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -987,7 +1008,7 @@ export default function CategorySummaryCards({
 
             <div className="space-y-2 pt-2 border-t border-indigo-400/40 text-[11px] font-medium text-indigo-100">
               <div className="flex justify-between items-center">
-                <span>자재비 ({materialPercent.toFixed(0)}%)</span>
+                <span>재료비 ({materialPercent.toFixed(0)}%)</span>
                 <span className="font-mono font-bold">₩{totalMaterialAmount.toLocaleString()}</span>
               </div>
               <div className="flex justify-between items-center">
