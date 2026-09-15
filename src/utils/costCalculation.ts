@@ -32,20 +32,20 @@ export function isClientSuppliedCategory(category?: string | null): boolean {
 
 /**
  * 자재비(재료비) 금액 집계에서 완전히 제외해야 하는 카테고리인지 판별합니다.
- * - 외주비 계열 카테고리 (예: '외주비+덕트덕', '외주비+지역난방지', '외주비 열선열', '외주비+' 등)
  * - 간접비 계열 카테고리
  * - 지급자재 계열 카테고리
+ * * 외주비는 이제 분리 가능하므로 제외 대상에서 뺍니다.
  */
 export function isExcludedFromMaterialCost(category?: string | null): boolean {
-  return isOutsourcingCategory(category) || isIndirectCostCategory(category) || isClientSuppliedCategory(category);
+  return isIndirectCostCategory(category) || isClientSuppliedCategory(category);
 }
 
 /**
  * 개별 품목의 순수 자재비(재료비) 금액을 산출합니다.
- * 외주비, 간접비, 지급자재 카테고리인 경우 자재비 금액은 0(제외)입니다.
+ * 간접비, 지급자재 카테고리인 경우 자재비 금액은 0(제외)입니다.
  */
 export function getItemMaterialCost(item: SpecItem): number {
-  // 1. 외주비, 간접비, 지급자재는 자재비에서 전면 제외
+  // 1. 간접비, 지급자재는 자재비에서 전면 제외
   if (isExcludedFromMaterialCost(item.category)) {
     return 0;
   }
@@ -55,14 +55,19 @@ export function getItemMaterialCost(item: SpecItem): number {
     return item.materialAmount;
   }
 
-  // 3. 노무비만 있고 재료비가 분리되지 않은 경우 금액 차감
+  // 3. 재료비 단가와 수량이 있는 경우
+  if (item.materialUnitPrice && item.materialUnitPrice > 0 && item.quantity > 0) {
+    return Math.round(item.materialUnitPrice * item.quantity);
+  }
+
+  // 4. 노무비만 있고 재료비가 분리되지 않은 경우 금액 차감
   if (item.laborAmount && item.laborAmount > 0) {
     return Math.max(0, (item.amount || 0) - item.laborAmount);
   }
 
-  // 4. 재료비 단가와 수량이 있는 경우
-  if (item.materialUnitPrice && item.materialUnitPrice > 0 && item.quantity > 0) {
-    return Math.round(item.materialUnitPrice * item.quantity);
+  // 외주비 카테고리인데 재료비가 명시되지 않은 경우는 0으로 반환 (전액 노무비로 처리되기 위함)
+  if (isOutsourcingCategory(item.category)) {
+    return 0;
   }
 
   return item.amount || 0;
@@ -70,12 +75,25 @@ export function getItemMaterialCost(item: SpecItem): number {
 
 /**
  * 개별 품목의 외주비/노무비 금액을 산출합니다.
- * 외주비 카테고리 품목은 엑셀 재료비 열에 기재되었더라도 전체 금액이 외주비로 산출됩니다.
  */
 export function getItemLaborCost(item: SpecItem): number {
-  // 1. 외주비 카테고리: 전체 금액이 외주비/용역비로 인정
+  // 1. 외주비 카테고리
   if (isOutsourcingCategory(item.category)) {
-    return item.amount || (item.materialAmount || 0) + (item.laborAmount || 0) || (item.quantity * item.unitPrice) || 0;
+    // 명시된 노무비가 있으면 그것을 사용
+    if (item.laborAmount !== undefined && item.laborAmount !== null && item.laborAmount > 0) {
+      return item.laborAmount;
+    }
+    // 노무 단가가 있으면 계산
+    if (item.laborUnitPrice && item.laborUnitPrice > 0 && item.quantity > 0) {
+      return Math.round(item.laborUnitPrice * item.quantity);
+    }
+    // 명시된 재료비가 있다면 전체에서 재료비 뺀 값을 노무비로
+    const matCost = getItemMaterialCost(item);
+    if (matCost > 0) {
+      return Math.max(0, (item.amount || 0) - matCost);
+    }
+    // 아무것도 명시 안 됐으면 전체를 노무비(외주비)로
+    return item.amount || (item.quantity * item.unitPrice) || 0;
   }
 
   // 2. 간접비 카테고리: 전체 금액이 간접노무비/경비/간접비로 인정

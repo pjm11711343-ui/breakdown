@@ -213,7 +213,7 @@ export default function CategoryMatrixView({
       const matAmt = getItemMaterialCost(item);
       const labAmt = getItemLaborCost(item);
 
-      const isSpecial = isOutsourcingCategory(itemCat) || isIndirectCostCategory(itemCat) || isClientSuppliedCategory(itemCat);
+      const isSpecial = isIndirectCostCategory(itemCat) || isClientSuppliedCategory(itemCat);
 
       if (isSpecial) {
         // Everything stays in the special category
