@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { SpecItem, ThemeType } from '../types';
+import { SpecItem, ThemeType, SeparationMethod } from '../types';
 import {
   Download,
   Printer,
@@ -32,6 +32,7 @@ import { exportMatrixToPDF } from '../utils/pdfExport';
 import {
   getItemMaterialCost,
   getItemLaborCost,
+  getItemQuantity,
   isOutsourcingCategory,
   isIndirectCostCategory,
   isClientSuppliedCategory
@@ -44,6 +45,7 @@ interface Props {
   categoryColors?: Record<string, string>;
   projectName?: string;
   onOpenCategoryManager?: () => void;
+  separationMethod?: SeparationMethod;
 }
 
 interface MatrixItemRow {
@@ -71,7 +73,8 @@ export default function CategoryMatrixView({
   theme,
   categories,
   projectName = '기계설비공사',
-  onOpenCategoryManager
+  onOpenCategoryManager,
+  separationMethod = 'method2'
 }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -125,7 +128,7 @@ export default function CategoryMatrixView({
 
     items.forEach(item => {
       const sec = (item.section || '기타 공정').trim() || '기타 공정';
-      const q = item.quantity || 0;
+      const q = getItemQuantity(item);
       const p = item.materialUnitPrice || item.unitPrice || 0;
       if (!map[sec]) {
         map[sec] = { itemCount: 0, totalQty: 0, totalAmt: 0 };
@@ -143,7 +146,7 @@ export default function CategoryMatrixView({
     const map = new Map<string, { count: number; totalQty: number }>();
     items.forEach(item => {
       const cat = (item.category || '미분류').trim() || '미분류';
-      const qty = item.quantity || 0;
+      const qty = getItemQuantity(item);
       const cur = map.get(cat) || { count: 0, totalQty: 0 };
       cur.count += 1;
       cur.totalQty += qty;
@@ -208,10 +211,10 @@ export default function CategoryMatrixView({
       const spec = (item.specification || '').trim();
       const unit = (item.unit || 'EA').trim() || 'EA';
       const section = (item.section || '기타 공정').trim() || '기타 공정';
-      const quantity = item.quantity || 0;
+      const quantity = getItemQuantity(item);
       
-      const matAmt = getItemMaterialCost(item);
-      const labAmt = getItemLaborCost(item);
+      const matAmt = getItemMaterialCost(item, separationMethod);
+      const labAmt = getItemLaborCost(item, separationMethod);
 
       const isSpecial = isIndirectCostCategory(itemCat) || isClientSuppliedCategory(itemCat);
 

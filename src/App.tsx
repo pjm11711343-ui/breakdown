@@ -4,9 +4,10 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { SpecItem, ThemeType, Project, CustomClassificationRule, INITIAL_CATEGORIES } from './types';
+import { SpecItem, ThemeType, Project, CustomClassificationRule, INITIAL_CATEGORIES, SeparationMethod } from './types';
 import { autoClassify } from './utils/classifier';
 import { exportStyledExcel } from './utils/excelExport';
+import { healItem } from './utils/costCalculation';
 import TemplateSelector from './components/TemplateSelector';
 import Dashboard from './components/Dashboard';
 import SectionSummaryCards from './components/SectionSummaryCards';
@@ -296,6 +297,7 @@ export default function App() {
   const [fontSize, setFontSize] = useState<number>(11);
   const [items, setItems] = useState<SpecItem[]>([]);
   const [activeTab, setActiveTab] = useState<'list' | 'matrix' | 'analysis'>('list');
+  const [separationMethod, setSeparationMethod] = useState<SeparationMethod>('method2');
   const [isAIAnalysisDrawerOpen, setIsAIAnalysisDrawerOpen] = useState(false);
   const [categories, setCategories] = useState<string[]>(() => {
     try {
@@ -744,7 +746,7 @@ export default function App() {
             const restoredState = unminifyState(state);
             
             if (restoredState.items && restoredState.items.length > 0) {
-              setItems(restoredState.items);
+              setItems(restoredState.items.map(healItem));
               if (restoredState.theme) setTheme(restoredState.theme);
               if (restoredState.categories) setCategories(restoredState.categories);
               if (restoredState.projectName) setCurrentProjectName(restoredState.projectName);
@@ -1071,7 +1073,7 @@ export default function App() {
 
   const handleLoadProject = (project: Project) => {
     try {
-      setItems(project.items || []);
+      setItems((project.items || []).map(healItem));
       setTheme(project.theme);
       // We no longer override global font settings from per-project config to ensure "unified" experience
       /* 
@@ -1083,6 +1085,7 @@ export default function App() {
       setCategories(prev => Array.from(new Set([...prev, ...(project.categories || INITIAL_CATEGORIES)])));
       setCurrentProjectName(project.name);
       setCategoryEstimates(project.categoryEstimates || {});
+      setSeparationMethod(project.separationMethod || 'method2');
       setProjectMetadata({
         commencementDate: project.commencementDate,
         completionDate: project.completionDate,
@@ -1132,6 +1135,7 @@ export default function App() {
     }
 
     setIsProjectLocked(true);
+    setSeparationMethod('method2'); // 공정분리방식 강제 적용
 
     const existingProj = projects.find(p => p.name === currentProjectName);
     let targetProject: Project;
@@ -1141,6 +1145,7 @@ export default function App() {
         ...existingProj,
         status: 'completed',
         items,
+        separationMethod,
         updatedAt: Date.now()
       };
 
@@ -1187,7 +1192,7 @@ export default function App() {
       console.warn('Failed to sync completed status to Firestore:', err);
     }
 
-    showNotification('현장의 내역분리가 완료 처리되어 모든 PC 및 기기에 동기화되었습니다. (수정 시 비밀번호 필요)', 'success');
+    showNotification(`현장 '${currentProjectName}' 내역분리가 '공정분리방식(B2)'으로 최종 완료되었습니다. (수정 시 비밀번호 필요)`, 'success');
   };
 
   const checkLockAndProceed = (action: () => void) => {
@@ -1441,7 +1446,7 @@ export default function App() {
 
   const restoreSession = () => {
     if (pendingSession) {
-      setItems((pendingSession as any).items);
+      setItems(((pendingSession as any).items || []).map(healItem));
       setTheme((pendingSession as any).theme);
       if ((pendingSession as any).fontFamily) setFontFamily((pendingSession as any).fontFamily);
       if ((pendingSession as any).fontSize) setFontSize((pendingSession as any).fontSize);
@@ -1880,8 +1885,9 @@ export default function App() {
   };
 
   const handleDataLoaded = (newItems: SpecItem[], wb: XLSX.WorkBook) => {
-    // Apply automatic classification based on rules immediately upon upload
-    const classifiedItems = newItems.map(item => {
+    // Apply automatic classification based on rules immediately upon upload, and heal quantities
+    const classifiedItems = newItems.map(rawItem => {
+      const item = healItem(rawItem);
       // 1. Check History-based Learned Mappings First (Highest confidence)
       const learnedKey = `${(item.name || '').trim()}_${(item.specification || '').trim()}`;
       const learnedCategory = learnedMappings[learnedKey];
@@ -2956,6 +2962,8 @@ export default function App() {
                     onOpenSectionSummary={() => setIsSectionSummaryOpen(true)} 
                     metadata={projectMetadata}
                     onUpdateMetadata={handleUpdateProjectMetadata}
+                    separationMethod={separationMethod}
+                    onUpdateSeparationMethod={setSeparationMethod}
                   />
                   <CategorySummaryCards 
                     items={items} 
@@ -2965,6 +2973,8 @@ export default function App() {
                     projectName={currentProjectName}
                     isProjectLocked={isProjectLocked}
                     categoryEstimates={categoryEstimates}
+                    separationMethod={separationMethod}
+                    onUpdateSeparationMethod={setSeparationMethod}
                     onCategoryClick={(cat) => setCategoryFilter(cat)}
                     onOpenStats={() => {
                       setCategoryManagerTab('stats');

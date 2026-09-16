@@ -104,6 +104,22 @@ function handleFirestoreError(err: any, context: string): void {
   }
 }
 
+function sanitizeQuantity(val: any, amt: number, price: number, mAmt: number, mPrice: number, lAmt: number, lPrice: number, unit?: string): number {
+  let q = typeof val === 'number' && !isNaN(val) ? val : (parseFloat(String(val || '').replace(/,/g, '')) || 0);
+  if (q <= 0) {
+    if (amt > 0 && price > 0) q = Math.round((amt / price) * 1000) / 1000;
+    else if (mAmt > 0 && mPrice > 0) q = Math.round((mAmt / mPrice) * 1000) / 1000;
+    else if (lAmt > 0 && lPrice > 0) q = Math.round((lAmt / lPrice) * 1000) / 1000;
+    else {
+      const cleanU = (unit || '').trim();
+      if (amt > 0 && (cleanU === '식' || cleanU === 'set' || cleanU === 'lot' || cleanU === '개소' || price === amt || price === 0)) {
+        q = 1;
+      }
+    }
+  }
+  return q;
+}
+
 // Helper to serialize SpecItems safely for Firestore
 function serializeItems(items: SpecItem[]): { items?: any[]; itemsCompressed?: string } {
   if (!items || items.length === 0) {
@@ -111,26 +127,36 @@ function serializeItems(items: SpecItem[]): { items?: any[]; itemsCompressed?: s
   }
 
   // Sanitize undefined values
-  const cleanItems = items.map(item => ({
-    id: item.id || '',
-    name: item.name || '',
-    specification: item.specification || '',
-    unit: item.unit || '',
-    quantity: typeof item.quantity === 'number' ? item.quantity : 0,
-    materialUnitPrice: typeof item.materialUnitPrice === 'number' ? item.materialUnitPrice : 0,
-    materialAmount: typeof item.materialAmount === 'number' ? item.materialAmount : 0,
-    laborUnitPrice: typeof item.laborUnitPrice === 'number' ? item.laborUnitPrice : 0,
-    laborAmount: typeof item.laborAmount === 'number' ? item.laborAmount : 0,
-    unitPrice: typeof item.unitPrice === 'number' ? item.unitPrice : 0,
-    amount: typeof item.amount === 'number' ? item.amount : 0,
-    category: item.category || '미분류',
-    section: item.section || '기타 공정',
-    remark: item.remark || '',
-    originalCategory: item.originalCategory || item.category || '미분류',
-    excelRowIdx: typeof item.excelRowIdx === 'number' ? item.excelRowIdx : null,
-    memo: item.memo || '',
-    executionAmount: typeof item.executionAmount === 'number' ? item.executionAmount : 0
-  }));
+  const cleanItems = items.map(item => {
+    const amt = typeof item.amount === 'number' ? item.amount : (parseFloat(String(item.amount).replace(/,/g, '')) || 0);
+    const prc = typeof item.unitPrice === 'number' ? item.unitPrice : (parseFloat(String(item.unitPrice).replace(/,/g, '')) || 0);
+    const mAmt = typeof item.materialAmount === 'number' ? item.materialAmount : 0;
+    const mPrc = typeof item.materialUnitPrice === 'number' ? item.materialUnitPrice : 0;
+    const lAmt = typeof item.laborAmount === 'number' ? item.laborAmount : 0;
+    const lPrc = typeof item.laborUnitPrice === 'number' ? item.laborUnitPrice : 0;
+    const finalQty = sanitizeQuantity(item.quantity, amt, prc, mAmt, mPrc, lAmt, lPrc, item.unit);
+
+    return {
+      id: item.id || '',
+      name: item.name || '',
+      specification: item.specification || '',
+      unit: item.unit || '',
+      quantity: finalQty,
+      materialUnitPrice: mPrc,
+      materialAmount: mAmt,
+      laborUnitPrice: lPrc,
+      laborAmount: lAmt,
+      unitPrice: prc,
+      amount: amt,
+      category: item.category || '미분류',
+      section: item.section || '기타 공정',
+      remark: item.remark || '',
+      originalCategory: item.originalCategory || item.category || '미분류',
+      excelRowIdx: typeof item.excelRowIdx === 'number' ? item.excelRowIdx : null,
+      memo: item.memo || '',
+      executionAmount: typeof item.executionAmount === 'number' ? item.executionAmount : 0
+    };
+  });
 
   const jsonStr = JSON.stringify(cleanItems);
   // If data is relatively large (> 400KB), store compressed
@@ -144,30 +170,41 @@ function serializeItems(items: SpecItem[]): { items?: any[]; itemsCompressed?: s
 
 // Helper to deserialize SpecItems
 function deserializeItems(data: any): SpecItem[] {
+  let rawList: any[] = [];
   if (data.itemsCompressed) {
     try {
       const decompressed = LZString.decompressFromUTF16(data.itemsCompressed);
       if (decompressed) {
-        return JSON.parse(decompressed);
+        rawList = JSON.parse(decompressed);
       }
     } catch (e) {
       console.error('Failed to decompress items from Firestore', e);
     }
+  } else if (Array.isArray(data.items)) {
+    rawList = data.items;
   }
 
-  if (Array.isArray(data.items)) {
-    return data.items.map((item: any) => ({
+  return rawList.map((item: any) => {
+    const amt = Number(item.amount) || 0;
+    const prc = Number(item.unitPrice) || 0;
+    const mAmt = Number(item.materialAmount) || 0;
+    const mPrc = Number(item.materialUnitPrice) || 0;
+    const lAmt = Number(item.laborAmount) || 0;
+    const lPrc = Number(item.laborUnitPrice) || 0;
+    const finalQty = sanitizeQuantity(item.quantity, amt, prc, mAmt, mPrc, lAmt, lPrc, item.unit);
+
+    return {
       id: item.id || (Date.now().toString(36) + Math.random().toString(36).substring(2)),
       name: item.name || '',
       specification: item.specification || '',
       unit: item.unit || '',
-      quantity: Number(item.quantity) || 0,
-      materialUnitPrice: Number(item.materialUnitPrice) || 0,
-      materialAmount: Number(item.materialAmount) || 0,
-      laborUnitPrice: Number(item.laborUnitPrice) || 0,
-      laborAmount: Number(item.laborAmount) || 0,
-      unitPrice: Number(item.unitPrice) || 0,
-      amount: Number(item.amount) || 0,
+      quantity: finalQty,
+      materialUnitPrice: mPrc,
+      materialAmount: mAmt,
+      laborUnitPrice: lPrc,
+      laborAmount: lAmt,
+      unitPrice: prc,
+      amount: amt,
       category: item.category || '미분류',
       section: item.section || '기타 공정',
       remark: item.remark || '',
@@ -175,10 +212,8 @@ function deserializeItems(data: any): SpecItem[] {
       excelRowIdx: typeof item.excelRowIdx === 'number' ? item.excelRowIdx : undefined,
       memo: item.memo || '',
       executionAmount: Number(item.executionAmount) || 0
-    }));
-  }
-
-  return [];
+    };
+  });
 }
 
 /**

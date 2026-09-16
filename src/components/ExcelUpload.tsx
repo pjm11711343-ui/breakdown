@@ -42,8 +42,9 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
         
-        // Convert to 2D array of rows (raw values preserved)
+        // Convert to 2D array of rows (both raw values and formatted display strings)
         const data = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' }) as any[][];
+        const formattedData = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' }) as any[][];
 
         if (!data || data.length === 0) {
           throw new Error('데이터가 없거나 잘못된 형식입니다.');
@@ -54,14 +55,19 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           ws['!merges'].forEach(range => {
             const { s, e } = range;
             const topVal = data[s.r] && data[s.r][s.c] !== undefined ? data[s.r][s.c] : '';
+            const topFormattedVal = formattedData[s.r] && formattedData[s.r][s.c] !== undefined ? formattedData[s.r][s.c] : '';
             if (topVal !== '' && topVal !== null && topVal !== undefined) {
               for (let r = s.r; r <= Math.min(e.r, data.length - 1); r++) {
                 if (!data[r]) data[r] = [];
+                if (!formattedData[r]) formattedData[r] = [];
                 for (let c = s.c; c <= e.c; c++) {
                   if (r === s.r && c === s.c) continue;
                   // Only fill if empty
                   if (data[r][c] === '' || data[r][c] === undefined || data[r][c] === null) {
                     data[r][c] = topVal;
+                  }
+                  if (formattedData[r][c] === '' || formattedData[r][c] === undefined || formattedData[r][c] === null) {
+                    formattedData[r][c] = topFormattedVal;
                   }
                 }
               }
@@ -210,7 +216,11 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           '규격·사양', 'specification', '규격및사양', '규격(동)', '규격·동', '규격(특기사항)', '규격·사양·형식', 'type/size', 'dimension'
         ];
         const unitKeywords = ['단위', 'unit', 'u/t'];
-        const qtyKeywords = ['수량', '설계수량', 'qty', 'quantity', '기성수량', '검측수량', '합계수량', '실수량', '분량', '정미수량', '수량(m)', '수량(set)'];
+        const qtyKeywords = [
+          '수량', '설계수량', '계약수량', '도면수량', '실행수량', '당초수량', '정산수량', '변경수량', '총수량', 
+          '기성수량', '검측수량', '합계수량', '실수량', '분량', '정미수량', '수량m', '수량set', '소요량', '물량', '사용량', '정미',
+          '수량계', '합계', 'qty', 'quantity', 'q\'ty', 'q.ty', 'qt\'y', 'qty.', 'q'
+        ];
 
         const remarkKeywords = ['비고', '산출근거', '특기사항', '적요', 'remark', 'notes', '관련근거'];
 
@@ -357,6 +367,19 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           totalAmountIdx = allAmountCols.length >= 3 ? allAmountCols[2] : (allAmountCols.length > 0 ? allAmountCols[allAmountCols.length - 1] : -1);
         }
 
+        // Positional fallback for Quantity Column
+        let finalQtyIdx = qtyIdx;
+        if (finalQtyIdx === -1) {
+          // Fallback 1: Immediately after unit column if valid
+          if (unitIdx !== -1 && unitIdx + 1 < headers.length && unitIdx + 1 !== nameIdx && unitIdx + 1 !== specIdx) {
+            finalQtyIdx = unitIdx + 1;
+          } else if (materialPriceIdx > 0 && materialPriceIdx - 1 !== nameIdx && materialPriceIdx - 1 !== specIdx && materialPriceIdx - 1 !== unitIdx) {
+            finalQtyIdx = materialPriceIdx - 1;
+          } else if (allPriceCols.length > 0 && allPriceCols[0] > 0 && allPriceCols[0] - 1 !== nameIdx && allPriceCols[0] - 1 !== specIdx && allPriceCols[0] - 1 !== unitIdx) {
+            finalQtyIdx = allPriceCols[0] - 1;
+          }
+        }
+
         const finalMaterialPriceIdx = materialPriceIdx;
         const finalLaborPriceIdx = laborPriceIdx;
         const finalPriceIdx = totalPriceIdx;
@@ -378,7 +401,7 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           for (let c = 0; c < headers.length; c++) {
             const h = headers[c] ? headers[c].toLowerCase() : '';
             if (h.includes('no') || h.includes('번호') || h.includes('순번')) continue;
-            if (c !== unitIdx && c !== qtyIdx && c !== finalPriceIdx && c !== finalAmountIdx && c !== finalMaterialPriceIdx) {
+            if (c !== unitIdx && c !== finalQtyIdx && c !== finalPriceIdx && c !== finalAmountIdx && c !== finalMaterialPriceIdx) {
               finalNameIdx = c;
               break;
             }
@@ -390,9 +413,15 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           if (val === undefined || val === null || val === '') return 0;
           if (typeof val === 'number') return isNaN(val) ? 0 : val;
           const trimmed = String(val).trim();
-          if (trimmed === '-' || trimmed === '—' || trimmed === 'ㅡ' || trimmed === '0' || trimmed === 'N/A' || trimmed === 'null' || trimmed === 'undefined') return 0;
+          if (trimmed === '' || trimmed === '-' || trimmed === '—' || trimmed === 'ㅡ' || trimmed === '0' || trimmed === 'N/A' || trimmed === 'null' || trimmed === 'undefined') return 0;
+          
+          // Construction lump-sum units often placed in quantity column
+          if (trimmed === '식' || trimmed === '일식' || trimmed === '一式' || trimmed === 'LOT' || trimmed === 'lot' || trimmed === 'SET' || trimmed === 'set' || trimmed === '조') {
+            return 1;
+          }
+
           const isNegative = trimmed.startsWith('(') && trimmed.endsWith(')');
-          const cleaned = trimmed.replace(/[₩\\,￦\s원]/g, '').replace(/[^\d.-]/g, '');
+          const cleaned = trimmed.replace(/[₩\\,￦\s원식개EAeamM조]/g, '').replace(/[^\d.-]/g, '');
           const n = parseFloat(cleaned);
           if (isNaN(n)) return 0;
           return isNegative ? -Math.abs(n) : n;
@@ -408,8 +437,16 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           };
 
           const getRawValue = (colIdx: number) => {
-            if (colIdx < 0 || colIdx >= row.length) return undefined;
-            return row[colIdx];
+            if (colIdx < 0) return undefined;
+            const rawVal = row && colIdx < row.length ? row[colIdx] : undefined;
+            if (rawVal !== undefined && rawVal !== null && rawVal !== '') return rawVal;
+            // Fallback to formattedData if cell.v was empty or formula wasn't evaluated in raw mode
+            const fRow = formattedData[actualDataStartIndex + idx];
+            if (fRow && colIdx < fRow.length) {
+              const fVal = fRow[colIdx];
+              if (fVal !== undefined && fVal !== null && fVal !== '') return fVal;
+            }
+            return undefined;
           };
 
           let name = getValue(finalNameIdx);
@@ -431,7 +468,26 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
           }
 
           const unit = getValue(unitIdx);
-          let qtyValue = cleanNum(getRawValue(qtyIdx !== -1 ? qtyIdx : -1));
+          let qtyValue = cleanNum(getRawValue(finalQtyIdx !== -1 ? finalQtyIdx : -1));
+
+          // If qtyValue is still 0, scan adjacent candidate columns (e.g. right after unit or before materialPrice)
+          if (qtyValue === 0) {
+            const candidateCols = [
+              unitIdx !== -1 ? unitIdx + 1 : -1,
+              finalQtyIdx !== -1 ? finalQtyIdx - 1 : -1,
+              finalQtyIdx !== -1 ? finalQtyIdx + 1 : -1,
+              finalMaterialPriceIdx > 0 ? finalMaterialPriceIdx - 1 : -1
+            ].filter(c => c >= 0 && c < row.length && c !== finalNameIdx && c !== specIdx && c !== unitIdx && c !== finalMaterialPriceIdx && c !== finalMaterialAmountIdx && c !== finalLaborPriceIdx && c !== finalLaborAmountIdx && c !== finalPriceIdx && c !== finalAmountIdx);
+
+            for (const candCol of candidateCols) {
+              const val = cleanNum(getRawValue(candCol));
+              if (val > 0 && val < 50000000) {
+                qtyValue = val;
+                break;
+              }
+            }
+          }
+
           let mPriceValue = cleanNum(getRawValue(finalMaterialPriceIdx));
           let mAmountValue = cleanNum(getRawValue(finalMaterialAmountIdx));
           let lPriceValue = cleanNum(getRawValue(finalLaborPriceIdx));
@@ -503,6 +559,26 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
             mPriceValue = priceValue;
             if (mAmountValue === 0 && amountValue !== 0) {
               mAmountValue = amountValue;
+            }
+          }
+
+          // 6. Comprehensive Quantity Derivation / Recovery:
+          // If quantity is still 0 after all prices and amounts are calculated
+          if (qtyValue === 0) {
+            if (amountValue !== 0 && priceValue !== 0) {
+              qtyValue = Math.round((amountValue / priceValue) * 1000) / 1000;
+            } else if (mAmountValue !== 0 && mPriceValue !== 0) {
+              qtyValue = Math.round((mAmountValue / mPriceValue) * 1000) / 1000;
+            } else if (finalLaborAmount !== 0 && finalLaborPrice !== 0) {
+              qtyValue = Math.round((finalLaborAmount / finalLaborPrice) * 1000) / 1000;
+            } else if (amountValue !== 0 || mAmountValue !== 0 || finalLaborAmount !== 0) {
+              const cleanUnit = (unit || '').replace(/\s+/g, '');
+              if (cleanUnit === '식' || cleanUnit === 'set' || cleanUnit === 'SET' || cleanUnit === 'lot' || cleanUnit === 'LOT' || cleanUnit === '개소' || cleanUnit === '회' || cleanUnit === '조' || priceValue === amountValue || priceValue === 0) {
+                qtyValue = 1;
+                if (priceValue === 0) {
+                  priceValue = amountValue || mAmountValue || finalLaborAmount;
+                }
+              }
             }
           }
 
@@ -648,18 +724,29 @@ export default function ExcelUpload({ onDataLoaded, variant = 'button' }: Props)
 
           // If it has a name and at least one characteristic of a real item
           if (name && (hasNumericData || unit || spec)) {
+            let finalItemQty = qtyValue;
+            if (finalItemQty <= 0) {
+              const totalA = amountValue || mAmountValue || finalLaborAmount;
+              const totalP = priceValue || mPriceValue || finalLaborPrice;
+              if (totalA > 0 && totalP > 0) {
+                finalItemQty = Math.round((totalA / totalP) * 1000) / 1000;
+              } else if (totalA > 0) {
+                finalItemQty = 1;
+              }
+            }
+
             items.push({
               id: `excel-${idx}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
               name,
               specification: spec,
               unit,
-              quantity: qtyValue,
+              quantity: finalItemQty,
               materialUnitPrice: mPriceValue,
-              materialAmount: mAmountValue !== 0 ? mAmountValue : (qtyValue > 0 && mPriceValue !== 0 ? Math.round(qtyValue * mPriceValue) : 0),
+              materialAmount: mAmountValue !== 0 ? mAmountValue : (finalItemQty > 0 && mPriceValue !== 0 ? Math.round(finalItemQty * mPriceValue) : 0),
               laborUnitPrice: finalLaborPrice,
               laborAmount: finalLaborAmount,
               unitPrice: priceValue,
-              amount: amountValue !== 0 ? amountValue : (qtyValue > 0 && priceValue !== 0 ? Math.round(qtyValue * priceValue) : 0),
+              amount: amountValue !== 0 ? amountValue : (finalItemQty > 0 && priceValue !== 0 ? Math.round(finalItemQty * priceValue) : 0),
               category: autoCategory,
               section: currentSection,
               remark: (remark === 'null' || remark === 'undefined') ? '' : remark,

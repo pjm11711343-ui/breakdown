@@ -10,6 +10,7 @@ import {
   getItemMaterialCost, 
   getItemLaborCost, 
   getItemContractAmount,
+  getItemQuantity,
   calculateCostBreakdown,
   isOutsourcingCategory,
   isOutsourcingItem,
@@ -403,12 +404,13 @@ export default function DataTable({
         if (showAggregated) {
           const aggregatedMap = new Map<string, SpecItem>();
           catItems.forEach(item => {
+            const itemQty = getItemQuantity(item);
             const key = `${item.name}|${item.specification || ''}|${item.unit || ''}|${item.unitPrice}`;
             if (!aggregatedMap.has(key)) {
-              aggregatedMap.set(key, { ...item, id: `agg-${key}`, quantity: item.quantity, amount: item.amount });
+              aggregatedMap.set(key, { ...item, id: `agg-${key}`, quantity: itemQty, amount: item.amount });
             } else {
               const existing = aggregatedMap.get(key)!;
-              existing.quantity += item.quantity;
+              existing.quantity += itemQty;
               existing.amount += item.amount;
               existing.materialAmount = (existing.materialAmount || 0) + (item.materialAmount || 0);
               existing.laborAmount = (existing.laborAmount || 0) + (item.laborAmount || 0);

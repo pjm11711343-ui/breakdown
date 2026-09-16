@@ -1,7 +1,7 @@
 import React from 'react';
-import { SpecItem, ThemeType } from '../types';
+import { SpecItem, ThemeType, SeparationMethod } from '../types';
 import { motion } from 'motion/react';
-import { Tags, TrendingUp, PieChart as PieChartIcon, Building2, Package, Wrench, ShieldCheck, AlertCircle, ArrowUpRight, Calculator, BarChart3, Edit2, Check, X } from 'lucide-react';
+import { Tags, TrendingUp, PieChart as PieChartIcon, Building2, Package, Wrench, ShieldCheck, AlertCircle, ArrowUpRight, Calculator, BarChart3, Edit2, Check, X, Workflow } from 'lucide-react';
 import { 
   getItemMaterialCost, 
   getItemLaborCost, 
@@ -23,6 +23,8 @@ interface Props {
   projectName?: string;
   isProjectLocked?: boolean;
   categoryEstimates?: Record<string, number>;
+  separationMethod?: SeparationMethod;
+  onUpdateSeparationMethod?: (method: SeparationMethod) => void;
   onCategoryClick?: (category: string) => void;
   onOpenStats?: () => void;
   onUpdateSafetyAmount?: (amount: number) => void;
@@ -38,6 +40,8 @@ export default function CategorySummaryCards({
   projectName,
   isProjectLocked,
   categoryEstimates = {},
+  separationMethod = 'method2',
+  onUpdateSeparationMethod,
   onCategoryClick,
   onOpenStats,
   onUpdateSafetyAmount,
@@ -100,19 +104,19 @@ export default function CategorySummaryCards({
 
   // 1. Precise breakdown of Material Cost vs Labor/Outsourcing Cost for each item
   const getItemMaterialAmount = (item: SpecItem): number => {
-    return getItemMaterialCost(item);
+    return getItemMaterialCost(item, separationMethod);
   };
 
   const getItemLaborAmount = (item: SpecItem): number => {
-    return getItemLaborCost(item);
+    return getItemLaborCost(item, separationMethod);
   };
 
   const getItemCategoryAmount = (item: SpecItem): number => {
-    return getItemContractAmount(item);
+    return getItemContractAmount(item, separationMethod);
   };
 
   // 안전장비류 제외 총 계약 합계 및 원가 구성 산출 (단일 진실 공급원)
-  const costBreakdown = calculateCostBreakdown(items);
+  const costBreakdown = calculateCostBreakdown(items, separationMethod);
   const totalContractAmount = costBreakdown.totalContractAmount;
   const totalMaterialAmount = costBreakdown.materialCost;
   const totalLaborAmount = costBreakdown.totalLaborAndOutsourcing;
@@ -132,7 +136,7 @@ export default function CategorySummaryCards({
     const itemCat = item.category || '미분류';
     const isSafety = isSafetyEquipmentItem(item);
     const matAmt = getItemMaterialAmount(item);
-    const labAmt = getItemLaborCost(item);
+    const labAmt = getItemLaborCost(item, separationMethod);
     const itemAmt = isSafety ? (item.amount || (item.materialAmount || 0) + (item.laborAmount || 0)) : (matAmt + labAmt);
 
     if (!acc[itemCat]) acc[itemCat] = { amount: 0, materialAmount: 0, laborAmount: 0, count: 0 };
@@ -324,6 +328,21 @@ export default function CategorySummaryCards({
             >
               <Calculator size={10} />
               수기 물량 비교 {showComparison ? 'OFF' : 'ON'}
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onUpdateSeparationMethod?.(separationMethod === 'method1' ? 'method2' : 'method1');
+              }}
+              className={`flex items-center gap-1.5 px-2 py-0.5 border text-[10px] font-black uppercase transition-all ${
+                separationMethod === 'method2' 
+                ? 'bg-yellow-400 text-black border-[#141414] shadow-[1px_1px_0_0_#141414]' 
+                : 'bg-white text-slate-500 border-[#141414] hover:bg-[#EBEAE8]'
+              }`}
+              title="분리 방식 전환: 방식1(표준) vs 방식2(공정분리/외주턴키)"
+            >
+              <Workflow size={10} />
+              {separationMethod === 'method2' ? '공정분리방식 (B2)' : '표준분리방식 (B1)'}
             </button>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 text-[11px] font-mono">
@@ -994,8 +1013,21 @@ export default function CategorySummaryCards({
                 : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600 shadow-sm'
               }`}
             >
-              <Calculator size={14} />
-              {showComparison ? '비교 모드 종료' : '수기 물량 비교'}
+              <Calculator size={10} />
+              수기 물량 비교 {showComparison ? 'OFF' : 'ON'}
+            </button>
+            
+            <button 
+              onClick={() => onUpdateSeparationMethod?.(separationMethod === 'method1' ? 'method2' : 'method1')}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold transition-all border ${
+                separationMethod === 'method2' 
+                ? 'bg-indigo-600 text-white border-indigo-500 shadow-md' 
+                : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600 shadow-sm'
+              }`}
+              title="분리 방식 전환: 방식1(표준) vs 방식2(공정분리/외주턴키)"
+            >
+              <Workflow size={14} />
+              {separationMethod === 'method2' ? '공정분리방식 ON' : '표준분리방식'}
             </button>
             <div className="hidden sm:flex items-center gap-2 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
               <TrendingUp size={14} />

@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { SpecItem, ThemeType } from '../types';
 import { TrendingDown, TrendingUp, AlertTriangle, Info } from 'lucide-react';
 import { motion } from 'motion/react';
+import { getItemQuantity } from '../utils/costCalculation';
 
 interface Props {
   items: SpecItem[];
@@ -171,7 +172,7 @@ export default function PriceAnalysis({ items, theme }: Props) {
                           <tr key={item.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50">
                             <td className="py-2 opacity-80">{item.section}</td>
                             <td className="py-2 text-center opacity-60">{item.unit}</td>
-                            <td className="py-2 text-right font-mono">{item.quantity.toLocaleString()}</td>
+                            <td className="py-2 text-right font-mono">{getItemQuantity(item).toLocaleString()}</td>
                             <td className="py-2 text-right font-mono font-bold">₩{item.unitPrice.toLocaleString()}</td>
                             <td className={`py-2 text-right font-mono font-bold ${
                               diffPercent > 0 ? 'text-red-500' : 'text-blue-500'

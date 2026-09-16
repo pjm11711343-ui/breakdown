@@ -38,9 +38,12 @@ export interface Project {
   householdCount?: string;   // 세대수
   highestFloor?: string;     // 최상층
   lowestFloor?: string;      // 최하층
+  separationMethod?: SeparationMethod; // 집계 방식 (표준 vs 공정분리)
 }
 
 export type ThemeType = 'industrial' | 'modern' | 'minimal' | 'high-density';
+
+export type SeparationMethod = 'method1' | 'method2';
 
 export interface CustomClassificationRule {
   id: string;

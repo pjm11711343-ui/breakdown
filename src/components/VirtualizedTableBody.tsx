@@ -2,6 +2,7 @@ import React, { CSSProperties } from 'react';
 import { List } from 'react-window';
 import { SpecItem, ThemeType } from '../types';
 import { RotateCcw } from 'lucide-react';
+import { getItemQuantity } from '../utils/costCalculation';
 
 export type VirtualRowData = 
   | { type: 'section-header'; sectionName: string; index: number; materialTotal: number; laborTotal: number; total: number; count: number; items: SpecItem[] }
@@ -245,7 +246,7 @@ const TableRowInner = (props: {
       </div>
 
       <div className={`w-[68px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-800 text-[11px] font-medium ${borderCellClass}`}>
-        {item.quantity.toLocaleString()}
+        {getItemQuantity(item).toLocaleString()}
       </div>
 
       <div className={`w-[84px] h-full shrink-0 flex items-center justify-end px-2 font-mono text-slate-600 text-[11px] ${borderCellClass} ${costViewType === 'material' ? 'bg-blue-50/50' : ''}`}>

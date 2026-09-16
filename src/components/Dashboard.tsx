@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
-import { SpecItem, ThemeType } from '../types';
+import { SpecItem, ThemeType, SeparationMethod } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { BarChart3, TrendingUp, Info, LayoutGrid, ArrowRight, Package, Wrench, Shield } from 'lucide-react';
+import { BarChart3, TrendingUp, Info, LayoutGrid, ArrowRight, Package, Wrench, Shield, Workflow } from 'lucide-react';
 import { 
   getItemMaterialCost, 
   getItemLaborCost, 
@@ -18,6 +18,8 @@ interface Props {
   items: SpecItem[];
   theme: ThemeType;
   onOpenSectionSummary: () => void;
+  separationMethod?: SeparationMethod;
+  onUpdateSeparationMethod?: (method: SeparationMethod) => void;
   // Project metadata
   metadata?: {
     commencementDate?: string;
@@ -34,6 +36,8 @@ export default function Dashboard({
   items, 
   theme, 
   onOpenSectionSummary,
+  separationMethod = 'method2',
+  onUpdateSeparationMethod,
   metadata = {},
   onUpdateMetadata
 }: Props) {
@@ -56,18 +60,14 @@ export default function Dashboard({
   
   // Material vs Labor calculation
   const getItemMaterialAmount = (item: SpecItem): number => {
-    return getItemMaterialCost(item);
+    return getItemMaterialCost(item, separationMethod);
   };
 
   const getItemLaborAmount = (item: SpecItem): number => {
-    return getItemLaborCost(item);
+    return getItemLaborCost(item, separationMethod);
   };
 
-  const getItemCategoryAmount = (item: SpecItem): number => {
-    return getItemContractAmount(item);
-  };
-
-  const costBreakdown = useMemo(() => calculateCostBreakdown(items), [items]);
+  const costBreakdown = useMemo(() => calculateCostBreakdown(items, separationMethod), [items, separationMethod]);
 
   // 안전장비류는 총 계약 합계 금액(TOTAL)에서 제외
   const totalContractAmount = costBreakdown.totalContractAmount;
@@ -118,8 +118,20 @@ export default function Dashboard({
           <div className="p-2.5 border-r border-[#141414]">
             <MetadataInput label="최상층" value={metadata.highestFloor} field="highestFloor" placeholder="B0 / 00F" />
           </div>
-          <div className="p-2.5">
+          <div className="p-2.5 flex items-center justify-between">
             <MetadataInput label="최하층" value={metadata.lowestFloor} field="lowestFloor" placeholder="B0 / 00F" />
+            
+            {/* Method Toggle in HD Header */}
+            <button
+              onClick={() => onUpdateSeparationMethod?.(separationMethod === 'method1' ? 'method2' : 'method1')}
+              className={`ml-2 px-1.5 py-0.5 border border-black text-[9px] font-black uppercase flex items-center gap-1 transition-colors ${
+                separationMethod === 'method2' ? 'bg-yellow-400 text-black' : 'bg-white text-slate-500'
+              }`}
+              title="분리 방식 전환: 방식1(표준) vs 방식2(공정분리/외주턴키)"
+            >
+              <Workflow size={10} />
+              {separationMethod === 'method2' ? '공정분리방식 (B2)' : '표준분리방식 (B1)'}
+            </button>
           </div>
         </div>
 
@@ -221,9 +233,24 @@ export default function Dashboard({
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
       {/* Project Info Card */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col gap-4">
-        <div className="flex items-center gap-2 mb-1">
-          <div className="w-1.5 h-4 bg-indigo-600 rounded-full" />
-          <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">현장 개요 (Site Spec)</h3>
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-4 bg-indigo-600 rounded-full" />
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">현장 개요 (Site Spec)</h3>
+          </div>
+          
+          {/* Method Toggle in Standard Dashboard */}
+          <button
+            onClick={() => onUpdateSeparationMethod?.(separationMethod === 'method1' ? 'method2' : 'method1')}
+            className={`px-3 py-1 rounded-full text-[10px] font-bold border transition-all flex items-center gap-1.5 ${
+              separationMethod === 'method2' 
+                ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-100' 
+                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            <Workflow size={12} />
+            {separationMethod === 'method2' ? '공정분리방식 ON' : '표준분리방식'}
+          </button>
         </div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-3">
           <MetadataInput label="착공일" value={metadata.commencementDate} field="commencementDate" placeholder="202X.XX.XX" />
@@ -277,7 +304,9 @@ export default function Dashboard({
                 <span className="text-[11px] font-bold text-amber-600 font-mono">₩{costBreakdown.laborCost.toLocaleString()}</span>
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight">외주비 (자재+노무 일괄)</span>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight">
+                  {separationMethod === 'method2' ? '외주비 (자재+노무 일괄)' : '외주 노무비'}
+                </span>
                 <span className="text-[11px] font-bold text-indigo-600 font-mono">₩{costBreakdown.outsourcingCost.toLocaleString()}</span>
               </div>
               <div className="flex flex-col gap-0.5">
@@ -298,7 +327,7 @@ export default function Dashboard({
               <Info className="w-4 h-4" />
             </div>
             <p className="text-slate-500 leading-snug">
-              총 <span className="font-bold text-slate-800">{items.length}개</span> 품목 중 <span className="font-bold text-indigo-700">{classifiedItems.length}개</span> 분류 완료
+              현재 <span className="font-bold text-indigo-700">{separationMethod === 'method2' ? '방식2: 공정분리/외주턴키' : '방식1: 표준분리'}</span> 정산 방식이 적용 중입니다.
             </p>
           </div>
         </div>
