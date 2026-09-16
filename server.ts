@@ -277,16 +277,17 @@ Guidelines:
 Data: ${JSON.stringify(aiItems.map(i => ({ id: i.id, n: i.name, s: i.specification })))}`;
 
       // Helper for exponential backoff retry
-      const callAIWithRetry = async (retries = 3, initialDelay = 3000) => {
+      const callAIWithRetry = async (retries = 4, initialDelay = 4000) => {
         let delay = initialDelay;
         for (let i = 0; i < retries; i++) {
           try {
             // Use supported Gemini models according to current standards
-            let modelName = 'gemini-3.8-flash';
+            // gemini-flash-latest is the most stable alias
+            let modelName = 'gemini-flash-latest';
             if (i === 1) modelName = 'gemini-3.1-flash-lite';
-            if (i >= 2) modelName = 'gemini-flash-latest';
+            if (i >= 2) modelName = 'gemini-3.8-flash';
             
-            console.log(`Attempting AI classification with model: ${modelName} (Batch size: ${aiItems.length})`);
+            console.log(`[AI] Attempt ${i+1}/${retries} using model: ${modelName} (Items: ${aiItems.length})`);
 
             return await ai.models.generateContent({
               model: modelName,
@@ -309,11 +310,11 @@ Data: ${JSON.stringify(aiItems.map(i => ({ id: i.id, n: i.name, s: i.specificati
           } catch (err: any) {
             const errorStr = (err.message || '') + ' ' + JSON.stringify(err);
             const isQuotaError = errorStr.includes('429') || errorStr.includes('RESOURCE_EXHAUSTED');
-            const isTransientError = isQuotaError || errorStr.includes('503') || errorStr.includes('500') || errorStr.includes('fetch failed');
+            const isTransientError = isQuotaError || errorStr.includes('503') || errorStr.includes('500') || errorStr.includes('fetch failed') || errorStr.includes('Service Unavailable') || errorStr.includes('Deadline Exceeded');
             
             if (isTransientError && i < retries - 1) {
-              const baseDelay = isQuotaError ? 10000 : delay;
-              const jitter = Math.random() * 2000;
+              const baseDelay = isQuotaError ? 12000 : delay;
+              const jitter = Math.random() * 3000;
               const waitTime = baseDelay + jitter;
               console.warn(`AI Error (${isQuotaError ? 'Quota' : 'Transient'}), retry ${i+1}/${retries} after ${Math.round(waitTime)}ms: ${err.message || 'Unknown error'}`);
               await new Promise(resolve => setTimeout(resolve, waitTime));

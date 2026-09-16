@@ -1485,7 +1485,7 @@ export default function App() {
       setIsClassifying(true);
       setClassifyProgress(0);
       try {
-        const BATCH_SIZE = 200; // Reduced batch size for better reliability with token limits
+        const BATCH_SIZE = 40; // Further reduced batch size for stability and avoiding proxy timeouts
         const allClassifications: any[] = [];
         const totalItems = items.length;
         
@@ -1497,41 +1497,62 @@ export default function App() {
             await new Promise(resolve => setTimeout(resolve, 5000));
           }
           
-          const response = await fetch('/api/classify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              items: batch.map(bi => ({ 
-                id: bi.id, 
-                name: bi.name, 
-                specification: bi.specification,
-                section: bi.section
-              })),
-              categories,
-              customRules: customClassificationRules
-            })
-          });
+          // Client-side retry logic for each batch
+          let batchSuccess = false;
+          let batchRetries = 2;
+          let lastBatchError = '';
           
-          if (!response.ok) {
-            const errorText = await response.text();
-            let errorData;
+          while (batchRetries >= 0 && !batchSuccess) {
             try {
-              errorData = JSON.parse(errorText);
-            } catch (e) {
-              errorData = { error: `Server error (${response.status}): ${errorText.substring(0, 100)}...` };
+              const response = await fetch('/api/classify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                  items: batch.map(bi => ({ 
+                    id: bi.id, 
+                    name: bi.name, 
+                    specification: bi.specification,
+                    section: bi.section
+                  })),
+                  categories,
+                  customRules: customClassificationRules
+                })
+              });
+              
+              if (!response.ok) {
+                const errorText = await response.text();
+                let errorData;
+                try {
+                  errorData = JSON.parse(errorText);
+                } catch (e) {
+                  errorData = { error: `Server error (${response.status}): ${errorText.substring(0, 100)}...` };
+                }
+                throw new Error(errorData.message || errorData.error || `Server responded with ${response.status}`);
+              }
+              
+              const text = await response.text();
+              let classifications;
+              try {
+                classifications = JSON.parse(text);
+                batchSuccess = true;
+                allClassifications.push(...classifications);
+              } catch (e) {
+                throw new Error(`Invalid JSON response from server: ${text.substring(0, 100)}...`);
+              }
+            } catch (err: any) {
+              lastBatchError = err.message || String(err);
+              if (batchRetries > 0) {
+                console.warn(`Batch fetch failed, retrying... (${batchRetries} left): ${lastBatchError}`);
+                await new Promise(resolve => setTimeout(resolve, 3000));
+              }
+              batchRetries--;
             }
-            throw new Error(errorData.message || errorData.error || `Server responded with ${response.status}`);
+          }
+
+          if (!batchSuccess) {
+            throw new Error(`Classification batch failed after retries: ${lastBatchError}`);
           }
           
-          const text = await response.text();
-          let classifications;
-          try {
-            classifications = JSON.parse(text);
-          } catch (e) {
-            throw new Error(`Invalid JSON response from server: ${text.substring(0, 100)}...`);
-          }
-          
-          allClassifications.push(...classifications);
           setClassifyProgress(Math.min(Math.round(((i + batch.length) / totalItems) * 100), 100));
         }
         
@@ -1722,6 +1743,15 @@ export default function App() {
       }
 
       showNotification(`${ids.length}개 항목의 카테고리가 '${newCategory}'(으)로 변경되었습니다.`, 'success');
+    });
+  };
+
+  const handleUpdateSections = (ids: string[], newSection: string) => {
+    checkLockAndProceed(() => {
+      setItems(prev => prev.map(item => 
+        ids.includes(item.id) ? { ...item, section: newSection } : item
+      ));
+      showNotification(`${ids.length}개 항목의 구간 정보가 '${newSection}'(으)로 수정되었습니다.`, 'success');
     });
   };
 
@@ -3003,6 +3033,7 @@ export default function App() {
                     onAddCategory={handleAddCategory}
                     onRevertCategory={handleRevertCategory}
                     onUpdateCategories={handleUpdateCategories}
+                    onUpdateSections={handleUpdateSections}
                     onUpdateMemo={handleUpdateMemo}
                     onUpdateExecutionAmount={handleUpdateExecutionAmount}
                     onDataLoaded={handleDataLoaded}

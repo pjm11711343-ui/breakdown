@@ -31,6 +31,7 @@ interface Props {
   onAddCategory: (category: string) => void;
   onRevertCategory: (id: string) => void;
   onUpdateCategories: (ids: string[], category: string) => void;
+  onUpdateSections: (ids: string[], section: string) => void;
   onUpdateMemo: (id: string, memo: string) => void;
   onUpdateExecutionAmount: (id: string, amount: number) => void;
   onDataLoaded: (items: SpecItem[], workbook: XLSX.WorkBook) => void;
@@ -193,6 +194,7 @@ export default function DataTable({
   onAddCategory, 
   onRevertCategory, 
   onUpdateCategories, 
+  onUpdateSections,
   onUpdateMemo, 
   onUpdateExecutionAmount, 
   onDataLoaded, 
@@ -618,6 +620,106 @@ export default function DataTable({
   }, [showAggregated]);
 
 
+  const renderBulkEditToolbar = () => {
+    if (selectedIds.size === 0) return null;
+
+    return (
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={`sticky top-0 z-[60] mx-4 mb-4 p-4 border-2 ${
+          theme === 'high-density' 
+            ? 'bg-indigo-900 border-[#141414] text-white shadow-2xl' 
+            : 'bg-indigo-600 border-indigo-700 text-white rounded-xl shadow-xl'
+        } flex flex-wrap items-center gap-6`}
+      >
+        <div className="flex items-center gap-3">
+          <div className="bg-white/20 p-2 rounded-lg">
+            <Layers className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h3 className="text-sm font-black uppercase tracking-tight">일괄 편집 모드</h3>
+            <p className="text-[10px] font-bold text-indigo-100">{selectedIds.size}개의 항목이 선택됨</p>
+          </div>
+        </div>
+
+        <div className="h-8 w-px bg-white/20 hidden lg:block" />
+
+        <div className="flex-grow flex flex-wrap items-center gap-4">
+          <div className="flex flex-col gap-1 min-w-[200px]">
+            <label className="text-[9px] font-black uppercase text-indigo-100">카테고리 일괄 변경</label>
+            <div className="relative">
+               <input 
+                 type="text"
+                 list="category-suggestions"
+                 placeholder="변경할 카테고리 입력..."
+                 className="w-full px-3 py-1.5 bg-white text-slate-900 text-xs font-bold rounded outline-none focus:ring-2 focus:ring-amber-400 transition-all"
+                 onKeyDown={(e) => {
+                   if (e.key === 'Enter') {
+                     const val = (e.target as HTMLInputElement).value;
+                     if (val) {
+                       onUpdateCategories(Array.from(selectedIds), val);
+                       (e.target as HTMLInputElement).value = '';
+                       setSelectedIds(new Set());
+                     }
+                   }
+                 }}
+               />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1 min-w-[200px]">
+            <label className="text-[9px] font-black uppercase text-indigo-100">구간 정보 일괄 변경</label>
+            <div className="relative">
+               <input 
+                 type="text"
+                 list="section-suggestions"
+                 placeholder="변경할 구간(공종) 입력..."
+                 className="w-full px-3 py-1.5 bg-white text-slate-900 text-xs font-bold rounded outline-none focus:ring-2 focus:ring-amber-400 transition-all"
+                 onKeyDown={(e) => {
+                   if (e.key === 'Enter') {
+                     const val = (e.target as HTMLInputElement).value;
+                     if (val) {
+                       onUpdateSections(Array.from(selectedIds), val);
+                       (e.target as HTMLInputElement).value = '';
+                       setSelectedIds(new Set());
+                     }
+                   }
+                 }}
+               />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+             onClick={() => {
+               onClassify(Array.from(selectedIds));
+               setSelectedIds(new Set());
+             }}
+             disabled={isClassifying}
+             className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-black rounded-lg transition-all flex items-center gap-2 shadow-lg shadow-amber-900/20 active:scale-95 cursor-pointer"
+          >
+            <Cpu className={`w-3.5 h-3.5 ${isClassifying ? 'animate-spin' : ''}`} />
+            AI 재분류
+          </button>
+          
+          <button
+             onClick={() => setSelectedIds(new Set())}
+             className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-2 active:scale-95 cursor-pointer border border-white/20"
+          >
+            <X className="w-3.5 h-3.5" />
+            선택 해제
+          </button>
+        </div>
+
+        <datalist id="section-suggestions">
+          {uniqueSections.map(s => <option key={s} value={s} />)}
+        </datalist>
+      </motion.div>
+    );
+  };
+
   const handleDownload = async () => {
     if (items.length === 0) {
       alert('다운로드할 데이터가 없습니다.');
@@ -768,9 +870,6 @@ export default function DataTable({
         <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
           <div className="flex flex-wrap gap-2 items-center mb-2">
             <span className="px-2 py-1 bg-gray-200 text-[11px] font-bold uppercase rounded-sm border border-gray-300">내역 품목 수: {items.length} (필터: {allMatchingItems.length})</span>
-            {selectedIds.size > 0 && (
-              <span className="px-2 py-1 bg-indigo-100 text-indigo-800 text-[11px] font-bold uppercase rounded-sm border border-indigo-300">선택된 항목: {selectedIds.size}개</span>
-            )}
             <span className="px-2 py-1 bg-green-100 text-green-800 text-[11px] font-bold uppercase rounded-sm border border-green-200">AI 프로세서: 온라인</span>
             
             <div className="ml-auto flex flex-wrap gap-4 items-center">
@@ -838,18 +937,6 @@ export default function DataTable({
                  />
                  <span className="text-[10px] font-bold w-4">{density}</span>
                </div>
-               {selectedIds.size > 0 && (
-                 <div className="relative">
-                   <input 
-                     type="text"
-                     list="category-suggestions"
-                     onKeyDown={(e) => e.key === 'Enter' && handleBulkCategoryChange(e as any)}
-                     placeholder="일괄 분류 지정..."
-                     className="text-[10px] font-bold uppercase p-1 bg-indigo-50 border border-indigo-400 focus:outline-none w-32"
-                   />
-                   <div className="absolute -top-2 -right-1 bg-indigo-600 text-white text-[7px] px-1 rounded-full font-black animate-bounce">NEW</div>
-                 </div>
-               )}
                <ExcelUpload onDataLoaded={onDataLoaded} />
                <button 
                   onClick={() => onClassify()}
@@ -872,9 +959,6 @@ export default function DataTable({
             <Table className="w-6 h-6 text-slate-400 shrink-0" />
             <div>
               <h2 className="text-xl font-bold truncate">계약 내역 상세 정보</h2>
-              {selectedIds.size > 0 && (
-                <span className="text-xs font-bold text-indigo-600">선택된 항목: {selectedIds.size}개</span>
-              )}
             </div>
           </div>
           
@@ -943,44 +1027,8 @@ export default function DataTable({
                    onChange={(e) => setDensity(parseInt(e.target.value))}
                    className="w-20 md:w-32 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
                  />
-              </div>
+               </div>
             </div>
-            {selectedIds.size > 0 && (
-              <div className="flex items-center gap-2">
-                <div className="relative">
-                  <input
-                    type="text"
-                    list="category-suggestions"
-                    placeholder="일괄 카테고리 지정..."
-                    className="px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold placeholder:text-indigo-300 w-44"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const val = (e.target as HTMLInputElement).value;
-                        if (val) {
-                          onUpdateCategories(Array.from(selectedIds), val);
-                          (e.target as HTMLInputElement).value = '';
-                          setSelectedIds(new Set());
-                        }
-                      }
-                    }}
-                  />
-                  <div className="absolute -top-2 -right-1 bg-indigo-600 text-white text-[8px] px-1 rounded-full font-black animate-bounce shadow-sm">NEW</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClassify(Array.from(selectedIds));
-                    setSelectedIds(new Set());
-                  }}
-                  disabled={isClassifying}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50 h-[38px] cursor-pointer shadow-sm shadow-amber-100 whitespace-nowrap"
-                  title="선택한 항목만 AI로 다시 분류합니다"
-                >
-                  <Cpu className={`w-3.5 h-3.5 ${isClassifying ? 'animate-spin' : ''}`} />
-                  <span>선택 항목 AI 재분석</span>
-                </button>
-              </div>
-            )}
             <ExcelUpload onDataLoaded={onDataLoaded} />
             <button
               onClick={() => onClassify()}
@@ -1141,6 +1189,7 @@ export default function DataTable({
   return (
     <div className={`flex flex-col ${theme === 'high-density' ? 'flex-grow overflow-hidden' : 'gap-0'}`} onMouseUp={handleMouseUp}>
       {renderToolBar()}
+      {renderBulkEditToolbar()}
 
       {viewMode === 'unclassified' && (
         <div className={`mx-4 mb-3 p-3 flex flex-wrap items-center justify-between border-l-4 ${
