@@ -1485,7 +1485,7 @@ export default function App() {
       setIsClassifying(true);
       setClassifyProgress(0);
       try {
-        const BATCH_SIZE = 500; // Large batch size to stay within the 20-request daily limit
+        const BATCH_SIZE = 200; // Reduced batch size for better reliability with token limits
         const allClassifications: any[] = [];
         const totalItems = items.length;
         
@@ -1494,7 +1494,7 @@ export default function App() {
           
           // Add a delay between batches to respect rate limits (RPS/RPM)
           if (i > 0) {
-            await new Promise(resolve => setTimeout(resolve, 8000));
+            await new Promise(resolve => setTimeout(resolve, 5000));
           }
           
           const response = await fetch('/api/classify', {

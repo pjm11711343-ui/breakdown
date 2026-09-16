@@ -282,10 +282,12 @@ Data: ${JSON.stringify(aiItems.map(i => ({ id: i.id, n: i.name, s: i.specificati
         for (let i = 0; i < retries; i++) {
           try {
             // Use supported Gemini models according to current standards
-            let modelName = 'gemini-3.7-flash';
+            let modelName = 'gemini-3.8-flash';
             if (i === 1) modelName = 'gemini-3.1-flash-lite';
             if (i >= 2) modelName = 'gemini-flash-latest';
             
+            console.log(`Attempting AI classification with model: ${modelName} (Batch size: ${aiItems.length})`);
+
             return await ai.models.generateContent({
               model: modelName,
               contents: [{ parts: [{ text: prompt }] }],
@@ -305,19 +307,20 @@ Data: ${JSON.stringify(aiItems.map(i => ({ id: i.id, n: i.name, s: i.specificati
               }
             });
           } catch (err: any) {
-            const errorStr = JSON.stringify(err) + ' ' + (err.message || '');
+            const errorStr = (err.message || '') + ' ' + JSON.stringify(err);
             const isQuotaError = errorStr.includes('429') || errorStr.includes('RESOURCE_EXHAUSTED');
-            const isTransientError = isQuotaError || errorStr.includes('503') || errorStr.includes('500');
+            const isTransientError = isQuotaError || errorStr.includes('503') || errorStr.includes('500') || errorStr.includes('fetch failed');
             
             if (isTransientError && i < retries - 1) {
-              const baseDelay = isQuotaError ? 8000 : delay;
+              const baseDelay = isQuotaError ? 10000 : delay;
               const jitter = Math.random() * 2000;
               const waitTime = baseDelay + jitter;
-              console.log(`AI Error (${isQuotaError ? 'Quota' : 'Transient'}), retry ${i+1}/${retries} after ${Math.round(waitTime)}ms`);
+              console.warn(`AI Error (${isQuotaError ? 'Quota' : 'Transient'}), retry ${i+1}/${retries} after ${Math.round(waitTime)}ms: ${err.message || 'Unknown error'}`);
               await new Promise(resolve => setTimeout(resolve, waitTime));
               delay = delay * 2; 
               continue;
             }
+            console.error(`AI Classification permanent failure on attempt ${i+1}:`, err.message || err);
             throw err;
           }
         }
