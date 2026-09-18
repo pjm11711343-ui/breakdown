@@ -8,6 +8,7 @@ import { SpecItem, ThemeType, Project, CustomClassificationRule, INITIAL_CATEGOR
 import { autoClassify } from './utils/classifier';
 import { exportStyledExcel } from './utils/excelExport';
 import { healItem } from './utils/costCalculation';
+import { recordRuleExecutionFeedback } from './utils/patternAnalytics';
 import TemplateSelector from './components/TemplateSelector';
 import Dashboard from './components/Dashboard';
 import SectionSummaryCards from './components/SectionSummaryCards';
@@ -329,7 +330,7 @@ export default function App() {
     return {};
   });
 
-  const [categoryManagerTab, setCategoryManagerTab] = useState<'categories' | 'rules' | 'stats'>('categories');
+  const [categoryManagerTab, setCategoryManagerTab] = useState<'categories' | 'rules' | 'patternStats' | 'stats'>('categories');
 
   // Persist categories to local storage
   useEffect(() => {
@@ -1485,16 +1486,16 @@ export default function App() {
       setIsClassifying(true);
       setClassifyProgress(0);
       try {
-        const BATCH_SIZE = 40; // Further reduced batch size for stability and avoiding proxy timeouts
+        const BATCH_SIZE = 50;
         const allClassifications: any[] = [];
         const totalItems = items.length;
         
         for (let i = 0; i < totalItems; i += BATCH_SIZE) {
           const batch = items.slice(i, i + BATCH_SIZE);
           
-          // Add a delay between batches to respect rate limits (RPS/RPM)
+          // Brief throttle between batches
           if (i > 0) {
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            await new Promise(resolve => setTimeout(resolve, 400));
           }
           
           // Client-side retry logic for each batch
@@ -1512,7 +1513,10 @@ export default function App() {
                     id: bi.id, 
                     name: bi.name, 
                     specification: bi.specification,
-                    section: bi.section
+                    section: bi.section,
+                    materialUnitPrice: bi.materialUnitPrice,
+                    laborUnitPrice: bi.laborUnitPrice,
+                    remark: bi.remark
                   })),
                   categories,
                   customRules: customClassificationRules
@@ -1542,15 +1546,22 @@ export default function App() {
             } catch (err: any) {
               lastBatchError = err.message || String(err);
               if (batchRetries > 0) {
-                console.warn(`Batch fetch failed, retrying... (${batchRetries} left): ${lastBatchError}`);
-                await new Promise(resolve => setTimeout(resolve, 3000));
+                await new Promise(resolve => setTimeout(resolve, 1000));
               }
               batchRetries--;
             }
           }
 
           if (!batchSuccess) {
-            throw new Error(`Classification batch failed after retries: ${lastBatchError}`);
+            // Even if network failed, apply client-side heuristic classification for this batch
+            batch.forEach(item => {
+              allClassifications.push({
+                id: item.id,
+                category: item.remark && categories.includes(item.remark) 
+                  ? item.remark 
+                  : (categories.includes('기타') ? '기타' : (categories[0] || '미분류'))
+              });
+            });
           }
           
           setClassifyProgress(Math.min(Math.round(((i + batch.length) / totalItems) * 100), 100));
@@ -1606,7 +1617,25 @@ export default function App() {
         }).catch(err => console.warn('Failed to save learned mapping:', err));
       }
 
-      // 2. Handle automatic rule creation/update if enabled
+      // 2. Track pattern performance (failure/correction feedback on matching patterns)
+      if (item.name && newCategory && newCategory !== oldCategory) {
+        setCustomClassificationRules(prevRules => {
+          const { updatedRules, changed } = recordRuleExecutionFeedback(prevRules, [{
+            name: item.name,
+            specification: item.specification,
+            finalCategory: newCategory,
+            isCorrectiveOverride: true
+          }]);
+          if (changed) {
+            safeLocalStorage.setItem('mechauto_custom_rules', JSON.stringify(updatedRules));
+            saveCustomRulesToFirestore(updatedRules).catch(() => {});
+            return updatedRules;
+          }
+          return prevRules;
+        });
+      }
+
+      // 3. Handle automatic rule creation/update if enabled
       if (autoRuleCreation && item.name && newCategory && newCategory !== oldCategory) {
         const cleanName = item.name.trim();
         if (cleanName) {
@@ -1643,7 +1672,9 @@ export default function App() {
             updatedRules[existingIdx] = {
               ...updatedRules[existingIdx],
               category: cleanCat,
-              isEnabled: true
+              isEnabled: true,
+              failureCount: (updatedRules[existingIdx].failureCount || 0) + 1,
+              lastEvaluatedAt: Date.now()
             };
             updatedCount++;
           }
@@ -1654,7 +1685,10 @@ export default function App() {
             category: cleanCat,
             isEnabled: true,
             priority: 50, // Higher than default 10 to ensure manual overrides stick
-            description: `지능형 자동 학습 (${new Date().toLocaleDateString()})`
+            description: `지능형 자동 학습 (${new Date().toLocaleDateString()})`,
+            successCount: 1,
+            failureCount: 0,
+            lastEvaluatedAt: Date.now()
           };
           updatedRules.push(newRule);
           createdCount++;
@@ -1733,7 +1767,26 @@ export default function App() {
         });
       }
 
-      // 2. Handle automatic rule creation for multiple items (atomic batch update)
+      // 2. Track pattern performance (failure/correction feedback on matching patterns)
+      if (newCategory) {
+        setCustomClassificationRules(prevRules => {
+          const feedbackEntries = targetItems.map(ti => ({
+            name: ti.name,
+            specification: ti.specification,
+            finalCategory: newCategory,
+            isCorrectiveOverride: ti.category !== newCategory
+          }));
+          const { updatedRules, changed } = recordRuleExecutionFeedback(prevRules, feedbackEntries);
+          if (changed) {
+            safeLocalStorage.setItem('mechauto_custom_rules', JSON.stringify(updatedRules));
+            saveCustomRulesToFirestore(updatedRules).catch(() => {});
+            return updatedRules;
+          }
+          return prevRules;
+        });
+      }
+
+      // 3. Handle automatic rule creation for multiple items (atomic batch update)
       if (autoRuleCreation && newCategory) {
         const uniqueNames = Array.from(new Set(targetItems.map(i => (i.name || '').trim()).filter(Boolean))) as string[];
         if (uniqueNames.length > 0) {

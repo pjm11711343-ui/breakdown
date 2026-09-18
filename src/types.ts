@@ -52,6 +52,38 @@ export interface CustomClassificationRule {
   isEnabled: boolean;
   priority: number; // Higher number = higher priority
   description?: string;
+  successCount?: number; // 성공(유지/일치) 누적 횟수
+  failureCount?: number; // 실패(오분류/재분류) 누적 횟수
+  lastEvaluatedAt?: number; // 마지막 평가 일시
+}
+
+export interface PatternPerformanceStat {
+  id: string;
+  pattern: string;
+  category: string;
+  isEnabled: boolean;
+  priority: number;
+  description?: string;
+  // 현재 시트 실측치
+  sheetMatches: number;
+  sheetSuccess: number;
+  sheetFailure: number;
+  // 누적 학습 통계
+  histSuccess: number;
+  histFailure: number;
+  // 종합 합산 지표
+  totalEvaluations: number;
+  totalSuccess: number;
+  totalFailure: number;
+  successRate: number; // 0 ~ 100 (%)
+  failureRate: number; // 0 ~ 100 (%)
+  mismatchedItems: Array<{
+    id: string;
+    name: string;
+    specification: string;
+    currentCategory: string;
+    expectedCategory: string;
+  }>;
 }
 
 export interface LearnedMapping {

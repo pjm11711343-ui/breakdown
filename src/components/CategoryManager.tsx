@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Edit2, Check, X, Tags, Sliders, Info, HelpCircle, ChevronUp, ChevronDown, Sparkles, RotateCcw, FileText, Upload, BarChart3, PieChart } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, Tags, Sliders, Info, HelpCircle, ChevronUp, ChevronDown, Sparkles, RotateCcw, FileText, Upload, BarChart3, PieChart, Target, Activity } from 'lucide-react';
 import { CustomClassificationRule, INITIAL_CATEGORIES, SpecItem } from '../types';
+import PatternAccuracyChart from './PatternAccuracyChart';
 import * as XLSX from 'xlsx';
 import { 
   getItemMaterialCost, 
@@ -20,7 +21,7 @@ interface Props {
   customRules: CustomClassificationRule[];
   onUpdateRules: (rules: CustomClassificationRule[]) => void;
   onApplyRules?: (rules: CustomClassificationRule[]) => void;
-  initialTab?: 'categories' | 'rules' | 'stats';
+  initialTab?: 'categories' | 'rules' | 'patternStats' | 'stats';
   autoRuleCreation?: boolean;
   onSetAutoRuleCreation?: (val: boolean) => void;
   onRenameCategory?: (oldCategory: string, newCategory: string) => void;
@@ -70,7 +71,7 @@ export default function CategoryManager({
   onSetAutoRuleCreation,
   onRenameCategory
 }: Props) {
-  const [activeTab, setActiveTab] = useState<'categories' | 'rules' | 'stats'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'categories' | 'rules' | 'patternStats' | 'stats'>(initialTab);
   
   // Category management states
   const [newCategory, setNewCategory] = useState('');
@@ -87,6 +88,26 @@ export default function CategoryManager({
   const [ruleSearch, setRuleSearch] = useState('');
   const [rulePriority, setRulePriority] = useState<number>(10);
   const [showSystemRules, setShowSystemRules] = useState(false);
+
+  // Quick helper to jump from pattern stats to rule editing
+  const handleSelectRuleForEdit = (ruleId: string) => {
+    const target = customRules.find(r => r.id === ruleId);
+    if (target) {
+      setRulePattern(target.pattern);
+      setRuleCategory(target.category);
+      setRulePriority(target.priority ?? 10);
+      setRuleDesc(target.description || '');
+      setActiveTab('rules');
+    }
+  };
+
+  // Helper to reset a single rule's historical performance counters
+  const handleResetRuleStats = (ruleId: string) => {
+    const updated = customRules.map(r => 
+      r.id === ruleId ? { ...r, successCount: 0, failureCount: 0, lastEvaluatedAt: Date.now() } : r
+    );
+    onUpdateRules(updated);
+  };
 
   // Sync tab state when initialTab prop changes
   useEffect(() => {
@@ -396,6 +417,17 @@ export default function CategoryManager({
             분류 규칙 설정
           </button>
           <button
+            onClick={() => setActiveTab('patternStats')}
+            className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'patternStats'
+                ? 'border-indigo-600 text-indigo-600 bg-white'
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50'
+            }`}
+          >
+            <Activity className="w-4 h-4 text-indigo-500" />
+            <span>패턴 성공/실패율 통계</span>
+          </button>
+          <button
             onClick={() => setActiveTab('stats')}
             className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
               activeTab === 'stats'
@@ -404,7 +436,7 @@ export default function CategoryManager({
             }`}
           >
             <BarChart3 className="w-4 h-4" />
-            통계 분석 리포트
+            예산 분석 리포트
           </button>
         </div>
 
@@ -562,7 +594,7 @@ export default function CategoryManager({
           ) : activeTab === 'rules' ? (
             /* --- RULES TAB (CLASSIFICATION RULES) --- */
             <div className="space-y-6">
-              <div className="flex items-center justify-between p-4 bg-indigo-600 rounded-2xl shadow-md text-white">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-indigo-600 rounded-2xl shadow-md text-white">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-white/20 rounded-lg">
                     <Sparkles className="w-5 h-5 text-white" />
@@ -572,20 +604,31 @@ export default function CategoryManager({
                     <p className="text-[10px] text-indigo-100 font-medium">품명 분류 시 해당 규칙을 자동 생성/갱신합니다</p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onSetAutoRuleCreation && onSetAutoRuleCreation(!autoRuleCreation)}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    autoRuleCreation ? 'bg-emerald-400' : 'bg-white/20'
-                  }`}
-                  title="자재 분류 시 해당 품명에 대한 규칙을 자동으로 저장하거나 업데이트합니다."
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                      autoRuleCreation ? 'translate-x-5' : 'translate-x-0'
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('patternStats')}
+                    className="px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                    title="각 패턴의 성공률 및 오분류 통계 차트를 확인합니다."
+                  >
+                    <Activity className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>성공/실패율 통계 차트</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSetAutoRuleCreation && onSetAutoRuleCreation(!autoRuleCreation)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      autoRuleCreation ? 'bg-emerald-400' : 'bg-white/20'
                     }`}
-                  />
-                </button>
+                    title="자재 분류 시 해당 품명에 대한 규칙을 자동으로 저장하거나 업데이트합니다."
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        autoRuleCreation ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
 
               <div className="text-xs text-slate-500 p-3 bg-indigo-50 border border-indigo-100/50 rounded-xl space-y-1">
@@ -816,9 +859,39 @@ export default function CategoryManager({
                 )}
               </div>
             </div>
+          ) : activeTab === 'patternStats' ? (
+            /* --- PATTERN STATS TAB (ACCURACY / SUCCESS & FAILURE CHART) --- */
+            <div className="space-y-6">
+              <PatternAccuracyChart
+                customRules={customRules}
+                items={items}
+                onSelectRuleForEdit={handleSelectRuleForEdit}
+                onResetRuleStats={handleResetRuleStats}
+              />
+            </div>
           ) : (
             /* --- STATS TAB (REPORT) --- */
             <div className="space-y-6">
+              {/* Report Subheader Switcher */}
+              <div className="flex items-center justify-between pb-1">
+                <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    className="px-3 py-1.5 bg-white text-indigo-700 font-bold rounded-lg text-xs shadow-xs"
+                  >
+                    카테고리별 비중 및 집계
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('patternStats')}
+                    className="px-3 py-1.5 text-slate-600 hover:text-indigo-600 font-medium rounded-lg text-xs transition-colors flex items-center gap-1"
+                  >
+                    <Activity className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>패턴 성공/실패율 통계 보기</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Overall Summary Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl">
